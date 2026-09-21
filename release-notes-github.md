@@ -1,39 +1,47 @@
-# SwitchU 2.5.4
+# SwitchU 2.5.5
 
-Settings now show where a loaded console's memory goes, uninstalling from the Storage tab stops freezing the menu, and the clock says it changed only once it has.
+A Joy-Con on its own can drive the menu, any player's controller can drive it, and Change Grip/Order can hand player 1 to somebody else.
 
 ## English
 
-### Memory and sysmodules
+### A Joy-Con held sideways
 
-- The System tab ends with a new section: how full the System memory pool is, how much is free, and the sysmodules Atmosphère starts at boot, named from their toolbox.json when they ship one. 2.5.2's logs showed that pool at 221 of 232 MB on the console where launches were unstable; every sysmodule on the card draws from it, alongside the services a game needs to start, and nothing on the console showed it.
-- Below 16 MB free, the section says to turn off the sysmodules you do not use. On firmware 21 and later it also says why the same card can be stable before a system update and not after it: Atmosphère can add only 7 MB to this pool there, against 40 MB before.
+- A single left Joy-Con could move around the menu and confirm nothing: SwitchU never told the system that a Joy-Con is held sideways here, so the system reported it upright, and upright a left Joy-Con has a d-pad, a stick, SL/SR, L/ZL and − -- no action buttons whatsoever. The console's own menu asks for the sideways orientation, which is what turns those four direction buttons into A/B/X/Y. SwitchU now asks for it too.
+- One case is not covered by that, and never was on the console either: half of a pair that is still registered as a pair. The system hands it the upright layout no matter how it is held, and there are no action buttons. Register it as a player of its own in Change Grip/Order -- SL+SR -- and it works sideways.
 
-### Uninstalling from the Storage tab
+### Any player's controller
 
-- It had its own copy of the delete, running on the menu's main thread: the menu froze with no progress until it finished, a title that only lived on the card was reported as a failure even after its files were gone, and the title stayed filed in its folder. It now goes through the same path as deleting from a game's own panel, with the progress bar.
+- The menu listened to player 1 and to the console in handheld mode, and to nothing else. A second controller could not move the cursor. It now reads all eight player slots, the way a home menu should.
 
-### Date and time
+### Change Grip/Order
 
-- "Date and time updated." and "Clock synchronized via Internet." appeared as soon as the command was sent, before the daemon had applied it or knew whether it worked. The daemon now answers, and the message waits for that answer. A failure shows the error, and the Internet sync toggle goes back to the state the console actually holds.
-- Success also means the clock reads the time that was asked for, within two minutes. Before, it was enough for one of the console's three clocks to accept it.
+- It opened with whichever controller had opened it already seated in player 1, and that one could never be replaced: every other controller disconnected and could be reordered, player 1 could not. SwitchU was asking the applet to take the current connections over. It now opens from nothing, the way the console does, so the order can actually be redone.
+- The applet is also handed the controller configuration of whatever launches it, and the daemon had never published one -- it asked the system for a setting it had never set, and passed on the empty answer. It now publishes the full set of controller styles and the sideways orientation before opening the applet, so a lone Joy-Con can be registered there. A failure to read that configuration used to stop the applet from opening at all; it no longer does.
+
+### Logs
+
+- The menu log records which controllers are connected, in which style, and whether a Joy-Con pair is missing a half -- once, and again whenever it changes. A controller that cannot press A can now be diagnosed from a log instead of from memory.
 
 ---
 
 ## Português
 
-As configurações agora mostram para onde vai a memória de um console carregado, desinstalar pela aba Armazenamento deixa de travar o menu, e o relógio só diz que mudou depois de mudar.
+Um Joy-Con sozinho consegue usar o menu, o controle de qualquer jogador consegue usar o menu, e o Mudar a Ordem consegue passar o jogador 1 para outro controle.
 
-### Memória e sysmodules
+### Um Joy-Con na horizontal
 
-- A aba Sistema termina com uma seção nova: quanto do pool de memória System está ocupado, quanto está livre e quais sysmodules o Atmosphère inicia no boot, com o nome do toolbox.json quando existe. Os logs da 2.5.2 mostraram esse pool em 221 de 232 MB no console onde a abertura de jogos era instável; todo sysmodule do cartão usa esse pool, junto com os serviços de que um jogo precisa para iniciar, e nada no console mostrava isso.
-- Com menos de 16 MB livres, a seção sugere desativar os sysmodules que você não usa. No firmware 21 em diante, ela também explica por que o mesmo cartão pode ser estável antes de uma atualização do sistema e não depois: ali o Atmosphère só consegue acrescentar 7 MB a esse pool, contra 40 MB antes.
+- Um Joy-Con esquerdo sozinho andava pelo menu e não confirmava nada: o SwitchU nunca avisou ao sistema que aqui o Joy-Con é segurado na horizontal, então o sistema o reportava na vertical -- e na vertical o Joy-Con esquerdo tem direcional, alavanca, SL/SR, L/ZL e − e nenhum botão de ação. O menu do próprio console pede a orientação horizontal, que é o que transforma aqueles quatro direcionais em A/B/X/Y. O SwitchU passa a pedir também.
+- Um caso continua de fora, e sempre esteve também no console: a metade de um par que ainda está registrada como par. O sistema entrega o layout vertical a ela independentemente de como você segura, e não há botões de ação. Registre-a como jogador próprio no Mudar a Ordem -- SL+SR -- e ela funciona na horizontal.
 
-### Desinstalar pela aba Armazenamento
+### O controle de qualquer jogador
 
-- A aba tinha a própria cópia da exclusão, rodando na linha principal do menu: o menu travava sem progresso até terminar, um título que só existia no cartão era dado como falha mesmo depois de os arquivos sumirem, e o título continuava na pasta onde estava. Agora usa o mesmo caminho da exclusão pelo painel do jogo, com barra de progresso.
+- O menu escutava o jogador 1 e o console no modo portátil, e mais nada. Um segundo controle não movia o cursor. Agora lê os oito lugares de jogador, como um menu principal deve fazer.
 
-### Data e hora
+### Mudar a Ordem
 
-- "Data e hora atualizadas." e "Relógio sincronizado pela Internet." apareciam assim que o comando era enviado, antes de o daemon aplicar ou saber se tinha funcionado. Agora o daemon responde, e a mensagem espera essa resposta. Uma falha mostra o erro, e o botão de sincronização pela Internet volta ao estado que o console realmente tem.
-- Sucesso também passa a significar que o relógio marca a hora pedida, com tolerância de dois minutos. Antes bastava um dos três relógios do console aceitar.
+- Ele abria com o controle que o tinha aberto já sentado no jogador 1, e esse nunca podia ser trocado: todos os outros desconectavam e podiam ser reordenados, o jogador 1 não. O SwitchU pedia ao applet que assumisse as conexões atuais. Agora ele abre do zero, como no console, e a ordem pode de fato ser refeita.
+- O applet também recebe a configuração de controles de quem o abre, e o daemon nunca tinha publicado uma -- pedia ao sistema um ajuste que jamais fizera, e repassava a resposta vazia. Agora ele publica o conjunto completo de estilos de controle e a orientação horizontal antes de abrir o applet, para que um Joy-Con sozinho possa ser registrado ali. Uma falha na leitura dessa configuração impedia o applet de abrir; não impede mais.
+
+### Logs
+
+- O log do menu registra quais controles estão conectados, em qual estilo, e se falta uma metade de um par de Joy-Con -- uma vez, e de novo sempre que mudar. Um controle que não consegue apertar A passa a ser diagnosticável por log, e não por memória.

@@ -1,21 +1,18 @@
+A Joy-Con held sideways
+- A single Joy-Con can now confirm: SwitchU asks the system for the sideways orientation, the way the console's own menu does, which is what turns the four direction buttons into A/B/X/Y. Half of a pair that is still registered as a pair has no action buttons either way -- register it on its own in Change Grip/Order, with SL+SR.
 
-Memory and sysmodules
-- The System tab ends with a new section: how full the System memory pool is, how much is free, and the sysmodules started at boot. That pool is what runs out on a loaded console, and it is shared by every sysmodule and by what a game needs to start.
-- Below 16 MB free it suggests turning off sysmodules you do not use. On firmware 21 and later it explains that Atmosphère can add only 7 MB to this pool.
+Any player's controller
+- The menu read player 1 and handheld mode only. It now reads all eight player slots.
 
-Uninstalling from the Storage tab
-- It no longer freezes the menu: it runs the same delete as a game's own panel, with the progress bar, and also takes the title out of its folder.
-
-Date and time
-- "Date and time updated." waits for the daemon to confirm the clock actually changed. A failure shows the error, and the Internet sync toggle goes back to its real state.
+Change Grip/Order
+- It no longer opens with player 1 already taken by the controller that opened it, so the order can actually be redone. The controller settings the applet is given are published properly now, so a lone Joy-Con can be registered there.
 --pt-BR--
 
-Memória e sysmodules
-- A aba Sistema termina com uma seção nova: quanto do pool de memória System está ocupado, quanto está livre e os sysmodules iniciados no boot. Esse pool é o que falta num console carregado, e é dividido por todos os sysmodules e pelo que um jogo precisa para iniciar.
-- Com menos de 16 MB livres, sugere desativar os sysmodules que você não usa. No firmware 21 em diante, explica que o Atmosphère só consegue acrescentar 7 MB a esse pool.
+Um Joy-Con na horizontal
+- Um Joy-Con sozinho agora consegue confirmar: o SwitchU pede ao sistema a orientação horizontal, como faz o menu do console, que é o que transforma os quatro direcionais em A/B/X/Y. A metade de um par ainda registrada como par não tem botões de ação de todo jeito -- registre-a sozinha no Mudar a Ordem, com SL+SR.
 
-Desinstalar pela aba Armazenamento
-- Deixou de travar o menu: usa a mesma exclusão do painel do jogo, com barra de progresso, e também tira o título da pasta onde estava.
+O controle de qualquer jogador
+- O menu lia só o jogador 1 e o modo portátil. Agora lê os oito lugares de jogador.
 
-Data e hora
-- "Data e hora atualizadas." espera o daemon confirmar que o relógio mudou de fato. Uma falha mostra o erro, e o botão de sincronização pela Internet volta ao estado real.
+Mudar a Ordem
+- Deixa de abrir com o jogador 1 já ocupado pelo controle que o abriu, então a ordem pode de fato ser refeita. As definições de controle entregues ao applet agora são publicadas como devem, e um Joy-Con sozinho pode ser registrado ali.
