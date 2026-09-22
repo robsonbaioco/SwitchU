@@ -403,7 +403,7 @@ void WiiUMenuApp::syncUpdateDownload() {
         m_pendingUpdate = {};   // installed: there is nothing left to offer
     m_updateStatus = nxui::I18n::instance().tr(
         ok ? "dialog.update_done" : "dialog.update_failed",
-        ok ? "Update installed. Restart the console to run the new version."
+        ok ? "Update downloaded. Restart the console to apply it. It is applied at the next boot, which restarts once by itself."
            : "The update could not be installed.");
     // Releases the tab's busy state and shows the outcome there as well, not
     // only in the dialog the player is about to dismiss.
@@ -421,7 +421,7 @@ void WiiUMenuApp::syncUpdateDownload() {
     m_dialog->show(
         i18n.tr("dialog.update_title", "Update available"),
         ok ? i18n.tr("dialog.update_done",
-                     "Update installed. Restart the console to run the new version.")
+                     "Update downloaded. Restart the console to apply it. It is applied at the next boot, which restarts once by itself.")
            : i18n.tr("dialog.update_failed", "The update could not be installed."),
         {{i18n.tr("button.ok", "OK"), [this]() {}, true}},
         0, {});

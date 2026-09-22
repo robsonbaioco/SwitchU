@@ -62,13 +62,13 @@ void clearStaging() {
 
 } // namespace
 
-void applyStagedUpdate() {
+bool applyStagedUpdate() {
     if (!exists(kReadyMarker))
-        return;
+        return false;
     if (!exists(kStagedArchive)) {
         switchu::FileLog::log("[update] marker without an archive; clearing");
         clearStaging();
-        return;
+        return false;
     }
 
     const int attempts = readAttempts() + 1;
@@ -76,7 +76,7 @@ void applyStagedUpdate() {
         switchu::FileLog::log("[update] giving up after %d attempts; booting as installed",
                               kMaxAttempts);
         clearStaging();
-        return;
+        return false;
     }
     // Recorded before the work starts, so a failure that never returns still
     // counts against the limit and cannot loop the console forever.
@@ -109,7 +109,7 @@ void applyStagedUpdate() {
 
     if (!result.success) {
         switchu::FileLog::log("[update] apply failed: %s", result.error.c_str());
-        return;   // staging stays; the next boot retries until the limit
+        return false;   // staging stays; the next boot retries until the limit
     }
 
     switchu::FileLog::log("[update] applied %d files, %llu bytes",
@@ -118,6 +118,7 @@ void applyStagedUpdate() {
     // Dropping the archive frees another 43 MB of clusters, which is its own
     // batch of metadata. It costs nothing to make it durable here.
     switchu::commitSdCard("update staging cleared");
+    return true;
 }
 
 } // namespace switchu::daemon::update

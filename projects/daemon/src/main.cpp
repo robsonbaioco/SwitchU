@@ -2561,6 +2561,25 @@ int main(int argc, char* argv[]) {
     if (uninstallPending)
         switchu::FileLog::log("[uninstall] pending request blocks update apply");
 
+    // Before the menu exists, so nothing it would replace is open. Never apply
+    // an archive while an uninstall marker remains unresolved.
+    //
+    // And then reboot, rather than carry on into the menu. The payload holds
+    // both halves of the launcher, and only one of them can be picked up here:
+    // the menu is launched from the card after this runs, so it is the new one,
+    // while this daemon was loaded by Atmosphère before any of it happened and
+    // stays the old one until the console comes up again. That ran a menu
+    // against a daemon one release behind for a whole session -- every
+    // daemon-side fix in an update looked as though it had not shipped, and a
+    // command the two disagreed about had nothing to catch it. The staging is
+    // already cleared and committed by now, so this boots straight through.
+    if (!uninstallPending && switchu::daemon::update::applyStagedUpdate()) {
+        switchu::FileLog::log("[update] applied; rebooting so the new daemon runs");
+        switchu::FileLog::flush();
+        requestPowerStateChange("update applied", true);
+        return 0;
+    }
+
     rebuildAppCatalog("boot");
 
     Result rc = startControlCacheWorker();
@@ -2570,11 +2589,6 @@ int main(int argc, char* argv[]) {
     rc = startEventManager();
     if (R_FAILED(rc))
         switchu::FileLog::log("[daemon] event manager failed: 0x%X (non-fatal)", rc);
-
-    // Before the menu exists, so nothing it would replace is open. Never apply
-    // an archive while an uninstall marker remains unresolved.
-    if (!uninstallPending)
-        switchu::daemon::update::applyStagedUpdate();
 
     switchu::FileLog::log("[daemon] launching menu...");
     rc = daemon::menu_la::launch(

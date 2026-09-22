@@ -919,7 +919,7 @@
     "update_install": "Aktualisieren",
     "update_downloading": "Update wird heruntergeladen...",
     "update_applying": "Update wird angewendet...",
-    "update_done": "Update heruntergeladen. Starte die Konsole neu, um es anzuwenden. Der erste Start kann etwa eine halbe Minute dauern.",
+    "update_done": "Update heruntergeladen. Starte die Konsole neu, um es anzuwenden. Es wird beim nächsten Start angewendet, der sich einmal von selbst neu startet und etwa eine Minute dauert.",
     "update_failed": "Das Update konnte nicht heruntergeladen werden.",
     "update_up_to_date": "SwitchU ist aktuell.",
     "update_check_failed": "Der Update-Server war nicht erreichbar.",
