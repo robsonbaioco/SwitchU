@@ -1,47 +1,37 @@
-# SwitchU 2.5.5
+# SwitchU 2.5.6
 
-A Joy-Con on its own can drive the menu, any player's controller can drive it, and Change Grip/Order can hand player 1 to somebody else.
+An update installs in one restart instead of two, and the console can now say which build it is actually running.
 
 ## English
 
-### A Joy-Con held sideways
+### One restart to install an update
 
-- A single left Joy-Con could move around the menu and confirm nothing: SwitchU never told the system that a Joy-Con is held sideways here, so the system reported it upright, and upright a left Joy-Con has a d-pad, a stick, SL/SR, L/ZL and − -- no action buttons whatsoever. The console's own menu asks for the sideways orientation, which is what turns those four direction buttons into A/B/X/Y. SwitchU now asks for it too.
-- One case is not covered by that, and never was on the console either: half of a pair that is still registered as a pair. The system hands it the upright layout no matter how it is held, and there are no action buttons. Register it as a player of its own in Change Grip/Order -- SL+SR -- and it works sideways.
+- An update was only half installed by the restart that applied it. The daemon is what unpacks an update, and the daemon is inside the update: whichever copy of it the console loaded at boot is the copy that unpacks its replacement, so it could never be the new one. The menu it launched afterwards was, being read from the card once the files were already in place. Every update therefore ran a new menu against a daemon one release behind, for the whole session, and only the next boot put them back in step -- silently, with nothing anywhere saying so.
+- The menu now puts the daemon in place itself, before the restart. It is the one file in the payload that nothing holds open, it is 640 KB, and the extractor swaps every file in by renaming it over its target, so an interrupted write leaves the running daemon untouched. The console comes up on the new daemon, which unpacks the menu half -- the half it cannot touch while the font is open -- and goes straight into it. One restart, both halves on the same version.
+- If any part of that fails, the boot that applies the update ends in a second restart instead, which is the old behaviour made deliberate. There is no path where the two halves are left out of step.
+- **Installing this release still takes two restarts**, because the code that installs it is 2.5.5's. From the next release on, one is enough.
 
-### Any player's controller
+### Saying which build is running
 
-- The menu listened to player 1 and to the console in handheld mode, and to nothing else. A second controller could not move the cursor. It now reads all eight player slots, the way a home menu should.
-
-### Change Grip/Order
-
-- It opened with whichever controller had opened it already seated in player 1, and that one could never be replaced: every other controller disconnected and could be reordered, player 1 could not. SwitchU was asking the applet to take the current connections over. It now opens from nothing, the way the console does, so the order can actually be redone.
-- The applet is also handed the controller configuration of whatever launches it, and the daemon had never published one -- it asked the system for a setting it had never set, and passed on the empty answer. It now publishes the full set of controller styles and the sideways orientation before opening the applet, so a lone Joy-Con can be registered there. A failure to read that configuration used to stop the applet from opening at all; it no longer does.
-
-### Logs
-
-- The menu log records which controllers are connected, in which style, and whether a Joy-Con pair is missing a half -- once, and again whenever it changes. A controller that cannot press A can now be diagnosed from a log instead of from memory.
+- The daemon logs its version at startup. The menu has always shown its own on the About tab, and while these two were out of step for a whole session there was nothing anywhere that said which was which.
+- The menu's log no longer rotates every time the menu starts -- which is every time a game is closed. Five files used to cover five restarts: on one console, thirty-five minutes, with the session being asked about hours outside them. It now appends until a file reaches 512 KB, so the same five hold hours. The rotate-logs action still rotates whatever the size, since that is what it is for.
+- The System memory probe now prints the heap's high-water mark alongside what is allocated at that instant. Every sample ever collected read zero allocated, which says only that those moments are quiet ones; the daemon reserves eight megabytes out of a pool with ten free, and the high-water mark is the figure a smaller reservation has to be sized against. A sample is taken right after an update is unpacked, too -- the largest allocation this process makes.
 
 ---
 
 ## Português
 
-Um Joy-Con sozinho consegue usar o menu, o controle de qualquer jogador consegue usar o menu, e o Mudar a Ordem consegue passar o jogador 1 para outro controle.
+Um update se instala em um reinício em vez de dois, e o console agora sabe dizer qual build está realmente rodando.
 
-### Um Joy-Con na horizontal
+### Um reinício para instalar um update
 
-- Um Joy-Con esquerdo sozinho andava pelo menu e não confirmava nada: o SwitchU nunca avisou ao sistema que aqui o Joy-Con é segurado na horizontal, então o sistema o reportava na vertical -- e na vertical o Joy-Con esquerdo tem direcional, alavanca, SL/SR, L/ZL e − e nenhum botão de ação. O menu do próprio console pede a orientação horizontal, que é o que transforma aqueles quatro direcionais em A/B/X/Y. O SwitchU passa a pedir também.
-- Um caso continua de fora, e sempre esteve também no console: a metade de um par que ainda está registrada como par. O sistema entrega o layout vertical a ela independentemente de como você segura, e não há botões de ação. Registre-a como jogador próprio no Mudar a Ordem -- SL+SR -- e ela funciona na horizontal.
+- Um update só era instalado pela metade pelo reinício que o aplicava. Quem desempacota um update é o daemon, e o daemon está dentro do update: a cópia dele que o console carregou no boot é a que desempacota a própria substituta, então nunca podia ser a nova. O menu que ela lançava em seguida, sim, porque é lido do cartão depois que os arquivos já estão no lugar. Todo update, portanto, rodava um menu novo contra um daemon uma versão atrás, pela sessão inteira, e só o boot seguinte colocava os dois em dia -- em silêncio, sem nada em lugar nenhum dizendo isso.
+- Agora o menu coloca o daemon no lugar ele mesmo, antes do reinício. É o único arquivo do pacote que ninguém mantém aberto, tem 640 KB, e o extrator troca cada arquivo renomeando por cima do destino, de modo que uma gravação interrompida deixa o daemon em uso intacto. O console sobe já com o daemon novo, que desempacota a metade do menu -- a que ele não pode tocar enquanto a fonte está aberta -- e entra direto nela. Um reinício, as duas metades na mesma versão.
+- Se qualquer parte disso falhar, o boot que aplica o update termina num segundo reinício, que é o comportamento antigo tornado deliberado. Não há caminho em que as duas metades fiquem fora de sincronia.
+- **Instalar esta versão ainda leva dois reinícios**, porque quem a instala é o código da 2.5.5. Da próxima em diante, um basta.
 
-### O controle de qualquer jogador
+### Dizer qual build está rodando
 
-- O menu escutava o jogador 1 e o console no modo portátil, e mais nada. Um segundo controle não movia o cursor. Agora lê os oito lugares de jogador, como um menu principal deve fazer.
-
-### Mudar a Ordem
-
-- Ele abria com o controle que o tinha aberto já sentado no jogador 1, e esse nunca podia ser trocado: todos os outros desconectavam e podiam ser reordenados, o jogador 1 não. O SwitchU pedia ao applet que assumisse as conexões atuais. Agora ele abre do zero, como no console, e a ordem pode de fato ser refeita.
-- O applet também recebe a configuração de controles de quem o abre, e o daemon nunca tinha publicado uma -- pedia ao sistema um ajuste que jamais fizera, e repassava a resposta vazia. Agora ele publica o conjunto completo de estilos de controle e a orientação horizontal antes de abrir o applet, para que um Joy-Con sozinho possa ser registrado ali. Uma falha na leitura dessa configuração impedia o applet de abrir; não impede mais.
-
-### Logs
-
-- O log do menu registra quais controles estão conectados, em qual estilo, e se falta uma metade de um par de Joy-Con -- uma vez, e de novo sempre que mudar. Um controle que não consegue apertar A passa a ser diagnosticável por log, e não por memória.
+- O daemon registra a versão dele no log ao iniciar. O menu sempre mostrou a dele na aba Sobre, e enquanto os dois ficaram fora de sincronia por uma sessão inteira não havia nada que dissesse qual era qual.
+- O log do menu deixa de rotacionar a cada início do menu -- que é toda vez que um jogo é fechado. Cinco arquivos cobriam cinco reinícios: num console, trinta e cinco minutos, com a sessão sobre a qual se perguntava horas fora deles. Agora ele anexa até o arquivo chegar a 512 KB, e os mesmos cinco cobrem horas. A ação de rotacionar logs continua rotacionando de qualquer tamanho, que é para isso que ela serve.
+- A sonda de memória do pool System passa a imprimir a marca d'água do heap junto do que está alocado naquele instante. Toda amostra já coletada marcava zero alocado, o que diz apenas que aqueles momentos são tranquilos; o daemon reserva oito megabytes de um pool com dez livres, e a marca d'água é o número contra o qual uma reserva menor tem de ser dimensionada. Uma amostra é tirada logo depois de desempacotar um update, também -- a maior alocação que esse processo faz.

@@ -247,7 +247,7 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.5.5. Each one is tracked as an issue with what is known so far and what
+As of 2.5.6. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
 
 - **Parts of Settings are read-only or missing**
@@ -259,15 +259,19 @@ it would take to close it.
   live inside the HOME menu that SwitchU replaces, so each one has to be built
   against its own system service.
 - **Memory is tight with many sysmodules running**
-  ([#2](https://github.com/robsonbaioco/SwitchU/issues/2)). Measured on a console
-  in 2.5.2: the System pool, shared by every sysmodule on the card, sits at 221
-  of its 232 MB with about ten megabytes free, while the pool the menu itself
-  runs in has hundreds free. So this is not something the menu can fix by using
-  less; what is in SwitchU's hands is the daemon, which reserves twelve of those
-  megabytes. Sizing that down is the next step, and 2.5.3 logs what it actually
-  uses so it can be done from a real figure rather than a guess. Meanwhile the
-  System tab shows that pool's free space and the sysmodules started at boot,
-  which is the place to look when a game fails to start.
+  ([#2](https://github.com/robsonbaioco/SwitchU/issues/2)). The System pool,
+  shared by every sysmodule on the card, sits at 221 of its 232 MB with about
+  ten megabytes free, while the pool the menu itself runs in has hundreds free.
+  Forty-four samples from a console over two days, docked and handheld, with and
+  without a game running, put it at that same figure every time. So this is not
+  something the menu can fix by using less; what is in SwitchU's hands is the
+  daemon, which holds twelve of those megabytes -- eight of them a heap that
+  read as nothing allocated in all forty-four samples. Quiet moments are not
+  proof that the eight are spare, so 2.5.6 logs the heap's high-water mark as
+  well, including right after an update is unpacked. Sizing the reservation
+  against that figure is the next step. Meanwhile the System tab shows the
+  pool's free space and the sysmodules started at boot, which is the place to
+  look when a game fails to start.
 - **Half of a Joy-Con pair cannot press anything.** A Joy-Con the console
   still holds as half of a pair is reported in its upright layout however you
   hold it, so a left one has a d-pad and a stick and no action buttons at all.
