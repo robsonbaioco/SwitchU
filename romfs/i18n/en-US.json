@@ -925,7 +925,7 @@
     "update_install": "Update",
     "update_downloading": "Downloading update...",
     "update_applying": "Applying update...",
-    "update_done": "Update downloaded. Restart the console to apply it. It is applied at the next boot, which restarts once by itself and takes about a minute.",
+    "update_done": "Update downloaded. Restart the console to apply it. The first boot may take around half a minute.",
     "update_failed": "The update could not be downloaded.",
     "update_up_to_date": "SwitchU is up to date.",
     "update_check_failed": "Could not reach the update server.",

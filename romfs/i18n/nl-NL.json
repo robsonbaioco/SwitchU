@@ -919,7 +919,7 @@
     "update_install": "Bijwerken",
     "update_downloading": "Update downloaden...",
     "update_applying": "Update toepassen...",
-    "update_done": "Update gedownload. Start de console opnieuw op om hem toe te passen. Hij wordt bij de volgende start toegepast, die zichzelf een keer herstart en ongeveer een minuut duurt.",
+    "update_done": "Update gedownload. Start de console opnieuw op om hem toe te passen. De eerste keer opstarten kan ongeveer een halve minuut duren.",
     "update_failed": "De update kon niet worden gedownload.",
     "update_up_to_date": "SwitchU is up-to-date.",
     "update_check_failed": "Kon de updateserver niet bereiken.",

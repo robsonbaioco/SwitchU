@@ -919,7 +919,7 @@
     "update_install": "Actualizar",
     "update_downloading": "Descargando actualización...",
     "update_applying": "Aplicando actualización...",
-    "update_done": "Actualización descargada. Reinicia la consola para aplicarla. Se aplica en el siguiente arranque, que se reinicia solo una vez y tarda alrededor de un minuto.",
+    "update_done": "Actualización descargada. Reinicia la consola para aplicarla. El primer arranque puede tardar cerca de medio minuto.",
     "update_failed": "No se pudo descargar la actualización.",
     "update_up_to_date": "SwitchU está actualizado.",
     "update_check_failed": "No se pudo contactar con el servidor de actualizaciones.",

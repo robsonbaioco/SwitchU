@@ -925,7 +925,7 @@
     "update_install": "Atualizar",
     "update_downloading": "Baixando atualização...",
     "update_applying": "Aplicando atualização...",
-    "update_done": "Atualização baixada. Reinicie o console para aplicá-la. Ela é aplicada no próximo boot, que reinicia sozinho uma vez e leva cerca de um minuto.",
+    "update_done": "Atualização baixada. Reinicie o console para aplicá-la. O primeiro boot pode demorar cerca de meio minuto.",
     "update_failed": "Não foi possível baixar a atualização.",
     "update_up_to_date": "O SwitchU está atualizado.",
     "update_check_failed": "Não foi possível falar com o servidor de atualizações.",

@@ -919,7 +919,7 @@
     "update_install": "Aggiorna",
     "update_downloading": "Download dell'aggiornamento...",
     "update_applying": "Applicazione dell'aggiornamento...",
-    "update_done": "Aggiornamento scaricato. Riavvia la console per applicarlo. Viene applicato al prossimo avvio, che si riavvia una volta da solo e richiede circa un minuto.",
+    "update_done": "Aggiornamento scaricato. Riavvia la console per applicarlo. Il primo avvio può richiedere circa mezzo minuto.",
     "update_failed": "Non è stato possibile scaricare l'aggiornamento.",
     "update_up_to_date": "SwitchU è aggiornato.",
     "update_check_failed": "Impossibile contattare il server degli aggiornamenti.",

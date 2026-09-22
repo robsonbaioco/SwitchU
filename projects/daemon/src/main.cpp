@@ -51,6 +51,10 @@ static bool g_hidReady = false;
 // header, so it is declared here.
 extern "C" void __libnx_init_time(void);
 
+#ifndef SWITCHU_VERSION
+#define SWITCHU_VERSION "unknown"
+#endif
+
 extern "C" {
     u32 __nx_applet_type = AppletType_SystemApplet;
     u32 __nx_fs_num_sessions = 3;
@@ -187,6 +191,11 @@ extern "C" void __appInit(void) {
     }
 
     switchu::FileLog::open("daemon");
+    // Which build this is, in the log of the process itself. The menu prints
+    // its own version on the About tab, and for a long time that was the only
+    // version anybody could read -- while an update left these two out of step
+    // for a whole session, the log gave no way to notice.
+    switchu::FileLog::log("[daemon] version %s", SWITCHU_VERSION);
     switchu::FileLog::log("[daemon] __appInit complete (sd mount: 0x%X)", rc);
     switchu::FileLog::log("[daemon] services time=%d setsys=%d set=%d ns=%d ldr=%d account=%d nssu=%d avm=%d psm=%d lbl=%d hid=%d",
                           g_timeReady ? 1 : 0,
