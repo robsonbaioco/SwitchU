@@ -1,0 +1,38 @@
+{
+  "id": "example-theme",
+  "name": "Example Theme",
+  "author": "your name here",
+  "version": "1.0.0",
+
+  "theme": {
+    "mode": "dark"
+  },
+
+  "colors": {
+    "accent":           [0.55, 0.80, 0.55],
+    "cursor":           [0.55, 0.90, 0.62],
+    "background":       [0.62, 0.35, 0.10],
+    "backgroundAccent": [0.62, 0.40, 0.17],
+    "shapes":           [0.55, 0.55, 0.50]
+  },
+
+  "background": {
+    "layout": "floating",
+    "shape": "hexagons",
+    "count": 26,
+    "size": [18, 62],
+    "speed": [5, 22],
+    "wobble": 14,
+    "rotationSpeed": 0.4,
+    "roundness": 0.25,
+    "opacity": 0.9
+  },
+
+  "audio": {
+    "preset": "wiiu"
+  },
+
+  "preview": {
+    "cover": "preview/cover.jpg"
+  }
+}

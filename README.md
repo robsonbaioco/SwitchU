@@ -102,6 +102,10 @@ Pressing **+** on a game opens its panel:
 - L and R turn the page anywhere in the catalogue.
 - **Options** tunes the look directly: glass sharpness, background blur,
   background animation speed, grid columns and rows, menu music and volumes.
+- Making one is a folder with a `theme.json` in it, copied to the card --
+  colours, the drifting shapes behind the grid, a wallpaper, fonts, icons and
+  sounds. [docs/themes.md](docs/themes.md) is the guide, and
+  [docs/example-theme](docs/example-theme) a skeleton that works as it is.
 
 ### Settings
 

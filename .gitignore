@@ -142,7 +142,13 @@ id_ed25519
 # The maintained documentation, its changelog and the working audits are kept
 # beside the checkout rather than published. AGENTS.md still routes through them
 # and they still have to be written; they are simply not part of what ships.
-/docs/
+#
+# The exceptions are written for people outside the checkout, and ship: the
+# theme-authoring guide and the skeleton it tells them to copy. Listing them
+# one by one keeps everything else in here unpublished by default.
+/docs/*
+!/docs/themes.md
+!/docs/example-theme/
 
 # Agent protocols and local assistant instructions
 /AGENTS.md
