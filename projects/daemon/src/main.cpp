@@ -13,6 +13,7 @@
 #include "update_apply.hpp"
 #include "self_uninstall.hpp"
 #include "menu_launcher.hpp"
+#include "mem_probe.hpp"
 #include "library_applet_runner.hpp"
 #include "system_action_queue.hpp"
 #include <ctime>
@@ -2582,7 +2583,12 @@ int main(int argc, char* argv[]) {
     // daemon-side fix in an update looked as though it had not shipped, and a
     // command the two disagreed about had nothing to catch it. The staging is
     // already cleared and committed by now, so this boots straight through.
-    if (!uninstallPending && switchu::daemon::update::applyStagedUpdate()) {
+    const bool mustRebootForUpdate =
+        !uninstallPending && switchu::daemon::update::applyStagedUpdate();
+    // Unpacking an archive is the largest allocation this process ever makes,
+    // and with the reboot below it would be the one moment never measured.
+    switchu::daemon::mem::snapshot("after-update-apply");
+    if (mustRebootForUpdate) {
         switchu::FileLog::log("[update] applied; rebooting so the new daemon runs");
         switchu::FileLog::flush();
         requestPowerStateChange("update applied", true);
