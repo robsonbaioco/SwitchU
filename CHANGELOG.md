@@ -16,6 +16,10 @@ SwitchU keeps a copy of its configuration where a pack's clean install cannot re
 
 - Before a firmware update the CNX Updater looks for a HOME menu theme in `atmosphere/contents/0100000000001000`, which is also where SwitchU lives, and offers only to delete it or to cancel. Every firmware update through it therefore switches SwitchU off. SwitchU Manager's **Update** or **Repair installation** puts it back, and with this release the configuration returns with it if it was lost. The README describes both cases.
 
+### Renaming a game and fetching its artwork
+
+- Renaming a game that has no name of its own changed the name on screen but not the term SwitchU searches SteamGridDB with, which stayed the game's hex id until the menu restarted. Fetching artwork right after the rename therefore found nothing. The new name is now the search term straight away.
+
 ---
 
 ## Português
@@ -33,6 +37,10 @@ O SwitchU guarda uma cópia da configuração onde a instalação limpa de um pa
 ### O que o CNX Updater faz com o SwitchU
 
 - Antes de atualizar o firmware, o CNX Updater procura um tema do menu HOME em `atmosphere/contents/0100000000001000`, que é também onde o SwitchU fica, e só oferece apagar ou cancelar. Toda atualização de firmware por ele, portanto, desliga o SwitchU. O **Update** ou o **Repair installation** do SwitchU Manager o colocam de volta, e com esta versão a configuração volta junto se tiver sido perdida. O README descreve os dois casos.
+
+### Renomear um jogo e buscar a arte
+
+- Renomear um jogo sem nome próprio mudava o nome na tela, mas não o termo que o SwitchU usa para buscar no SteamGridDB, que continuava sendo o id hexadecimal do jogo até o menu reiniciar. Buscar a arte logo depois de renomear, portanto, não achava nada. Agora o nome novo passa a ser o termo de busca na hora.
 
 ---
 

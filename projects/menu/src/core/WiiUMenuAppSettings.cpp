@@ -1182,7 +1182,15 @@ void WiiUMenuApp::createGameDetails() {
                 switchu::commitSdCard("custom title");
                 for (auto& app : m_allApps) {
                     if (app.titleId != titleId) continue;
+                    const std::string previous = app.title;
                     app.title = m_config.customTitle(titleId, app.title);
+                    // The same rule composeRootPending() applies at load. Left
+                    // out here, a title with no name of its own kept its hex id
+                    // as the SteamGridDB search term until the menu restarted,
+                    // so renaming it and fetching artwork straight away found
+                    // nothing.
+                    if (app.englishTitle.empty() || app.englishTitle == previous)
+                        app.englishTitle = app.title;
                     break;
                 }
                 if (m_gameDetails && m_gameDetails->titleId() == titleId)
