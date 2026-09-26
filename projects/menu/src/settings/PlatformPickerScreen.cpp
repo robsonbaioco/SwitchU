@@ -109,16 +109,14 @@ void PlatformPickerScreen::showForTitle(std::string title) {
             if (!m_active.load(std::memory_order_acquire) ||
                 m_generation.load(std::memory_order_acquire) != currentGen) return;
             try {
-                const std::string url = std::string(GameMetadataClient::kServiceUrl)
-                    + "/v1/availability?title=" + encodeUrlComponent(queryTitle)
-                    + "&platform=" + encodeUrlComponent(slug);
-                if (!m_active.load(std::memory_order_acquire) ||
-                m_generation.load(std::memory_order_acquire) != currentGen) return;
-                const std::string jsonText = themeshop::http::getText(url);
-                if (!m_active.load(std::memory_order_acquire) ||
-                m_generation.load(std::memory_order_acquire) != currentGen) return;
-                const bool found = nlohmann::json::parse(jsonText).value("found", false);
-                result->store(found ? Availability::Available : Availability::Unavailable);
+                // This asked ncarvalho99's SwitchU API whether IGDB knew the
+                // title on each platform. That service refuses the fork since
+                // 2026-09-21, so every platform came back Unavailable and no
+                // game could be marked as a port at all. With no keyless
+                // source to ask, every platform is offered.
+                (void)queryTitle;
+                (void)slug;
+                result->store(Availability::Available);
             } catch (...) {
                 if (m_active.load(std::memory_order_acquire) &&
                     m_generation.load(std::memory_order_acquire) == currentGen) {

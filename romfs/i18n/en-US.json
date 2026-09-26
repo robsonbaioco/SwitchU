@@ -519,6 +519,14 @@
       "based_on_fork": "Based on the fork by",
       "upstream_source": "Source code (upstream)",
       "upstream_source_value": "github.com/PoloNX/SwitchU"
+    },
+    "metadata": {
+      "section": "Game details",
+      "rawg_key": "RAWG API key",
+      "rawg_hint": "Optional. Adds the metascore. Free at rawg.io/apidocs.",
+      "igdb_id": "IGDB Client ID",
+      "igdb_secret": "IGDB Client Secret",
+      "igdb_hint": "Optional. Adds time to beat. Create an application at dev.twitch.tv."
     }
   },
   "userselect": {
@@ -936,8 +944,8 @@
     "details_mods_none": "None detected",
     "details_mods_detected": "Detected",
     "details_rename": "Rename",
-      "details_rename_guide": "Enter a name. Leave it empty to use the original.",
-      "details_manage_mods": "Manage mods",
+    "details_rename_guide": "Enter a name. Leave it empty to use the original.",
+    "details_manage_mods": "Manage mods",
     "mods_title": "Mods",
     "mods_hint": "A enable/disable  •  X remove  •  B back",
     "mods_empty": "No mods were found for this game.",
@@ -991,7 +999,9 @@
     "delete_software_done": "The software was deleted.",
     "delete_software_failed": "The software could not be deleted.",
     "delete_software_files": "These folders on the SD card will be removed too:",
-    "non_game_options_body_folder": "Homebrew and ports have no game details, artwork or mods to manage. They can be filed into a folder or removed."
+    "non_game_options_body_folder": "Homebrew and ports have no game details, artwork or mods to manage. They can be filed into a folder or removed.",
+    "details_single_player": "Single player",
+    "details_multiplayer": "Multiplayer"
   },
   "platform_picker": {
     "title": "Original Platform",

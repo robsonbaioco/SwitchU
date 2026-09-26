@@ -102,7 +102,7 @@ void GameDetailsScreen::openForGame(std::uint64_t titleId, std::string title,
     m_focusArea = FocusArea::Content;
     m_localOnly = m_metadataPlatform.empty();
     if (m_pool && !m_localOnly)
-        m_client.load(*m_pool, m_searchTitle, m_metadataPlatform);
+        m_client.load(*m_pool, m_titleId, m_searchTitle, m_metadataPlatform);
 }
 
 void GameDetailsScreen::buildTabs() {
@@ -124,7 +124,7 @@ void GameDetailsScreen::updateSearchTitle(std::string searchTitle) {
     m_seenRevision = 0;
     m_localOnly = m_metadataPlatform.empty();
     if (m_pool && !m_localOnly)
-        m_client.load(*m_pool, m_searchTitle, m_metadataPlatform);
+        m_client.load(*m_pool, m_titleId, m_searchTitle, m_metadataPlatform);
 }
 
 void GameDetailsScreen::clearImages() {
@@ -243,8 +243,17 @@ nxui::Rect GameDetailsScreen::fitTexture(const nxui::Rect& rect, const nxui::Tex
 std::string GameDetailsScreen::ellipsize(nxui::Font* font, const std::string& text, float maxWidth, float scale) {
     if (!font || text.empty() || font->measure(text).x * scale <= maxWidth) return text;
     std::string result = text;
-    while (!result.empty() && font->measure(result + "...").x * scale > maxWidth)
-        result.pop_back();
+    // Drop a whole UTF-8 character at a time: a lone lead byte left at the end
+    // renders as garbage, and most of the text here is not ASCII.
+    while (!result.empty() && font->measure(result + "...").x * scale > maxWidth) {
+        // Continuation bytes are 10xxxxxx; stop once the lead byte is gone.
+        while (!result.empty()) {
+            const unsigned char last = static_cast<unsigned char>(result.back());
+            result.pop_back();
+            if ((last & 0xC0) != 0x80)
+                break;
+        }
+    }
     return result.empty() ? "..." : result + "...";
 }
 
@@ -308,7 +317,7 @@ bool GameDetailsScreen::handleCustomPressA() {
     // does not have stays absent, and the service remembers that answer for a
     // day, so retrying it would spend a request to be told the same thing.
     if (!m_localOnly && m_snapshot.phase == GameMetadataClient::Phase::Failed) {
-        if (m_pool) m_client.load(*m_pool, m_searchTitle, m_metadataPlatform);
+        if (m_pool) m_client.load(*m_pool, m_titleId, m_searchTitle, m_metadataPlatform);
         if (m_activateSfxCb) m_activateSfxCb();
         return true;
     }
@@ -559,7 +568,7 @@ void GameDetailsScreen::drawCustomContent(nxui::Renderer& ren, const nxui::Rect&
     const std::string publisherNames = join(m_snapshot.publishers);
     const std::string source = onlineMatch
         ? i18n.tr("dialog.details_publishers", "Publishers") + ": "
-            + (publisherNames.empty() ? "â€”" : publisherNames)
+            + (publisherNames.empty() ? "—" : publisherNames)
         : i18n.tr("dialog.details_local", "Local software details");
     ren.drawText(ellipsize(m_smallFont, source, scoreX - main.x - 28.f, 0.76f),
                   {main.x + 20.f, main.y + 51.f}, m_smallFont, secondary, 0.76f);
@@ -643,7 +652,7 @@ void GameDetailsScreen::drawCustomContent(nxui::Renderer& ren, const nxui::Rect&
     const float metadataGap = 14.f;
     const float metadataW = (main.width - 40.f - metadataGap) * 0.5f;
     auto metadata = [&](float x, float y, const std::string& label, const std::string& value) {
-        const std::string text = label + ": " + (value.empty() ? "â€”" : value);
+        const std::string text = label + ": " + (value.empty() ? "—" : value);
         ren.drawText(ellipsize(m_smallFont, text, metadataW, 0.57f), {x, y},
                      m_smallFont, subtle, 0.57f);
     };

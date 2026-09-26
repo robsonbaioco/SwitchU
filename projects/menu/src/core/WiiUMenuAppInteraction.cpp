@@ -1621,6 +1621,8 @@ void WiiUMenuApp::showGameDetails(std::uint64_t titleId, const std::string& titl
         ? m_config.gamePortPlatform(titleId)
         : (isNativeApplicationId(titleId) ? "nintendo-switch" : std::string());
     const std::string searchTitle = m_config.gamePortSearchTitle(titleId, title);
+    m_gameDetails->setMetadataKeys({m_config.rawgApiKey, m_config.igdbClientId,
+                                    m_config.igdbClientSecret});
     m_gameDetails->openForGame(titleId, title, searchTitle, std::move(cover), liveCover,
                                 installedDisplayVersion(titleId), installedModSummary(titleId),
                                 installedPlayTime(titleId), metadataPlatform,

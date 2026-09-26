@@ -556,6 +556,35 @@ void WiiUMenuApp::editSteamGridDbApiKey() {
     });
 }
 
+void WiiUMenuApp::editMetadataKey(int index) {
+    if (index < 0 || index > 2) return;
+    auto& i18n = nxui::I18n::instance();
+    std::string* const fields[] = {&m_config.rawgApiKey, &m_config.igdbClientId,
+                                   &m_config.igdbClientSecret};
+    const char* const titles[] = {"RAWG", "IGDB Client ID", "IGDB Client Secret"};
+    // Not masked, for the reason given in editSteamGridDbApiKey().
+    requestTextEntry(i18n.tr("settings.metadata.section", "Game details"), titles[index],
+                     *fields[index], 192, false,
+                     [this, field = fields[index]](const std::string& typed) {
+        // A key pasted with a stray space fails every request.
+        const auto first = typed.find_first_not_of(" \t\r\n");
+        *field = first == std::string::npos
+            ? std::string()
+            : typed.substr(first, typed.find_last_not_of(" \t\r\n") - first + 1);
+        m_config.save();
+        if (m_settings) {
+            m_settings->setMetadataKeyState(!m_config.rawgApiKey.empty(),
+                                            !m_config.igdbClientId.empty(),
+                                            !m_config.igdbClientSecret.empty());
+            m_settings->refreshCurrentTabWidgets();
+            m_settings->requestToast(field->empty()
+                ? nxui::I18n::instance().tr("settings.steamgriddb.key_cleared", "API key cleared.")
+                : nxui::I18n::instance().tr("settings.steamgriddb.key_saved", "API key saved."));
+            focusManager().setFocus(m_settings.get());
+        }
+    });
+}
+
 void WiiUMenuApp::startSteamGridDbScrape() {
     // No key is required: an empty key routes the manager through this fork's
     // gallery service. A key only adds the logo source the proxy does not have.

@@ -88,6 +88,9 @@ bool AppConfig::load() {
     readJsonOpt(j, "accessibilitySpeechRate", accessibilitySpeechRate);
     readJsonOpt(j, "steamGridDbEnabled", steamGridDbEnabled);
     readJsonOpt(j, "steamGridDbApiKey", steamGridDbApiKey);
+    readJsonOpt(j, "rawgApiKey", rawgApiKey);
+    readJsonOpt(j, "igdbClientId", igdbClientId);
+    readJsonOpt(j, "igdbClientSecret", igdbClientSecret);
     readJsonOpt(j, "themePreset", themePreset);
     readJsonOpt(j, "lastPageTitleId", lastPageTitleId);
     readJsonOpt(j, "sortMode", sortMode);
@@ -187,6 +190,9 @@ bool AppConfig::save() const {
     j["accessibilitySpeechRate"] = std::clamp(accessibilitySpeechRate, 120, 320);
     j["steamGridDbEnabled"] = steamGridDbEnabled;
     j["steamGridDbApiKey"] = steamGridDbApiKey;
+    j["rawgApiKey"] = rawgApiKey;
+    j["igdbClientId"] = igdbClientId;
+    j["igdbClientSecret"] = igdbClientSecret;
     j["themePreset"] = themePreset;
     j["lastPageTitleId"] = lastPageTitleId;
     j["sortMode"] = sortMode;

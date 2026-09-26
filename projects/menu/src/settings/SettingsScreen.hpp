@@ -41,6 +41,14 @@ public:
     void onConsoleNicknameRequest(VoidCb cb) { m_consoleNicknameCb = std::move(cb); }
     void onRotateLogsRequest(VoidCb cb) { m_rotateLogsCb = std::move(cb); }
     void onSteamGridDbScrapeRequest(VoidCb cb) { m_steamGridDbScrapeCb = std::move(cb); }
+    // Keys for the dossier sources; see GameMetadataClient. 0 RAWG, 1 IGDB client
+    // id, 2 IGDB client secret.
+    void onMetadataKeyRequest(std::function<void(int)> cb) { m_metadataKeyCb = std::move(cb); }
+    void setMetadataKeyState(bool rawg, bool igdbId, bool igdbSecret) {
+        m_metadataHasKey[0] = rawg;
+        m_metadataHasKey[1] = igdbId;
+        m_metadataHasKey[2] = igdbSecret;
+    }
     void onControllerPairing(VoidCb cb) { m_controllerPairingCb = std::move(cb); }
     void onControllerRemapping(VoidCb cb) { m_controllerRemappingCb = std::move(cb); }
     void onControllerTest(VoidCb cb) { m_controllerTestCb = std::move(cb); }
@@ -141,6 +149,8 @@ private:
     VoidCb m_consoleNicknameCb;
     VoidCb m_rotateLogsCb;
     VoidCb m_steamGridDbScrapeCb;
+    std::function<void(int)> m_metadataKeyCb;
+    bool m_metadataHasKey[3] = {false, false, false};
     VoidCb m_controllerPairingCb;
     VoidCb m_controllerRemappingCb;
     VoidCb m_controllerTestCb;

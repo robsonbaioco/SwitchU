@@ -39,4 +39,8 @@ std::uint64_t getToFile(const std::string& url,
 std::string getText(const std::string& url,
                     const std::list<std::string>& headers = {});
 
+// POST with the given body; same retries and errors as getText.
+std::string postText(const std::string& url, const std::string& body,
+                     const std::list<std::string>& headers = {});
+
 } // namespace themeshop::http

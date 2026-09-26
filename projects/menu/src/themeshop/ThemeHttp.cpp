@@ -6,6 +6,7 @@
 #include <switch.h>
 
 #include <cstdio>
+#include <cstring>
 #include <atomic>
 #include <mutex>
 #include <stdexcept>
@@ -154,15 +155,33 @@ size_t writeDownload(char* data, size_t size, size_t count, void* userData) {
     return bytes;
 }
 
+// For the log only. RAWG takes its API key as a query parameter, and menu.log
+// is the file players attach to bug reports.
+std::string redactedUrl(std::string url) {
+    for (const char* name : {"?key=", "&key="}) {
+        const std::size_t at = url.find(name);
+        if (at == std::string::npos) continue;
+        const std::size_t start = at + std::strlen(name);
+        const std::size_t end = url.find('&', start);
+        url.replace(start, end == std::string::npos ? std::string::npos : end - start, "***");
+    }
+    return url;
+}
+
 std::vector<std::uint8_t> performRequestBytes(const std::string& url,
                                               const std::list<std::string>& headers,
-                                              const themeshop::http::ProgressCallback& onProgress) {
+                                              const themeshop::http::ProgressCallback& onProgress,
+                                              const std::string* postBody = nullptr) {
     CURL* request = curl_easy_init();
     if (!request)
         throw std::runtime_error("Could not create HTTP request");
 
     std::string response;
     curl_easy_setopt(request, CURLOPT_URL, url.c_str());
+    if (postBody) {
+        curl_easy_setopt(request, CURLOPT_POSTFIELDS, postBody->data());
+        curl_easy_setopt(request, CURLOPT_POSTFIELDSIZE, static_cast<long>(postBody->size()));
+    }
     curl_easy_setopt(request, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(request, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(request, CURLOPT_CONNECTTIMEOUT, 4L);
@@ -207,7 +226,8 @@ std::vector<std::uint8_t> performRequestBytes(const std::string& url,
 
 std::vector<std::uint8_t> performBytes(const std::string& url,
                                        const std::list<std::string>& headers,
-                                       const themeshop::http::ProgressCallback& onProgress = {}) {
+                                       const themeshop::http::ProgressCallback& onProgress = {},
+                                       const std::string* postBody = nullptr) {
     std::lock_guard<std::mutex> lk(g_themeHttpMutex);
 
     std::string lastError = "Theme Shop HTTP request failed";
@@ -220,9 +240,9 @@ std::vector<std::uint8_t> performBytes(const std::string& url,
             }
 
             ensureInternetConnectionReady(url);
-            auto bytes = performRequestBytes(url, headers, onProgress);
+            auto bytes = performRequestBytes(url, headers, onProgress, postBody);
             if (attempt > 1) {
-                DebugLog::log("[themeshop] request recovered on retry %d: %s", attempt, url.c_str());
+                DebugLog::log("[themeshop] request recovered on retry %d: %s", attempt, redactedUrl(url).c_str());
             }
             return bytes;
         } catch (const std::exception& ex) {
@@ -230,14 +250,14 @@ std::vector<std::uint8_t> performBytes(const std::string& url,
             DebugLog::log("[themeshop] request failed (%d/%d): %s -> %s",
                           attempt,
                           kRequestAttemptCount,
-                          url.c_str(),
+                          redactedUrl(url).c_str(),
                           ex.what());
         } catch (...) {
             lastError = "Unknown HTTP error";
             DebugLog::log("[themeshop] request failed (%d/%d): %s -> unknown error",
                           attempt,
                           kRequestAttemptCount,
-                          url.c_str());
+                          redactedUrl(url).c_str());
         }
 
         if (g_cancelPendingRequests.load(std::memory_order_acquire))
@@ -343,7 +363,7 @@ std::uint64_t getToFile(const std::string& url,
             std::remove(destinationPath.c_str());    // nada pela metade fica no cartao
             lastError = ex.what();
             DebugLog::log("[themeshop] package download failed (%d/%d): %s -> %s",
-                          attempt, kRequestAttemptCount, url.c_str(), lastError.c_str());
+                          attempt, kRequestAttemptCount, redactedUrl(url).c_str(), lastError.c_str());
             if (g_cancelPendingRequests.load(std::memory_order_acquire))
                 break;
             if (attempt < kRequestAttemptCount)
@@ -357,6 +377,12 @@ std::uint64_t getToFile(const std::string& url,
 std::string getText(const std::string& url,
                     const std::list<std::string>& headers) {
     auto bytes = performBytes(url, headers);
+    return std::string(bytes.begin(), bytes.end());
+}
+
+std::string postText(const std::string& url, const std::string& body,
+                     const std::list<std::string>& headers) {
+    auto bytes = performBytes(url, headers, {}, &body);
     return std::string(bytes.begin(), bytes.end());
 }
 

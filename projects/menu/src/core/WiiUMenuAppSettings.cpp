@@ -317,6 +317,9 @@ void WiiUMenuApp::createSettings() {
                                                   m_config.accessibilitySpeakPosition);
     m_settings->setSteamGridDbState(m_config.steamGridDbEnabled,
                                     !m_config.steamGridDbApiKey.empty());
+    m_settings->setMetadataKeyState(!m_config.rawgApiKey.empty(),
+                                    !m_config.igdbClientId.empty(),
+                                    !m_config.igdbClientSecret.empty());
 
     m_settings->onNavigateSfx([this]() { m_audio.playSfx(Sfx::Navigate); });
     m_settings->onActivateSfx([this]() { m_audio.playSfx(Sfx::Activate); });
@@ -497,6 +500,9 @@ void WiiUMenuApp::createSettings() {
     });
     m_settings->onSteamGridDbApiKeyRequest([this]() {
         editSteamGridDbApiKey();
+    });
+    m_settings->onMetadataKeyRequest([this](int index) {
+        editMetadataKey(index);
     });
     m_settings->onRotateLogsRequest([this]() {
         auto& i18n = nxui::I18n::instance();

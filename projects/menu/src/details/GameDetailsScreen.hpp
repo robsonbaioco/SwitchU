@@ -45,6 +45,7 @@ public:
     // and everything else untouched -- only the string sent to the catalogue
     // changes.
     void updateSearchTitle(std::string searchTitle);
+    void setMetadataKeys(GameMetadataClient::Keys keys) { m_client.setKeys(std::move(keys)); }
     bool isImageExpanded() const { return m_imageExpanded; }
     std::uint64_t titleId() const { return m_titleId; }
     const std::string& title() const { return m_title; }

@@ -60,7 +60,41 @@ SettingsScreen::Tab settings::tabs::SteamGridDbTab::build(SettingsScreen& screen
     };
     tab.items.push_back(std::move(scan));
 
-    tab.onUpdate = [](SettingsScreen::Tab& current, TabbedOverlayScreen& base) {
+    // The dossier's metascore and time to beat come from services that need a
+    // key of the player's own. Kept next to the SteamGridDB key, the other one.
+    SettingItem detailsSection;
+    detailsSection.type = ItemType::Section;
+    detailsSection.label = i18n.tr("settings.metadata.section", "Game details");
+    tab.items.push_back(std::move(detailsSection));
+
+    struct KeyField { const char* labelKey; const char* label; const char* hintKey; const char* hint; };
+    static constexpr KeyField kKeyFields[] = {
+        {"settings.metadata.rawg_key", "RAWG API key",
+         "settings.metadata.rawg_hint", "Optional. Adds the metascore. Free at rawg.io/apidocs."},
+        {"settings.metadata.igdb_id", "IGDB Client ID",
+         "settings.metadata.igdb_hint", "Optional. Adds time to beat. Create an application at dev.twitch.tv."},
+        {"settings.metadata.igdb_secret", "IGDB Client Secret",
+         "settings.metadata.igdb_hint", "Optional. Adds time to beat. Create an application at dev.twitch.tv."},
+    };
+    const auto keyDescription = [](const SettingsScreen& owner, int index) {
+        auto& tr = nxui::I18n::instance();
+        return owner.m_metadataHasKey[index]
+            ? tr.tr("settings.steamgriddb.api_key_set", "Configured (hidden)")
+            : tr.tr(kKeyFields[index].hintKey, kKeyFields[index].hint);
+    };
+    for (int index = 0; index < 3; ++index) {
+        SettingItem field;
+        field.type = ItemType::Action;
+        field.label = i18n.tr(kKeyFields[index].labelKey, kKeyFields[index].label);
+        field.buttonLabel = i18n.tr("button.configure", "Configure");
+        field.description = keyDescription(screen, index);
+        field.onChange = [&screen, index](SettingItem&) {
+            if (screen.m_metadataKeyCb) screen.m_metadataKeyCb(index);
+        };
+        tab.items.push_back(std::move(field));
+    }
+
+    tab.onUpdate = [keyDescription](SettingsScreen::Tab& current, TabbedOverlayScreen& base) {
         auto& owner = static_cast<SettingsScreen&>(base);
         if (current.items.size() < 4) return;
 
@@ -69,6 +103,10 @@ SettingsScreen::Tab settings::tabs::SteamGridDbTab::build(SettingsScreen& screen
             ? nxui::I18n::instance().tr("settings.steamgriddb.api_key_set", "Configured (hidden)")
             : nxui::I18n::instance().tr("settings.steamgriddb.api_key_optional",
                   "Optional. Heroes and icons work without it; logos need one.");
+        if (current.items.size() < 8) return;
+        for (int index = 0; index < 3; ++index)
+            current.items[static_cast<std::size_t>(5 + index)].description =
+                keyDescription(owner, index);
     };
 
     return tab;

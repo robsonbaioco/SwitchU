@@ -34,6 +34,11 @@ struct AppConfig {
     int   accessibilitySpeechRate = 190;
     bool  steamGridDbEnabled = true;
     std::string steamGridDbApiKey;
+    // Game details in the dossier. Each player brings their own keys: RAWG
+    // for the metascore, a Twitch application for IGDB time-to-beat.
+    std::string rawgApiKey;
+    std::string igdbClientId;
+    std::string igdbClientSecret;
 
     // Softens the wallpaper and the shapes drifting over it.
     // This was zero on the argument that the blur costs half the wallpaper's

@@ -265,6 +265,8 @@ private:
     void createTextEntry();
     std::string defaultFolderName() const;
     void editSteamGridDbApiKey();
+    // 0 RAWG key, 1 IGDB client id, 2 IGDB client secret.
+    void editMetadataKey(int index);
     void startSteamGridDbScrape();
     void openSteamGridDbPicker(GameOptionsScreen::ArtworkKind kind,
                                 const std::string& query = std::string());
