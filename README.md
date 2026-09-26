@@ -260,7 +260,7 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.5.6. Each one is tracked as an issue with what is known so far and what
+As of 2.5.7. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
 
 - **Parts of Settings are read-only or missing**

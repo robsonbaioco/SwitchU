@@ -1,4 +1,4 @@
-# SwitchU 2.5.7 (unreleased)
+# SwitchU 2.5.7
 
 SwitchU Manager can put SwitchU back after an Atmosphere update removes it.
 
