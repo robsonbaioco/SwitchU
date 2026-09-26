@@ -18,6 +18,7 @@
 #include <future>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace switchu::manager {
 
@@ -48,6 +49,7 @@ private:
     void startUpdateInstall(bool repair);
     bool repairAvailable() const;
     void syncUpdater();
+    void releaseRomfs();
     void beginUpdateInputBlock();
     void endUpdateInputBlock();
     void showError(ToggleError error, int detail);
@@ -56,6 +58,9 @@ private:
     void focusFirstAvailable();
 
     nxui::Theme m_theme = nxui::Theme::dark();
+    // Backing store for the three fonts below; must outlive them.
+    std::vector<unsigned char> m_fontData;
+    bool m_romfsReleased = false;
     nxui::Font m_titleFont;
     nxui::Font m_bodyFont;
     nxui::Font m_smallFont;

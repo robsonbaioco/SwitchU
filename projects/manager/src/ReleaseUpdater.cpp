@@ -507,7 +507,11 @@ ReleaseInfo ReleaseUpdater::checkLatest() {
             const std::string normalized = lower(name);
             if (!endsWith(normalized, ".zip")) continue;
             int score = 0;
-            if (normalized == "switchu.zip") score += 100;
+            // SwitchU.zip is the payload without this Manager's .nro, published
+            // for the 2.5.6 and 2.5.7 Managers: they rank that exact name first
+            // and cannot replace their own file. A Manager that can goes for
+            // the complete archive instead.
+            if (normalized == "switchu.zip") score -= 100;
             if (normalized.find("switchu") != std::string::npos) score += 20;
             if (normalized.find("source") != std::string::npos) score -= 50;
             if (score <= bestScore) continue;

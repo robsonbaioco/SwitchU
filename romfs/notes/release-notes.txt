@@ -1,6 +1,6 @@
-Repairing after an Atmosphere update
-- Packs that update Atmosphere, such as the CNX Pack, clear atmosphere/contents and take the file that puts SwitchU in place of the HOME menu with them. When that file is missing, SwitchU Manager now offers Repair installation: it downloads the version you already have again and puts the file back, keeping your configuration and themes. A restart finishes it.
+Updating from SwitchU Manager
+- Updates started from SwitchU Manager failed and rolled back, because the Manager held its own file open. It now lets go of it before installing, so updates and the repair added in 2.5.7 go through. With SwitchU running, update from this Update tab instead: the menu holds its own files open, and the Manager is for when SwitchU is off or missing.
 --pt-BR--
 
-Reparar depois de atualizar o Atmosphere
-- Packs que atualizam o Atmosphere, como o CNX Pack, limpam atmosphere/contents e levam junto o arquivo que coloca o SwitchU no lugar do menu HOME. Quando esse arquivo está faltando, o SwitchU Manager agora oferece Repair installation: baixa de novo a versão que você já tem e devolve o arquivo, mantendo sua configuração e seus temas. Um reinício conclui.
+Atualizar pelo SwitchU Manager
+- Updates iniciados pelo SwitchU Manager falhavam e eram desfeitos, porque o Manager mantinha o próprio arquivo aberto. Agora ele solta o arquivo antes de instalar, então os updates e o reparo que entrou na 2.5.7 vão até o fim. Com o SwitchU rodando, atualize por esta aba Update: o menu mantém os próprios arquivos abertos, e o Manager é para quando o SwitchU está desligado ou faltando.

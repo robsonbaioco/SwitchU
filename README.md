@@ -198,7 +198,7 @@ launcher does not own: your themes, artwork and settings live under
 > through a single file there, `atmosphere/contents/0100000000001000/exefs.nsp`.
 > When that file is gone, the console boots into Nintendo's HOME menu and
 > SwitchU Manager reports "SwitchU state unavailable". Open the Manager and
-> choose **Repair installation** (from 2.5.7 on), or copy that one file from the
+> choose **Repair installation** (from 2.5.8 on), or copy that one file from the
 > release archive back to the card and restart.
 
 ## How to build
@@ -265,7 +265,7 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.5.7. Each one is tracked as an issue with what is known so far and what
+As of 2.5.8. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
 
 - **Parts of Settings are read-only or missing**
@@ -302,7 +302,7 @@ it would take to close it.
   has also been seen to delete `config/SwitchU` -- settings, themes, folders,
   artwork and logs. SwitchU cannot protect that folder from a pack, so back it
   up first. The console then boots into Nintendo's HOME menu, and SwitchU
-  Manager says the override was not found. From 2.5.7 on, the Manager offers
+  Manager says the override was not found. From 2.5.8 on, the Manager offers
   **Repair installation**, which downloads the release you already have again
   and puts the file back. See [Installing](#installing).
 - **A title with no name of its own shows its title id.** Some releases --

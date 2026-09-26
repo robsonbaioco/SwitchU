@@ -68,9 +68,28 @@ bool ManagerActivity::onCreate() {
     auto& renderer = app().renderer();
     renderer.setBoxWireframeEnabled(false);
 
-    if (!m_titleFont.load(app().gpu(), renderer, "romfs:/fonts/DejaVuSans.ttf", 34)
-        || !m_bodyFont.load(app().gpu(), renderer, "romfs:/fonts/DejaVuSans.ttf", 24)
-        || !m_smallFont.load(app().gpu(), renderer, "romfs:/fonts/DejaVuSans.ttf", 18)) {
+    // The font is read into memory rather than opened from romfs: SDL_ttf would
+    // keep that file open for the whole session, and romfs is the Manager's own
+    // .nro. Horizon will not rename a file somebody holds open, so an update
+    // could never replace the Manager itself (see releaseRomfs()).
+    if (std::FILE* file = std::fopen("romfs:/fonts/DejaVuSans.ttf", "rb")) {
+        std::fseek(file, 0, SEEK_END);
+        const long size = std::ftell(file);
+        std::fseek(file, 0, SEEK_SET);
+        if (size > 0) {
+            m_fontData.resize(static_cast<std::size_t>(size));
+            if (std::fread(m_fontData.data(), 1, m_fontData.size(), file) != m_fontData.size())
+                m_fontData.clear();
+        }
+        std::fclose(file);
+    }
+    auto loadFont = [&](nxui::Font& font, int size) {
+        return !m_fontData.empty()
+            && font.loadFromMemory(app().gpu(), renderer,
+                                   m_fontData.data(), m_fontData.size(), size);
+    };
+    if (!loadFont(m_titleFont, 34) || !loadFont(m_bodyFont, 24)
+        || !loadFont(m_smallFont, 18)) {
         switchu::FileLog::log("[ui] font loading failed");
         return false;
     }
@@ -444,6 +463,7 @@ void ManagerActivity::startUpdateInstall(bool repair) {
     m_lastInstallPercent = -1;
     m_lastUpdateStage = static_cast<int>(UpdateWorkerStage::Idle);
     m_updateState = UpdateUiState::Installing;
+    releaseRomfs();
     beginUpdateInputBlock();
     m_updateProgressDialog->show(repair
         ? tr("manager.repair_progress_title", "Repairing SwitchU")
@@ -458,6 +478,21 @@ void ManagerActivity::startUpdateInstall(bool repair) {
                                            m_updateWorkerStage);
         });
     refreshPresentation();
+}
+
+// The payload contains switch/SwitchU-Manager/SwitchU-Manager.nro, the file
+// this process is running from. hbloader lets go of it once the code is loaded;
+// romfs keeps it open for as long as it is mounted, and Horizon refuses to
+// rename an open file: every update from the Manager failed with "Unable to
+// back up" on its own .nro and rolled back. Everything the Manager reads from
+// romfs -- shaders, translations, the font -- is in memory by now, so unmounting
+// it lets the install replace the Manager like any other file.
+void ManagerActivity::releaseRomfs() {
+    if (m_romfsReleased)
+        return;
+    const Result rc = romfsExit();
+    m_romfsReleased = R_SUCCEEDED(rc);
+    switchu::FileLog::log("[updater] romfs released result=0x%X", rc);
 }
 
 void ManagerActivity::syncUpdater() {

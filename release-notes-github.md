@@ -1,22 +1,27 @@
-# SwitchU 2.5.7
+# SwitchU 2.5.8
 
-SwitchU Manager can put SwitchU back after an Atmosphere update removes it.
+SwitchU Manager can install updates again, including the file it runs from.
 
 ## English
 
-### Repairing after an Atmosphere update
+### Updating from SwitchU Manager
 
-- SwitchU takes the place of the HOME menu through one file, `atmosphere/contents/0100000000001000/exefs.nsp`. Packs that update Atmosphere and the firmware, the CNX Pack among them, clear `atmosphere/contents`, and that file goes with it. The console then boots into Nintendo's HOME menu, and SwitchU Manager could only say that the override was not found and that the operation was blocked. The Manager's update button said "Up to date", which was true and did not help.
-- When the file is missing and the latest release on GitHub is the version already installed, the button now reads **Repair installation**. It downloads that release again and installs it the same way an update does: the archive is checked first, every file goes in by rename, and any failure puts the old files back. The file is restored enabled, your configuration and themes are left alone, and a restart finishes it. When a newer release exists, the usual update restores the file too.
+- Every update started from SwitchU Manager failed with "Unable to back up sdmc:/switch/SwitchU-Manager/SwitchU-Manager.nro" and was rolled back. The Manager read its font from inside its own .nro and held that file open for as long as it ran. Horizon will not rename an open file, and replacing a file means renaming it. Nothing was damaged -- the rollback put every file back -- but nothing was installed either, the repair added in 2.5.7 included.
+- The Manager now reads the font into memory when it starts, and lets go of its own file before an install begins, so an update replaces the Manager like any other file.
+- The fix lives in the Manager that runs the update, so a 2.5.6 or 2.5.7 Manager still cannot replace itself. This release therefore also carries **SwitchU.zip**, the same payload without the Manager's .nro. Those Managers choose it on their own, so "Update to v2.5.8" works from them: it installs the menu and the daemon, puts the HOME menu override back if it was missing, and leaves the old Manager in place. The Manager catches up with the next update from SwitchU's own Update tab, or by copying the complete archive to the card.
+- **For a manual install, download SwitchU-2.5.8.zip**, the complete archive. SwitchU.zip is only there for the old Managers.
+- With SwitchU running, the menu holds its own font open in `switch/SwitchU`, so an update from the Manager fails the same way and rolls back. Update from the Update tab in SwitchU instead; the Manager is for when SwitchU is off or missing.
 
 ---
 
 ## Português
 
-O SwitchU Manager consegue colocar o SwitchU de volta depois que uma atualização do Atmosphere o remove.
+O SwitchU Manager volta a conseguir instalar updates, inclusive o arquivo de onde ele mesmo roda.
 
-### Reparar depois de atualizar o Atmosphere
+### Atualizar pelo SwitchU Manager
 
-- O SwitchU ocupa o lugar do menu HOME por meio de um único arquivo, `atmosphere/contents/0100000000001000/exefs.nsp`. Packs que atualizam o Atmosphere e o firmware, como o CNX Pack, limpam `atmosphere/contents`, e esse arquivo vai junto. O console então inicia no menu HOME da Nintendo, e o SwitchU Manager só conseguia dizer que o override não foi encontrado e que a operação estava bloqueada. O botão de atualização do Manager dizia "Up to date", o que era verdade e não ajudava.
-- Quando o arquivo está faltando e a release mais recente no GitHub é a versão já instalada, o botão passa a dizer **Repair installation**. Ele baixa essa release de novo e a instala do mesmo jeito que um update: o arquivo é verificado antes, cada arquivo entra por renomeação e qualquer falha devolve os arquivos antigos. O arquivo volta ativado, sua configuração e seus temas ficam intactos, e um reinício conclui. Quando existe uma release mais nova, o update normal também devolve o arquivo.
-
+- Todo update iniciado pelo SwitchU Manager falhava com "Unable to back up sdmc:/switch/SwitchU-Manager/SwitchU-Manager.nro" e era desfeito. O Manager lia a fonte de dentro do próprio .nro e mantinha esse arquivo aberto enquanto rodava. O Horizon não renomeia um arquivo aberto, e substituir um arquivo é renomeá-lo. Nada era danificado -- o rollback devolvia todos os arquivos -- mas nada era instalado também, incluindo o reparo que entrou na 2.5.7.
+- Agora o Manager lê a fonte para a memória ao abrir e solta o próprio arquivo antes de começar uma instalação, então um update substitui o Manager como qualquer outro arquivo.
+- A correção fica no Manager que roda o update, então um Manager 2.5.6 ou 2.5.7 continua sem conseguir se substituir. Por isso esta release também traz o **SwitchU.zip**, o mesmo pacote sem o .nro do Manager. Esses Managers escolhem ele sozinhos, então "Update to v2.5.8" funciona a partir deles: instala o menu e o daemon, recoloca o override do menu HOME se ele estava faltando e deixa o Manager antigo onde está. O Manager se atualiza no próximo update feito pela aba Update do próprio SwitchU, ou copiando o pacote completo para o cartão.
+- **Para instalar manualmente, baixe o SwitchU-2.5.8.zip**, o pacote completo. O SwitchU.zip só existe para os Managers antigos.
+- Com o SwitchU rodando, o menu mantém a própria fonte aberta em `switch/SwitchU`, então um update pelo Manager falha do mesmo jeito e é desfeito. Nesse caso, atualize pela aba Update do SwitchU; o Manager é para quando o SwitchU está desligado ou faltando.
