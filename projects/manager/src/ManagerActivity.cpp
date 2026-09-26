@@ -282,7 +282,10 @@ void ManagerActivity::refreshPresentation() {
     } else if (m_snapshot.state == InstallationState::Missing) {
         m_detailLabel->setText(tr("manager.missing",
             "SwitchU's Atmosphere override was not found on the SD card."));
-        m_noticeLabel->setText(tr("manager.operation_blocked", "Operation blocked for safety"));
+        m_noticeLabel->setText(repairAvailable()
+            ? tr("manager.repair_hint",
+                 "An Atmosphere update may have removed it. Repair to restore it.")
+            : tr("manager.operation_blocked", "Operation blocked for safety"));
     } else {
         m_detailLabel->setText(runtimeEnabled
             ? tr("manager.enabled_detail", "The SwitchU HOME menu is configured for this boot.")
@@ -316,13 +319,17 @@ void ManagerActivity::refreshPresentation() {
             updateText = tr("manager.update_to", "Update to ") + m_latestRelease.version;
             break;
         case UpdateUiState::UpToDate:
-            updateText = tr("manager.up_to_date", "Up to date")
-                + std::string(" (v") + ReleaseUpdater::kCurrentVersion + ")";
+            updateText = repairAvailable()
+                ? tr("manager.repair", "Repair installation")
+                : tr("manager.up_to_date", "Up to date")
+                    + std::string(" (v") + ReleaseUpdater::kCurrentVersion + ")";
             break;
         case UpdateUiState::Installing: {
             const int percent = std::clamp(
                 static_cast<int>(m_updateInstallProgress.load() * 100.f), 0, 100);
-            updateText = tr("manager.updating", "Updating...") + std::string(" ")
+            updateText = (m_repairing
+                    ? tr("manager.repairing", "Repairing...")
+                    : tr("manager.updating", "Updating...")) + std::string(" ")
                 + std::to_string(percent) + "%";
             break;
         }
@@ -361,6 +368,16 @@ void ManagerActivity::focusFirstAvailable() {
         focusManager().setFocus(m_updateButton.button.get());
 }
 
+bool ManagerActivity::repairAvailable() const {
+    // Packs that update Atmosphere often wipe atmosphere/contents, taking the
+    // qlaunch override with them. Reinstalling the release this Manager came
+    // from puts it back; any other version goes through the normal update.
+    return m_snapshot.state == InstallationState::Missing
+        && !m_restartRequired
+        && m_updateState == UpdateUiState::UpToDate
+        && m_latestRelease.matchesCurrent;
+}
+
 void ManagerActivity::startUpdateCheck() {
     if (m_loading || m_rebooting || m_restartRequired
         || m_updateState == UpdateUiState::Checking
@@ -375,6 +392,22 @@ void ManagerActivity::startUpdateCheck() {
 }
 
 void ManagerActivity::requestUpdate() {
+    if (repairAvailable()) {
+        m_dialog->show(
+            tr("manager.repair_confirm_title", "Repair SwitchU?"),
+            tr("manager.repair_confirm_message", "Download SwitchU ")
+                + m_latestRelease.version
+                + tr("manager.repair_confirm_suffix",
+                     " from GitHub again and restore the Atmosphere override?"
+                     " Your configuration and themes will be preserved."),
+            {
+                {tr("manager.cancel", "Cancel"), {}, true},
+                {tr("manager.repair", "Repair installation"),
+                 [this]() { startUpdateInstall(true); }, true},
+            }, 0);
+        focusManager().setFocus(m_dialog.get());
+        return;
+    }
     if (m_updateState != UpdateUiState::Available) {
         startUpdateCheck();
         return;
@@ -390,14 +423,18 @@ void ManagerActivity::requestUpdate() {
         {
             {tr("manager.cancel", "Cancel"), {}, true},
             {tr("manager.update_install", "Install update"),
-             [this]() { startUpdateInstall(); }, true},
+             [this]() { startUpdateInstall(false); }, true},
         }, 0);
     focusManager().setFocus(m_dialog.get());
 }
 
-void ManagerActivity::startUpdateInstall() {
-    if (m_updateState != UpdateUiState::Available)
+void ManagerActivity::startUpdateInstall(bool repair) {
+    if (repair ? !repairAvailable() : m_updateState != UpdateUiState::Available)
         return;
+    m_repairing = repair;
+    switchu::FileLog::log("[updater] %s version=%s",
+                          repair ? "repair" : "update",
+                          m_latestRelease.version.c_str());
     const bool preserveDisabled = m_snapshot.state == InstallationState::Disabled;
     const ReleaseInfo release = m_latestRelease;
     m_updateDownloadProgress.store(0.f);
@@ -408,8 +445,9 @@ void ManagerActivity::startUpdateInstall() {
     m_lastUpdateStage = static_cast<int>(UpdateWorkerStage::Idle);
     m_updateState = UpdateUiState::Installing;
     beginUpdateInputBlock();
-    m_updateProgressDialog->show(
-        tr("manager.update_progress_title", "Installing SwitchU update"));
+    m_updateProgressDialog->show(repair
+        ? tr("manager.repair_progress_title", "Repairing SwitchU")
+        : tr("manager.update_progress_title", "Installing SwitchU update"));
     m_updateProgressDialog->setProgress(
         0.f, 0.f, tr("manager.update_preparing", "Preparing update..."));
     m_updateInstallFuture = std::async(std::launch::async,
@@ -480,6 +518,7 @@ void ManagerActivity::syncUpdater() {
             const UpdateInstallResult result = m_updateInstallFuture.get();
             m_updateProgressDialog->hide();
             endUpdateInputBlock();
+            m_repairing = false;
             if (result.success) {
                 m_updateState = UpdateUiState::UpToDate;
                 m_restartRequired = true;

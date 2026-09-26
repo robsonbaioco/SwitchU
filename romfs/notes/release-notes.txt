@@ -1,12 +1,6 @@
-One restart to install an update
-- The menu now puts the new daemon in place before the restart, so the console comes up already running it and unpacks the rest from there. Updates used to leave the daemon a release behind the menu until a second boot. Installing this release still takes two restarts, because the code installing it is the old one.
-
-Which build is running
-- The daemon writes its version in the log at startup, and the menu's log is kept for hours instead of five menu restarts, so a bug reported later still has a log behind it.
+Repairing after an Atmosphere update
+- Packs that update Atmosphere, such as the CNX Pack, clear atmosphere/contents and take the file that puts SwitchU in place of the HOME menu with them. When that file is missing, SwitchU Manager now offers Repair installation: it downloads the version you already have again and puts the file back, keeping your configuration and themes. A restart finishes it.
 --pt-BR--
 
-Um reinício para instalar um update
-- O menu passa a colocar o daemon novo no lugar antes do reinício, então o console já sobe rodando ele e desempacota o resto dali. Antes, um update deixava o daemon uma versão atrás do menu até um segundo boot. Instalar esta versão ainda leva dois reinícios, porque quem instala é o código antigo.
-
-Qual build está rodando
-- O daemon escreve a versão dele no log ao iniciar, e o log do menu passa a durar horas em vez de cinco reinícios do menu, então um bug relatado depois ainda tem log por trás.
+Reparar depois de atualizar o Atmosphere
+- Packs que atualizam o Atmosphere, como o CNX Pack, limpam atmosphere/contents e levam junto o arquivo que coloca o SwitchU no lugar do menu HOME. Quando esse arquivo está faltando, o SwitchU Manager agora oferece Repair installation: baixa de novo a versão que você já tem e devolve o arquivo, mantendo sua configuração e seus temas. Um reinício conclui.

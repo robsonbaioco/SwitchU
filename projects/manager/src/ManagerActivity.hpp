@@ -45,7 +45,8 @@ private:
     void rebootNow();
     void requestUpdate();
     void startUpdateCheck();
-    void startUpdateInstall();
+    void startUpdateInstall(bool repair);
+    bool repairAvailable() const;
     void syncUpdater();
     void beginUpdateInputBlock();
     void endUpdateInputBlock();
@@ -97,6 +98,7 @@ private:
     };
     UpdateUiState m_updateState = UpdateUiState::Idle;
     ReleaseInfo m_latestRelease;
+    bool m_repairing = false;
     std::future<ReleaseInfo> m_updateCheckFuture;
     std::future<UpdateInstallResult> m_updateInstallFuture;
     std::atomic<float> m_updateDownloadProgress{0.f};
