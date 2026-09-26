@@ -1,6 +1,8 @@
-Updating from SwitchU Manager
-- Updates started from SwitchU Manager failed and rolled back, because the Manager held its own file open. It now lets go of it before installing, so updates and the repair added in 2.5.7 go through. With SwitchU running, update from this Update tab instead: the menu holds its own files open, and the Manager is for when SwitchU is off or missing.
+A backup that survives a clean install
+- At every boot SwitchU copies its configuration, themes and artwork to backup/SwitchU, which a pack's clean install leaves alone. If the configuration ever goes missing, it is restored before the menu starts, so you come back to your settings instead of the tutorial.
+- A firmware update through the CNX Updater still switches SwitchU off: open SwitchU Manager and use Update or Repair installation to bring it back.
 --pt-BR--
 
-Atualizar pelo SwitchU Manager
-- Updates iniciados pelo SwitchU Manager falhavam e eram desfeitos, porque o Manager mantinha o próprio arquivo aberto. Agora ele solta o arquivo antes de instalar, então os updates e o reparo que entrou na 2.5.7 vão até o fim. Com o SwitchU rodando, atualize por esta aba Update: o menu mantém os próprios arquivos abertos, e o Manager é para quando o SwitchU está desligado ou faltando.
+Um backup que sobrevive à instalação limpa
+- A cada boot o SwitchU copia a configuração, os temas e as artes para backup/SwitchU, que a instalação limpa de um pack não apaga. Se a configuração sumir, ela é restaurada antes de o menu abrir, e você volta às suas configurações em vez do tutorial.
+- Uma atualização de firmware pelo CNX Updater continua desligando o SwitchU: abra o SwitchU Manager e use Update ou Repair installation para trazê-lo de volta.

@@ -1,27 +1,35 @@
-# SwitchU 2.5.8
+# SwitchU 2.5.9
 
-SwitchU Manager can install updates again, including the file it runs from.
+SwitchU keeps a copy of its configuration where a pack's clean install cannot reach it, and puts it back by itself.
 
 ## English
 
-### Updating from SwitchU Manager
+### A backup that survives a clean install
 
-- Every update started from SwitchU Manager failed with "Unable to back up sdmc:/switch/SwitchU-Manager/SwitchU-Manager.nro" and was rolled back. The Manager read its font from inside its own .nro and held that file open for as long as it ran. Horizon will not rename an open file, and replacing a file means renaming it. Nothing was damaged -- the rollback put every file back -- but nothing was installed either, the repair added in 2.5.7 included.
-- The Manager now reads the font into memory when it starts, and lets go of its own file before an install begins, so an update replaces the Manager like any other file.
-- The fix lives in the Manager that runs the update, so a 2.5.6 or 2.5.7 Manager still cannot replace itself. This release therefore also carries **SwitchU.zip**, the same payload without the Manager's .nro. Those Managers choose it on their own, so "Update to v2.5.8" works from them: it installs the menu and the daemon, puts the HOME menu override back if it was missing, and leaves the old Manager in place. The Manager catches up with the next update from SwitchU's own Update tab, or by copying the complete archive to the card.
-- **For a manual install, download SwitchU-2.5.8.zip**, the complete archive. SwitchU.zip is only there for the old Managers.
-- With SwitchU running, the menu holds its own font open in `switch/SwitchU`, so an update from the Manager fails the same way and rolls back. Update from the Update tab in SwitchU instead; the Manager is for when SwitchU is off or missing.
+- The CNX Updater's clean install deletes every folder at the root of the card except a short list, and `config/SwitchU` is not on it. That folder holds everything SwitchU knows about you -- settings, the SteamGridDB key, folders and game order, themes, artwork -- so a console that went through one came back at the first-run tutorial with all of it gone.
+- `backup` is on the list the clean install spares. At every boot, before the menu starts, the daemon now copies what changed in `config/SwitchU` to `backup/SwitchU`: small files are compared byte for byte, artwork and theme media by size, and every file goes in by rename, so a power cut leaves the previous copy. Caches, logs and update staging are left out; they rebuild themselves.
+- When a boot finds `config/SwitchU/config.json` missing and the backup has one, it restores the backup instead, before the menu reads anything. The menu comes up as it was, without the tutorial. `config.json` is copied last in both directions, so an interrupted copy is simply redone at the next boot.
+- The backup never deletes anything: a theme removed from SwitchU stays in it. Uninstalling SwitchU removes the backup too.
+- The first boot on this version copies the whole folder, artwork included, and takes a little longer once. The daemon's log says how long (`[backup] ... in N ms`).
+
+### What the CNX Updater does to SwitchU
+
+- Before a firmware update the CNX Updater looks for a HOME menu theme in `atmosphere/contents/0100000000001000`, which is also where SwitchU lives, and offers only to delete it or to cancel. Every firmware update through it therefore switches SwitchU off. SwitchU Manager's **Update** or **Repair installation** puts it back, and with this release the configuration returns with it if it was lost. The README describes both cases.
 
 ---
 
 ## Português
 
-O SwitchU Manager volta a conseguir instalar updates, inclusive o arquivo de onde ele mesmo roda.
+O SwitchU guarda uma cópia da configuração onde a instalação limpa de um pack não alcança, e a coloca de volta sozinho.
 
-### Atualizar pelo SwitchU Manager
+### Um backup que sobrevive à instalação limpa
 
-- Todo update iniciado pelo SwitchU Manager falhava com "Unable to back up sdmc:/switch/SwitchU-Manager/SwitchU-Manager.nro" e era desfeito. O Manager lia a fonte de dentro do próprio .nro e mantinha esse arquivo aberto enquanto rodava. O Horizon não renomeia um arquivo aberto, e substituir um arquivo é renomeá-lo. Nada era danificado -- o rollback devolvia todos os arquivos -- mas nada era instalado também, incluindo o reparo que entrou na 2.5.7.
-- Agora o Manager lê a fonte para a memória ao abrir e solta o próprio arquivo antes de começar uma instalação, então um update substitui o Manager como qualquer outro arquivo.
-- A correção fica no Manager que roda o update, então um Manager 2.5.6 ou 2.5.7 continua sem conseguir se substituir. Por isso esta release também traz o **SwitchU.zip**, o mesmo pacote sem o .nro do Manager. Esses Managers escolhem ele sozinhos, então "Update to v2.5.8" funciona a partir deles: instala o menu e o daemon, recoloca o override do menu HOME se ele estava faltando e deixa o Manager antigo onde está. O Manager se atualiza no próximo update feito pela aba Update do próprio SwitchU, ou copiando o pacote completo para o cartão.
-- **Para instalar manualmente, baixe o SwitchU-2.5.8.zip**, o pacote completo. O SwitchU.zip só existe para os Managers antigos.
-- Com o SwitchU rodando, o menu mantém a própria fonte aberta em `switch/SwitchU`, então um update pelo Manager falha do mesmo jeito e é desfeito. Nesse caso, atualize pela aba Update do SwitchU; o Manager é para quando o SwitchU está desligado ou faltando.
+- A instalação limpa do CNX Updater apaga todas as pastas da raiz do cartão exceto uma lista curta, e `config/SwitchU` não está nela. Essa pasta guarda tudo o que o SwitchU sabe sobre você -- configurações, a key do SteamGridDB, pastas e ordem dos jogos, temas, artes -- então um console que passou por ela voltava no tutorial inicial sem nada disso.
+- `backup` está na lista que a instalação limpa poupa. A cada boot, antes de o menu abrir, o daemon agora copia o que mudou em `config/SwitchU` para `backup/SwitchU`: arquivos pequenos são comparados byte a byte, artes e mídia de temas pelo tamanho, e cada arquivo entra por renomeação, então uma queda de energia deixa a cópia anterior. Caches, logs e arquivos de update ficam de fora; eles se refazem sozinhos.
+- Quando um boot encontra `config/SwitchU/config.json` faltando e o backup tem um, ele restaura o backup, antes de o menu ler qualquer coisa. O menu sobe como estava, sem tutorial. O `config.json` é copiado por último nos dois sentidos, então uma cópia interrompida é refeita no boot seguinte.
+- O backup nunca apaga nada: um tema removido do SwitchU continua nele. Desinstalar o SwitchU remove o backup também.
+- O primeiro boot nesta versão copia a pasta inteira, artes incluídas, e demora um pouco mais uma vez. O log do daemon diz quanto (`[backup] ... in N ms`).
+
+### O que o CNX Updater faz com o SwitchU
+
+- Antes de atualizar o firmware, o CNX Updater procura um tema do menu HOME em `atmosphere/contents/0100000000001000`, que é também onde o SwitchU fica, e só oferece apagar ou cancelar. Toda atualização de firmware por ele, portanto, desliga o SwitchU. O **Update** ou o **Repair installation** do SwitchU Manager o colocam de volta, e com esta versão a configuração volta junto se tiver sido perdida. O README descreve os dois casos.
