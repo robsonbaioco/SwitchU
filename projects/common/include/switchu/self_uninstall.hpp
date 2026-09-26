@@ -22,5 +22,9 @@ inline constexpr const char* kManagerNro =
     "sdmc:/switch/SwitchU-Manager.nro";
 inline constexpr const char* kConfigDirectory =
     "sdmc:/config/SwitchU";
+// The daemon's copy of kConfigDirectory, kept where pack clean installs leave
+// it alone (see projects/daemon/src/config_backup.hpp).
+inline constexpr const char* kBackupDirectory =
+    "sdmc:/backup/SwitchU";
 
 } // namespace switchu::self_uninstall

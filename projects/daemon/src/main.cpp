@@ -11,6 +11,7 @@
 #include "app_manager.hpp"
 #include "ecs.hpp"
 #include "update_apply.hpp"
+#include "config_backup.hpp"
 #include "self_uninstall.hpp"
 #include "menu_launcher.hpp"
 #include "mem_probe.hpp"
@@ -2594,6 +2595,10 @@ int main(int argc, char* argv[]) {
         requestPowerStateChange("update applied", true);
         return 0;
     }
+
+    // Before the menu reads its configuration: a card wiped by a pack's clean
+    // install gets it back here instead of starting over at the tutorial.
+    switchu::daemon::config_backup::restoreOrBackUp();
 
     rebuildAppCatalog("boot");
 

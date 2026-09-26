@@ -85,6 +85,9 @@ StagedRequestResult applyStagedRequest() {
     if (!switchu::removeRecursive(kConfigDirectory, &failedPath)) {
         svcOutputDebugString("[SwitchU-daemon] config directory purge incomplete", 48);
     }
+    // Left behind, the backup would bring every setting back the day SwitchU
+    // is installed again, which is not what removing it asked for.
+    (void)switchu::removeRecursive(kBackupDirectory);
 
     // 6. Commit SD card filesystem metadata.
     if (!switchu::commitSdCard("self-uninstall full purge")) {

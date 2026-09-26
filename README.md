@@ -187,19 +187,22 @@ Updating from an older build works the same way. Nothing is deleted that the
 launcher does not own: your themes, artwork and settings live under
 `config/SwitchU` and are left alone.
 
-> **Before updating Atmosphere or the firmware with a pack** (CNX Pack and the
-> like), copy `config/SwitchU` from the card to a computer. A CNX Pack update
-> has been seen to delete that folder, and it holds everything SwitchU knows
-> about you: settings, installed themes, folders and game order, downloaded
-> artwork and the logs. SwitchU's own updater leaves it alone; a pack does not.
-> Copy the folder back after the update, before starting SwitchU.
+> **Updating Atmosphere or the firmware with a pack** (the CNX Pack and its CNX
+> Updater, and the like) can switch SwitchU off and erase its settings:
 >
-> Packs also clear `atmosphere/contents`, and SwitchU replaces the HOME menu
-> through a single file there, `atmosphere/contents/0100000000001000/exefs.nsp`.
-> When that file is gone, the console boots into Nintendo's HOME menu and
-> SwitchU Manager reports "SwitchU state unavailable". Open the Manager and
-> choose **Repair installation** (from 2.5.8 on), or copy that one file from the
-> release archive back to the card and restart.
+> - SwitchU replaces the HOME menu through
+>   `atmosphere/contents/0100000000001000/exefs.nsp`, the folder a HOME menu
+>   theme uses. Before a firmware update the CNX Updater offers only to delete
+>   that folder or to cancel, so the console comes back on Nintendo's HOME menu
+>   and SwitchU Manager reports "SwitchU state unavailable". Open the Manager
+>   and choose **Update** or **Repair installation** (from 2.5.8 on), or copy
+>   that one file from the release archive back to the card, and restart.
+> - A **clean install** deletes every folder at the root of the card except a
+>   few, `config/SwitchU` among the ones deleted: settings, the SteamGridDB key,
+>   folders and game order, themes and artwork. From 2.5.9 on, SwitchU keeps a
+>   copy of that folder in `backup/SwitchU`, which clean installs leave alone,
+>   and puts it back at the first boot that finds the configuration missing.
+>   Before 2.5.9, copy `config/SwitchU` to a computer before the update.
 
 ## How to build
 
@@ -296,15 +299,13 @@ it would take to close it.
   The console's own menu behaves the same way. Register it as a player of its
   own in Change Grip/Order -- SL+SR -- and from 2.5.5 on it works held
   sideways, its four direction buttons standing in for A/B/X/Y.
-- **Updating Atmosphere through a pack can switch SwitchU off and erase its
-  data.** Packs such as the CNX Pack clear `atmosphere/contents`, which removes
-  the file that puts SwitchU in place of the HOME menu, and a CNX Pack update
-  has also been seen to delete `config/SwitchU` -- settings, themes, folders,
-  artwork and logs. SwitchU cannot protect that folder from a pack, so back it
-  up first. The console then boots into Nintendo's HOME menu, and SwitchU
-  Manager says the override was not found. From 2.5.8 on, the Manager offers
-  **Repair installation**, which downloads the release you already have again
-  and puts the file back. See [Installing](#installing).
+- **A firmware update through the CNX Updater switches SwitchU off.** It treats
+  SwitchU's folder in `atmosphere/contents` as a HOME menu theme and deletes it
+  before updating, with no way to keep it and go on. The console then boots
+  into Nintendo's HOME menu, and SwitchU Manager says the override was not
+  found; its **Update** or **Repair installation** (from 2.5.8 on) puts it
+  back. A clean install deletes `config/SwitchU` as well, which SwitchU restores
+  from `backup/SwitchU` from 2.5.9 on. See [Installing](#installing).
 - **A title with no name of its own shows its title id.** Some releases --
   downgraded builds in particular -- carry no usable name, and neither the
   console nor the artwork lookup can produce one. Rename the game from its
