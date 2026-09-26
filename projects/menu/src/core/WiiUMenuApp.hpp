@@ -48,6 +48,7 @@
 #include "launcher/AppletLauncher.hpp"
 #include "launcher/AppListLoader.hpp"
 #include "launcher/IconStreamer.hpp"
+#include "launcher/OnlineTitleNames.hpp"
 #include "core/SystemMessages.hpp"
 #include "navigation/MenuNavigator.hpp"
 #include "services/ClockService.hpp"
@@ -126,6 +127,9 @@ private:
     // in m_config.playtime, never pdm itself.
     void requestPlaytimeRefresh(const char* reason);
     void pollPlaytimeRefresh();
+    // Asks the nlib title API for the names of titles the console left
+    // unnamed, once per menu start, and applies what it finds.
+    void pollTitleNameLookup();
     std::string playtimeBadgeFor(const AppEntry& entry) const;
     void applyPlaytimeBadges();
     void showIconOptions();
@@ -659,6 +663,12 @@ private:
     int  m_refreshPrevPage       = 0;
 
     AppConfig m_config;
+    OnlineTitleNames m_titleNames;
+    std::future<void> m_titleNameFuture;
+    std::shared_ptr<std::vector<OnlineTitleNames::Lookup>> m_titleNameResults;
+    bool m_titleNameLookupStarted = false;
+    // Lets the menu settle before the first request goes out.
+    int m_titleNameLookupDelayFrames = 240;
     SteamGridDbManager m_steamGridDb;
     std::future<SteamGridDbManager::BrowseResult> m_steamGridDbBrowseFuture;
     std::future<SteamGridDbManager::ApplyResult> m_steamGridDbApplyFuture;

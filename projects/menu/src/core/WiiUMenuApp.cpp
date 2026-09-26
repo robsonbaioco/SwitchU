@@ -384,6 +384,8 @@ bool WiiUMenuApp::onCreate() {
     m_iconStreamer.setThreadPool(&m_threadPool);
     if (!m_startupConfigProvided)
         m_config.load();
+    // Before the catalogue starts: composeRootPending() reads it.
+    m_titleNames.load();
     const bool fastReturn = m_launcher.suspendedTitleId() != 0;
     m_fastReturnRequested = fastReturn;
     m_fastReturnStartupTick = fastReturn ? activityCreateStartTick : 0;
@@ -1144,6 +1146,93 @@ void WiiUMenuApp::requestPlaytimeRefresh(const char* reason) {
 #endif
 }
 
+void WiiUMenuApp::pollTitleNameLookup() {
+    using namespace std::chrono_literals;
+    if (!m_titleNameLookupStarted) {
+        if (m_allApps.empty() || m_asyncRefreshPending)
+            return;
+        if (m_titleNameLookupDelayFrames > 0) {
+            --m_titleNameLookupDelayFrames;
+            return;
+        }
+        m_titleNameLookupStarted = true;
+
+        const long today = OnlineTitleNames::today();
+        std::vector<std::uint64_t> wanted;
+        for (const auto& app : m_allApps) {
+            if (app.titleId != 0 && !m_config.hasCustomTitle(app.titleId)
+                && OnlineTitleNames::isTitleIdFallback(app.title, app.titleId)
+                && m_titleNames.due(app.titleId, today))
+                wanted.push_back(app.titleId);
+        }
+        if (wanted.empty())
+            return;
+        DebugLog::log("[titlenames] looking up %d unnamed title(s)",
+                      static_cast<int>(wanted.size()));
+        auto results = std::make_shared<std::vector<OnlineTitleNames::Lookup>>();
+        m_titleNameResults = results;
+        m_titleNameFuture = m_threadPool.submit([wanted, results]() {
+            for (const std::uint64_t titleId : wanted) {
+                results->push_back(OnlineTitleNames::fetch(titleId));
+                // No connection, or the menu is handing over to a game: the
+                // rest would fail the same way. They are asked next time.
+                if (results->back().status == OnlineTitleNames::LookupStatus::Failed)
+                    break;
+            }
+        });
+        return;
+    }
+
+    if (!m_titleNameFuture.valid()
+        || m_titleNameFuture.wait_for(0s) != std::future_status::ready)
+        return;
+    m_titleNameFuture.get();
+    const auto results = std::move(m_titleNameResults);
+    if (!results)
+        return;
+
+    const long today = OnlineTitleNames::today();
+    bool recorded = false;
+    bool renamed = false;
+    for (const auto& lookup : *results) {
+        if (lookup.status == OnlineTitleNames::LookupStatus::Failed)
+            continue;
+        const bool found = lookup.status == OnlineTitleNames::LookupStatus::Found;
+        m_titleNames.record(lookup.titleId, found ? lookup.name : std::string(), today);
+        recorded = true;
+        DebugLog::log("[titlenames] %016lX -> %s",
+                      static_cast<unsigned long>(lookup.titleId),
+                      found ? lookup.name.c_str() : "(not known)");
+        // The owner may have renamed it while the request was out.
+        if (!found || m_config.hasCustomTitle(lookup.titleId))
+            continue;
+        for (auto& app : m_allApps) {
+            if (app.titleId != lookup.titleId
+                || !OnlineTitleNames::isTitleIdFallback(app.title, app.titleId))
+                continue;
+            const std::string previous = app.title;
+            app.title = lookup.name;
+            // englishTitle is the SteamGridDB search term; see composeRootPending().
+            if (app.englishTitle.empty() || app.englishTitle == previous)
+                app.englishTitle = app.title;
+            renamed = true;
+            break;
+        }
+    }
+    if (recorded) {
+        if (!m_titleNames.save())
+            DebugLog::log("[titlenames] store could not be saved");
+        switchu::commitSdCard("title names");
+    }
+    if (renamed && m_grid && m_openFolderId == 0) {
+        std::uint64_t focused = 0;
+        if (auto* current = m_grid->focusManager().current();
+            current && current->tag() == "glossy_icon")
+            focused = static_cast<GlossyIcon*>(current)->titleId();
+        applyDisplayModel(buildRootFolderModel(), focused, false);
+    }
+}
+
 void WiiUMenuApp::pollPlaytimeRefresh() {
 #ifdef SWITCHU_MENU
     if (m_playtimeFuture.valid()) {
@@ -1873,10 +1962,19 @@ void WiiUMenuApp::composeRootPending(std::vector<PendingApp>& apps) {
     // label, the title pill, the A-Z order, folders, the dossier, the widgets --
     // reads these entries, so applying it once here keeps the name from
     // disagreeing with itself in one of them.
+    //
+    // A name the owner typed wins. Failing that, a title the console could not
+    // name at all takes the one the nlib title API gave for it, if any.
     for (auto& pending : apps) {
-        if (pending.titleId == 0 || !m_config.hasCustomTitle(pending.titleId))
+        if (pending.titleId == 0)
             continue;
-        const std::string chosen = m_config.customTitle(pending.titleId, pending.title);
+        std::string chosen;
+        if (m_config.hasCustomTitle(pending.titleId))
+            chosen = m_config.customTitle(pending.titleId, pending.title);
+        else if (OnlineTitleNames::isTitleIdFallback(pending.title, pending.titleId))
+            chosen = m_titleNames.name(pending.titleId);
+        if (chosen.empty())
+            continue;
         // The artwork lookup searches englishTitle, and a title with no usable
         // name of its own carries the hex id there too -- which never matches
         // anything. A name the owner typed is a better search term than that.
@@ -6300,6 +6398,7 @@ void WiiUMenuApp::onUpdate(float dt) {
         finalizeRefresh();
     }
     pollPlaytimeRefresh();
+    pollTitleNameLookup();
 #endif
 
     bool debugTouchBlocked = false;
