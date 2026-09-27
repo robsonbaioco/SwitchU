@@ -639,7 +639,18 @@
     "delete_page": "Delete page",
     "delete_page_desc": "Remove this empty page.",
     "delete_empty_pages": "Delete empty pages",
-    "delete_empty_pages_desc": "Remove trailing empty pages from this folder."
+    "delete_empty_pages_desc": "Remove trailing empty pages from this folder.",
+    "style": "Folder style",
+    "style_desc": "Applies to every folder, including new ones.",
+    "style_classic": "Classic",
+    "style_simple": "Simple",
+    "style_minimal": "Minimal",
+    "style_tab": "Tab",
+    "style_ring": "Ring",
+    "style_manila": "Manila",
+    "style_label": "Label",
+    "show_cover": "Show cover",
+    "show_cover_desc": "Shows the first game on every folder. Classic keeps the mosaic instead."
   },
   "add": {
     "title": "Add"

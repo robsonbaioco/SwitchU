@@ -403,6 +403,8 @@ private:
     void closeActiveOverlays(bool preserveDialog = false);
     void handleTouch();
     std::shared_ptr<GlossyIcon> makeIcon(const AppEntry& entry);
+    nxui::Texture* folderCoverTexture(std::uint64_t titleId);
+    void applyFolderCoversToIcons();
     void wireFocusCallback();
     void wireGlobalActions();
     void toggleAccessibilitySpeech();
@@ -462,6 +464,10 @@ private:
     void reattachEditSourceIcon();
     void stopEditGhost();
     void updateEditGhost(float dt);
+    // Re-anchor move-mode placement after the grid model changes (folder
+    // open/close, rebuild). preferEmptySlot is used when dropping into a
+    // folder so the cursor starts on a free cell instead of a stale root index.
+    void syncEditPlacementAfterModelChange(bool preferEmptySlot);
     bool commitEditModePlacement();
     bool activateEditModeTarget();
     bool moveFocusedIcon(nxui::FocusDirection dir);
@@ -671,6 +677,7 @@ private:
     std::vector<uint64_t> m_layoutSlots;
     std::unordered_map<std::uint64_t, switchu::widgets::WidgetSize> m_gameSizes;
     bool m_layoutDirty = false;
+    std::unordered_map<std::uint64_t, std::unique_ptr<nxui::Texture>> m_folderCoverCache;
     switchu::folders::FolderStore m_folderStore;
     switchu::widgets::WidgetStore m_widgetStore;
     std::uint64_t m_recentWidgetAssetTitleId = 0;
