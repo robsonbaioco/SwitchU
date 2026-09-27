@@ -1608,8 +1608,18 @@ void WiiUMenuApp::handleTouch() {
 
         float dx = input.touchDeltaX();
         float dy = input.touchDeltaY();
-        if (std::abs(dx) > kSwipeThreshold && std::abs(dx) > std::abs(dy) * 1.5f)
+        if (std::abs(dx) > kSwipeThreshold && std::abs(dx) > std::abs(dy) * 1.5f) {
             flipPage(dx < 0 ? 1 : -1);
+        } else if (m_openFolderId != 0
+                   && m_touchHitIndex < 0
+                   && std::abs(dx) < 20.f && std::abs(dy) < 20.f
+                   && m_grid
+                   && m_grid->hitTest(input.touchX(), input.touchY()) < 0) {
+            // Tap anywhere that isn't an icon (dimmed margins left/right/above/below,
+            // and empty gaps) to leave — mirrors B, including edit-mode keep-move.
+            // From PoloNX/SwitchU#108.
+            closeFolder(m_editMode);
+        }
         m_touchHitIndex = -1;
         m_touchEditDragActive = false;
     }
