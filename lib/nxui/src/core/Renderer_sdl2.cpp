@@ -481,6 +481,16 @@ void Renderer::captureToOffscreenSharp() {
     // No-op, as above. The menu calls this directly, so it has to link.
 }
 
+bool Renderer::downloadFramebufferRgba(std::vector<uint8_t>& outRgba,
+                                       int& outW, int& outH,
+                                       bool halfRes) {
+    (void)outRgba;
+    (void)outW;
+    (void)outH;
+    (void)halfRes;
+    return false;
+}
+
 void Renderer::copyOffscreen(int srcTarget, int dstTarget) {
     (void)srcTarget;
     (void)dstTarget;

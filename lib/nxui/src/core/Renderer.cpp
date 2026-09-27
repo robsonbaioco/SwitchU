@@ -701,6 +701,13 @@ void Renderer::captureToOffscreenSharp() {
     cmd.barrier(DkBarrier_Full, DkInvalidateFlags_Image);
 }
 
+bool Renderer::downloadFramebufferRgba(std::vector<uint8_t>& outRgba,
+                                       int& outW, int& outH,
+                                       bool halfRes) {
+    flush();
+    return m_gpu.downloadFramebufferRgba(outRgba, outW, outH, halfRes);
+}
+
 void Renderer::copyOffscreen(int srcTarget, int dstTarget) {
     if (!m_gpu.offscreenReady()) return;
     if (srcTarget < 0 || srcTarget >= GpuDevice::NUM_OFFSCREEN) return;
