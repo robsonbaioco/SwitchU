@@ -498,6 +498,7 @@ void WiiUMenuApp::createSettings() {
     m_settings->onNetConnect([this]() {
         m_pendingNetConnect = true;
         m_settings->hide();
+        m_navigator.resetToHome();
     });
     m_settings->onSteamGridDbEnabledChange([this](bool enabled) {
         m_config.steamGridDbEnabled = enabled;
@@ -552,11 +553,13 @@ void WiiUMenuApp::createSettings() {
     });
     m_settings->onControllerPairing([this]() {
         if (m_settings) m_settings->hide();
-        m_launcher.launchControllerPairing();
+        m_navigator.resetToHome();
+        scheduleLeaveCapture([this]() { m_launcher.launchControllerPairing(); });
     });
     m_settings->onControllerRemapping([this]() {
         if (m_settings) m_settings->hide();
-        m_launcher.launchControllerRemapping();
+        m_navigator.resetToHome();
+        scheduleLeaveCapture([this]() { m_launcher.launchControllerRemapping(); });
     });
     m_settings->onControllerTest([this]() {
         if (!m_controllerTest) return;
@@ -1430,6 +1433,8 @@ void WiiUMenuApp::createThemeShop() {
 
     m_themeShop->onNetConnectRequest([this]() {
         m_pendingNetConnect = true;
+        if (m_themeShop) m_themeShop->hide();
+        m_navigator.resetToHome();
     });
     // O daemon relê os títulos e joga fora os nomes e ícones em cache. A grade
     // se reconstrói quando ele avisa que o catálogo mudou, então aqui não há o

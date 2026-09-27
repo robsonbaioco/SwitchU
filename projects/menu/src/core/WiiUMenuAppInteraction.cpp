@@ -789,6 +789,7 @@ nxui::Widget* WiiUMenuApp::focusRoot() {
     // nullptr blocks the frame's whole input dispatch, which is exactly the
     // guarantee this screen has to make; it reads its own presses from the pad.
     if (m_lockScreen.isLocked()) return nullptr;
+    if (m_leaveCaptureDeferred) return nullptr;
     if (m_leaveCapturePending) return nullptr;
     if (leaveSplashActive()) return nullptr;
     if (m_launchAnim && m_launchAnim->isPlaying()) return nullptr;
