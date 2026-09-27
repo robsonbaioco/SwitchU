@@ -299,12 +299,31 @@ bool FolderStore::placeTitle(std::uint32_t folderId, std::uint64_t titleId,
         return false;
 
     const std::uint32_t previous = folderForTitle(titleId);
+
+    // Reordering inside the same folder must swap (or relocate into a hole),
+    // matching the HOME menu. Zeroing the source and inserting at the target
+    // left a blank tile and shifted everything after it.
+    if (previous == folderId) {
+        auto it = std::find(target->titleIds.begin(), target->titleIds.end(), titleId);
+        if (it == target->titleIds.end())
+            return false;
+        const std::size_t sourceIndex =
+            static_cast<std::size_t>(it - target->titleIds.begin());
+        if (index == sourceIndex)
+            return true;
+        if (index >= target->titleIds.size())
+            target->titleIds.resize(index + 1, 0);
+        std::swap(target->titleIds[sourceIndex], target->titleIds[index]);
+        trimTrailingHoles(target->titleIds);
+        return true;
+    }
+
     if (previous != 0) {
         Folder* source = find(previous);
         if (source) {
             auto it = std::find(source->titleIds.begin(), source->titleIds.end(), titleId);
             if (it != source->titleIds.end()) {
-                *it = 0;  
+                *it = 0;
                 trimTrailingHoles(source->titleIds);
             }
         }
