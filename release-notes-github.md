@@ -1,43 +1,45 @@
-# SwitchU 2.5.9
+# SwitchU 2.6.0
 
-SwitchU keeps a copy of its configuration where a pack's clean install cannot reach it, and puts it back by itself.
+ncarvalho99's features from 2.5.0 to 2.6.4 come to this fork, the dossier gathers its details on the console, and games the console cannot name get their names from the internet.
 
 ## English
 
-### A backup that survives a clean install
+### From ncarvalho99's 2.6.x
 
-- The CNX Updater's clean install deletes every folder at the root of the card except a short list, and `config/SwitchU` is not on it. That folder holds everything SwitchU knows about you -- settings, the SteamGridDB key, folders and game order, themes, artwork -- so a console that went through one came back at the first-run tutorial with all of it gone.
-- `backup` is on the list the clean install spares. At every boot, before the menu starts, the daemon now copies what changed in `config/SwitchU` to `backup/SwitchU`: small files are compared byte for byte, artwork and theme media by size, and every file goes in by rename, so a power cut leaves the previous copy. Caches, logs and update staging are left out; they rebuild themselves.
-- When a boot finds `config/SwitchU/config.json` missing and the backup has one, it restores the backup instead, before the menu reads anything. The menu comes up as it was, without the tutorial. `config.json` is copied last in both directions, so an interrupted copy is simply redone at the next boot.
-- The backup never deletes anything: a theme removed from SwitchU stays in it. Uninstalling SwitchU removes the backup too.
-- The first boot on this version copies the whole folder, artwork included, and takes a little longer once. The daemon's log says how long (`[backup] ... in N ms`).
+- Everything he added from 2.5.0 to 2.6.4: **favorites** and a Favorites sort, the **Quick Settings** panel, the daily **Activity Log**, an **Atmosphere cheat manager** in each game's dossier, **WaraWara Plaza**, a **custom soundtrack** from your own music folder with the **Multimedia Center** and a music shop, page auto-flip while holding the d-pad, page deletion on ZL, folders that move across empty slots, clock sync over the internet at boot, a prompt to fetch artwork when a new game is installed, and names for game updates that store them compressed. Thanks to him for all of it.
+- The sort order on **R** now has five modes, with Favorites before Most played. If you had Most played selected, it stays selected.
+- What depended on his servers was left out or given another route. His servers answer only his own builds since 2026-09-21, so this fork does not carry his client key. The music shop searches and downloads through public YouTube fallbacks, and a server of your own (`tools/switchu_ytdl_service.py`) can be set as `ytdlBackendUrl` in `config.json`. The new-game artwork prompt appears only with a personal SteamGridDB key, since without one the download would go through his server.
 
-### What the CNX Updater does to SwitchU
+### The dossier's details, gathered on the console
 
-- Before a firmware update the CNX Updater looks for a HOME menu theme in `atmosphere/contents/0100000000001000`, which is also where SwitchU lives, and offers only to delete it or to cancel. Every firmware update through it therefore switches SwitchU off. SwitchU Manager's **Update** or **Repair installation** puts it back, and with this release the configuration returns with it if it was lost. The README describes both cases.
+- The dossier's online details came from ncarvalho99's server, which now refuses this fork, so every dossier said they were unavailable. They now come straight from public sources: description, publisher, release date, genres, player count and screenshots from the nlib title API, with no key needed.
+- The **metascore** (RAWG) and **time to beat** (IGDB) need keys of your own, free to create, entered in **Settings > SteamGridDB > Game details**. Without them those fields show a dash. There is no source for a user score any more.
+- Marking a game as a port no longer refuses every platform: that check also asked his server.
+- The dash in empty dossier fields showed as "â€"", and long text could be cut in the middle of an accented letter. Both fixed.
 
-### Renaming a game and fetching its artwork
+### Names for games the console cannot name
 
-- Renaming a game that has no name of its own changed the name on screen but not the term SwitchU searches SteamGridDB with, which stayed the game's hex id until the menu restarted. Fetching artwork right after the rename therefore found nothing. The new name is now the search term straight away.
+- A game with no usable name of its own -- a downgraded release, for example -- showed its title id on the grid and could not be found on SteamGridDB. Such games are now named from a built-in table of well-known titles or, once per game, from the nlib title API. The answer is kept on the card, and a name you give the game yourself still wins.
 
 ---
 
 ## Português
 
-O SwitchU guarda uma cópia da configuração onde a instalação limpa de um pack não alcança, e a coloca de volta sozinho.
+As funcionalidades do ncarvalho99 da 2.5.0 à 2.6.4 chegam a este fork, o dossiê busca os detalhes direto do console, e jogos que o console não sabe nomear ganham nome pela internet.
 
-### Um backup que sobrevive à instalação limpa
+### Da 2.6.x do ncarvalho99
 
-- A instalação limpa do CNX Updater apaga todas as pastas da raiz do cartão exceto uma lista curta, e `config/SwitchU` não está nela. Essa pasta guarda tudo o que o SwitchU sabe sobre você -- configurações, a key do SteamGridDB, pastas e ordem dos jogos, temas, artes -- então um console que passou por ela voltava no tutorial inicial sem nada disso.
-- `backup` está na lista que a instalação limpa poupa. A cada boot, antes de o menu abrir, o daemon agora copia o que mudou em `config/SwitchU` para `backup/SwitchU`: arquivos pequenos são comparados byte a byte, artes e mídia de temas pelo tamanho, e cada arquivo entra por renomeação, então uma queda de energia deixa a cópia anterior. Caches, logs e arquivos de update ficam de fora; eles se refazem sozinhos.
-- Quando um boot encontra `config/SwitchU/config.json` faltando e o backup tem um, ele restaura o backup, antes de o menu ler qualquer coisa. O menu sobe como estava, sem tutorial. O `config.json` é copiado por último nos dois sentidos, então uma cópia interrompida é refeita no boot seguinte.
-- O backup nunca apaga nada: um tema removido do SwitchU continua nele. Desinstalar o SwitchU remove o backup também.
-- O primeiro boot nesta versão copia a pasta inteira, artes incluídas, e demora um pouco mais uma vez. O log do daemon diz quanto (`[backup] ... in N ms`).
+- Tudo o que ele acrescentou da 2.5.0 à 2.6.4: **favoritos** e a ordenação por favoritos, o painel de **Quick Settings**, o **registro diário de atividade**, um **gerenciador de cheats** do Atmosphere no dossiê de cada jogo, a **WaraWara Plaza**, **trilha sonora própria** a partir da sua pasta de músicas com a **Central Multimídia** e uma loja de músicas, virar página segurando o direcional, apagar página com ZL, pastas que passam por espaços vazios, relógio acertado pela internet no boot, um aviso para baixar a arte quando um jogo novo é instalado, e nomes de updates de jogos que os guardam comprimidos. Obrigado a ele por tudo isso.
+- A ordenação no **R** agora tem cinco modos, com Favoritos antes de Mais jogados. Se você estava em Mais jogados, continua em Mais jogados.
+- O que dependia dos servidores dele ficou de fora ou ganhou outro caminho. Os servidores dele só atendem as builds dele desde 21/09/2026, então este fork não leva a chave de cliente dele. A loja de músicas busca e baixa pelos caminhos públicos do YouTube, e um servidor seu (`tools/switchu_ytdl_service.py`) pode ser configurado como `ytdlBackendUrl` no `config.json`. O aviso de arte para jogo novo só aparece com uma key pessoal do SteamGridDB, porque sem ela o download passaria pelo servidor dele.
 
-### O que o CNX Updater faz com o SwitchU
+### Os detalhes do dossiê, buscados no console
 
-- Antes de atualizar o firmware, o CNX Updater procura um tema do menu HOME em `atmosphere/contents/0100000000001000`, que é também onde o SwitchU fica, e só oferece apagar ou cancelar. Toda atualização de firmware por ele, portanto, desliga o SwitchU. O **Update** ou o **Repair installation** do SwitchU Manager o colocam de volta, e com esta versão a configuração volta junto se tiver sido perdida. O README descreve os dois casos.
+- Os detalhes online do dossiê vinham do servidor do ncarvalho99, que agora recusa este fork, então todo dossiê dizia que eles não estavam disponíveis. Agora vêm direto de fontes públicas: descrição, publisher, data de lançamento, gêneros, número de jogadores e screenshots pela API de títulos da nlib, sem precisar de chave.
+- O **metascore** (RAWG) e o **tempo para zerar** (IGDB) precisam de chaves suas, gratuitas, cadastradas em **Configurações > SteamGridDB > Detalhes dos jogos**. Sem elas, esses campos mostram um travessão. Não existe mais fonte para a nota dos usuários.
+- Marcar um jogo como port não recusa mais todas as plataformas: essa verificação também consultava o servidor dele.
+- O travessão dos campos vazios do dossiê aparecia como "â€"", e textos longos podiam ser cortados no meio de uma letra acentuada. Os dois foram corrigidos.
 
-### Renomear um jogo e buscar a arte
+### Nomes para jogos que o console não sabe nomear
 
-- Renomear um jogo sem nome próprio mudava o nome na tela, mas não o termo que o SwitchU usa para buscar no SteamGridDB, que continuava sendo o id hexadecimal do jogo até o menu reiniciar. Buscar a arte logo depois de renomear, portanto, não achava nada. Agora o nome novo passa a ser o termo de busca na hora.
+- Um jogo sem nome próprio -- uma versão com downgrade, por exemplo -- mostrava o title id na grade e não era encontrado no SteamGridDB. Agora esses jogos recebem nome de uma tabela de títulos conhecidos ou, uma vez por jogo, da API de títulos da nlib. A resposta fica guardada no cartão, e um nome que você mesmo der ao jogo continua valendo por cima.

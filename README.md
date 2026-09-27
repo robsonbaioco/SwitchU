@@ -41,12 +41,25 @@
   side, the game's hero art filling the screen behind it and its logo above the
   row. It is a carousel — it wraps in both directions, skips empty slots, and
   repeats while ZL, ZR or the d-pad is held.
-- Sorting on **R**: your own arrangement, A–Z, recently played, and **most
-  played**, ordered by the play time the console itself records. In the most
+- Sorting on **R**: your own arrangement, A–Z, recently played,
+  **favorites** first, and **most played**, ordered by the play time the
+  console itself records. In the most
   played view each icon carries its hours. The grid remembers the page you were
   on per title rather than per page number, so it lands in the right place after
   being rebuilt at a different width. The single-row view keeps your own
   arrangement instead, so R does nothing there.
+
+### From ncarvalho99's 2.6.x
+
+2.6.0 brings in the features ncarvalho99 added to his fork from 2.5.0 to 2.6.4:
+**favorites** and a favorites sort, a **Quick Settings** panel, a daily
+**Activity Log**, an **Atmosphere cheat manager** in each game's dossier,
+**WaraWara Plaza**, a **custom soundtrack** from your own music folder with a
+**Multimedia Center** and a music shop, page auto-flip while holding the d-pad,
+page deletion on ZL, folders that move across empty slots, clock sync over the
+internet at boot, and names for game updates that store them compressed. What
+depended on his servers was left out or given a public fallback; see
+[Known issues](#known-issues).
 
 ### Folders
 
@@ -268,7 +281,7 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.5.9. Each one is tracked as an issue with what is known so far and what
+As of 2.6.0. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
 
 - **Parts of Settings are read-only or missing**
@@ -306,11 +319,24 @@ it would take to close it.
   found; its **Update** or **Repair installation** (from 2.5.8 on) puts it
   back. A clean install deletes `config/SwitchU` as well, which SwitchU restores
   from `backup/SwitchU` from 2.5.9 on. See [Installing](#installing).
-- **A title with no name of its own shows its title id.** Some releases --
-  downgraded builds in particular -- carry no usable name, and neither the
-  console nor the artwork lookup can produce one. Rename the game from its
-  dossier: the name then holds everywhere, and becomes the search term that lets
-  SteamGridDB find it.
+- **ncarvalho99's online services are closed to this fork.** Since
+  2026-09-21 his servers answer only his own builds. From 2.6.0 the dossier
+  gets its details on the console instead: description, publisher, release
+  date, genres and screenshots from the nlib title API, with no key; the
+  **metascore** (RAWG) and **time to beat** (IGDB) need keys of your own, set
+  in Settings > SteamGridDB > Game details. There is no user score any more.
+  The dossier's **Gallery** tab, theme packages from his catalogue (they list
+  and preview, but downloads are refused) and SteamGridDB **without** a
+  personal key still depend on him and do not work. The music shop searches
+  and downloads through public YouTube fallbacks, which can break without
+  notice; `tools/switchu_ytdl_service.py` can be self-hosted and set as
+  `ytdlBackendUrl` in `config/SwitchU/config.json`.
+- **A title with no name of its own shows its title id** only when nothing can
+  name it. Some releases -- downgraded builds in particular -- carry no usable
+  name; from 2.6.0 such titles are named from a built-in table of well-known
+  games or, once per title, from the nlib title API, which also makes the
+  SteamGridDB search work. Renaming the game from its dossier still wins over
+  both.
 - **Rebuilding names and icons takes minutes.** Reading a title's name and icon
   from the console costs about a second, so a full library is a few minutes of
   work. Only "Rebuild names and icons" pays that; the ordinary reload does not.
@@ -335,8 +361,9 @@ when the console crashed, the files from `atmosphere/fatal_errors` and
 - [PoloNX](https://github.com/PoloNX) for SwitchU itself. This fork adds to his
   work and does not replace it.
 - [ncarvalho99](https://github.com/ncarvalho99) for the
-  [fork this one continues](https://github.com/ncarvalho99/SwitchU), and for the
-  metadata, gallery and theme catalogue services the menu still uses.
+  [fork this one continues](https://github.com/ncarvalho99/SwitchU), whose
+  2.5.0–2.6.4 features 2.6.0 brings in, and for the theme catalogue the menu
+  still lists.
 - Thanks to [Xortroll](https://github.com/Xortroll) for the help and for
   [uLaunch](https://github.com/Xortroll/uLaunch) which inspired this project a lot
 

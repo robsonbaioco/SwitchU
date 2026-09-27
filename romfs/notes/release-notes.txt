@@ -1,14 +1,18 @@
-A backup that survives a clean install
-- At every boot SwitchU copies its configuration, themes and artwork to backup/SwitchU, which a pack's clean install leaves alone. If the configuration ever goes missing, it is restored before the menu starts, so you come back to your settings instead of the tutorial.
-- A firmware update through the CNX Updater still switches SwitchU off: open SwitchU Manager and use Update or Repair installation to bring it back.
+From ncarvalho99's 2.6.x
+- Favorites, Quick Settings, the Activity Log, a cheat manager in the dossier, WaraWara Plaza, your own soundtrack with the Multimedia Center, and more. The R sort now has Favorites before Most played; if you used Most played, it stays selected.
 
-Renaming a game
-- A game renamed because it had no name of its own is now searched on SteamGridDB by the new name right away, instead of only after the menu restarted.
+The dossier's details
+- Description, publisher, release date, genres and screenshots now come from the nlib title API. Metascore (RAWG) and time to beat (IGDB) need keys of your own, in Settings > SteamGridDB > Game details.
+
+Names for unnamed games
+- Games the console cannot name are named from a table of well-known titles or from the nlib title API, which also lets SteamGridDB find them. A name you give still wins.
 --pt-BR--
 
-Um backup que sobrevive à instalação limpa
-- A cada boot o SwitchU copia a configuração, os temas e as artes para backup/SwitchU, que a instalação limpa de um pack não apaga. Se a configuração sumir, ela é restaurada antes de o menu abrir, e você volta às suas configurações em vez do tutorial.
-- Uma atualização de firmware pelo CNX Updater continua desligando o SwitchU: abra o SwitchU Manager e use Update ou Repair installation para trazê-lo de volta.
+Da 2.6.x do ncarvalho99
+- Favoritos, Quick Settings, registro de atividade, gerenciador de cheats no dossiê, WaraWara Plaza, trilha sonora própria com a Central Multimídia, e mais. A ordenação no R agora tem Favoritos antes de Mais jogados; se você usava Mais jogados, ele continua selecionado.
 
-Renomear um jogo
-- Um jogo renomeado por não ter nome próprio agora é buscado no SteamGridDB pelo nome novo na hora, e não só depois de o menu reiniciar.
+Os detalhes do dossiê
+- Descrição, publisher, lançamento, gêneros e screenshots agora vêm da API de títulos da nlib. Metascore (RAWG) e tempo para zerar (IGDB) precisam de chaves suas, em Configurações > SteamGridDB > Detalhes dos jogos.
+
+Nomes para jogos sem nome
+- Jogos que o console não sabe nomear recebem nome de uma tabela de títulos conhecidos ou da API da nlib, o que também deixa o SteamGridDB encontrá-los. Um nome que você der continua valendo.
