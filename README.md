@@ -37,6 +37,9 @@
 - Games launch through a daemon that replaces qlaunch, so the menu is a real
   home menu: HOME returns to it, a suspended game resumes, and the console
   sleeps, restarts and shuts down from it.
+- Coming back from a game is immediate: the menu shows the screen you left
+  while it rebuilds behind it, on the same page, folder and focus. A suspended
+  game resumes with a short fade rather than the full launch animation.
 - **A single-row view** on **−**: one large icon with its neighbours either
   side, the game's hero art filling the screen behind it and its logo above the
   row. It is a carousel — it wraps in both directions, skips empty slots, and
@@ -66,7 +69,12 @@ depended on his servers was left out or given a public fallback; see
 - Group software into folders with a name, a colour and their own pages. Games
   and homebrew mix freely.
 - The tile shows up to nine of the icons inside it, on clear glass, in a grid
-  that follows how many members there are.
+  that follows how many members there are. That is the **Classic** style; six
+  others (Simple, Minimal, Tab, Ring, Manila, Label) and a **Show cover** option
+  that puts the first game on the tile are in the folder options, for every
+  folder at once.
+- Inside a folder, dropping a game on another swaps the two, and a tap outside
+  the icons closes the folder.
 - **+** on a title files it into a folder. Inside an open folder, **R** takes
   the focused title straight back out, and **↑** reaches the folder's name to
   rename it.
@@ -281,7 +289,7 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.6.0. Each one is tracked as an issue with what is known so far and what
+As of 2.7.0. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
 
 - **Parts of Settings are read-only or missing**
@@ -364,6 +372,8 @@ when the console crashed, the files from `atmosphere/fatal_errors` and
   [fork this one continues](https://github.com/ncarvalho99/SwitchU), whose
   2.5.0–2.6.4 features 2.6.0 brings in, and for the theme catalogue the menu
   still lists.
+- [bshurikan](https://github.com/bshurikan) for the folder styles, the instant
+  return to HOME and the quick resume, brought in from PoloNX's repository.
 - Thanks to [Xortroll](https://github.com/Xortroll) for the help and for
   [uLaunch](https://github.com/Xortroll/uLaunch) which inspired this project a lot
 

@@ -1,18 +1,12 @@
-From ncarvalho99's 2.6.x
-- Favorites, Quick Settings, the Activity Log, a cheat manager in the dossier, WaraWara Plaza, your own soundtrack with the Multimedia Center, and more. The R sort now has Favorites before Most played; if you used Most played, it stays selected.
+Back to HOME at once
+- Leaving for a game saves the screen as it was; HOME brings it back straight away while the menu rebuilds, on the same page, folder and focus. A suspended game resumes with a short fade.
 
-The dossier's details
-- Description, publisher, release date, genres and screenshots now come from the nlib title API. Metascore (RAWG) and time to beat (IGDB) need keys of your own, in Settings > SteamGridDB > Game details.
-
-Names for unnamed games
-- Games the console cannot name are named from a table of well-known titles or from the nlib title API, which also lets SteamGridDB find them. A name you give still wins.
+Folders
+- Six new styles next to Classic, and Show cover to put the first game on the tile, in the folder options. Inside a folder, dropping a game on another swaps them, and a tap outside the icons closes it. Moving into a folder from page 2 works again.
 --pt-BR--
 
-Da 2.6.x do ncarvalho99
-- Favoritos, Quick Settings, registro de atividade, gerenciador de cheats no dossiê, WaraWara Plaza, trilha sonora própria com a Central Multimídia, e mais. A ordenação no R agora tem Favoritos antes de Mais jogados; se você usava Mais jogados, ele continua selecionado.
+De volta ao HOME na hora
+- Sair para um jogo guarda a tela como estava; o HOME a traz de volta na hora enquanto o menu se reconstrói, na mesma página, pasta e foco. Um jogo suspenso volta com um fade curto.
 
-Os detalhes do dossiê
-- Descrição, publisher, lançamento, gêneros e screenshots agora vêm da API de títulos da nlib. Metascore (RAWG) e tempo para zerar (IGDB) precisam de chaves suas, em Configurações > SteamGridDB > Detalhes dos jogos.
-
-Nomes para jogos sem nome
-- Jogos que o console não sabe nomear recebem nome de uma tabela de títulos conhecidos ou da API da nlib, o que também deixa o SteamGridDB encontrá-los. Um nome que você der continua valendo.
+Pastas
+- Seis estilos novos ao lado do Clássico, e Mostrar capa para pôr o primeiro jogo no ícone, nas opções da pasta. Dentro de uma pasta, soltar um jogo sobre outro troca os dois, e tocar fora dos ícones fecha a pasta. Mover para uma pasta a partir da página 2 volta a funcionar.
