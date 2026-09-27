@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ThemeCatalogClient.hpp"
+#include "YouTubeClient.hpp"
 #include <unordered_set>
 #include "settings/TabbedOverlayScreen.hpp"
 
@@ -17,6 +18,7 @@ namespace themeshop::tabs {
 class InstalledTab;
 class CommunityTab;
 class AnimatedTab;
+class MusicTab;
 class OptionsTab;
 class UpdateTab;
 class UninstallTab;
@@ -81,6 +83,7 @@ public:
     void onBackgroundBlurChange(FloatCb cb)  { m_backgroundBlurCb = std::move(cb); }
     void onGridColumnsChange(IntCb cb)   { m_gridColumnsCb = std::move(cb); }
     void onGridRowsChange(IntCb cb)      { m_gridRowsCb = std::move(cb); }
+    void onDynamicPagesChange(BoolCb cb) { m_dynamicPagesCb = std::move(cb); }
     void onNextTrack(VoidCb cb)          { m_nextTrackCb = std::move(cb); }
     void onThemeShopApply(StringCb cb)   { m_themeShopApplyCb = std::move(cb); }
     void onThemeShopDelete(StringCb cb)  { m_themeShopDeleteCb = std::move(cb); }
@@ -106,6 +109,9 @@ public:
     void setGridLayoutState(int columns, int rows) {
         m_gridColumns = std::clamp(columns, 3, 8);
         m_gridRows = std::clamp(rows, 2, 5);
+    }
+    void setDynamicPagesState(bool enabled) {
+        m_dynamicPages = enabled;
     }
 
     void setThreadPool(nxui::ThreadPool* pool);
@@ -136,6 +142,29 @@ public:
     // vira um preset com id "package:<id do catálogo>", e é essa a ligação
     // entre as duas listas.
     const ThemeShopEntry* installedEntryForCatalogue(const std::string& catalogueId) const;
+    using TextEntryRequestCb = std::function<void(const std::string& title,
+                                                   const std::string& guide,
+                                                   const std::string& initial,
+                                                   std::function<void(std::string)> onAccept)>;
+    using ProgressShowCb = std::function<void(const std::string& title, const std::string& message, float progress01)>;
+    using ProgressUpdateCb = std::function<void(const std::string& message, float progress01)>;
+    using ProgressHideCb = std::function<void()>;
+
+    using PlayMusicCb = std::function<void(const std::string& path, const std::string& title)>;
+
+    void onRequestTextEntry(TextEntryRequestCb cb) { m_requestTextEntryCb = std::move(cb); }
+    void onProgressShow(ProgressShowCb cb) { m_progressShowCb = std::move(cb); }
+    void onProgressUpdate(ProgressUpdateCb cb) { m_progressUpdateCb = std::move(cb); }
+    void onProgressHide(ProgressHideCb cb) { m_progressHideCb = std::move(cb); }
+    void onMusicDownloaded(VoidCb cb) { m_musicDownloadedCb = std::move(cb); }
+    void onPlayMusic(PlayMusicCb cb) { m_playMusicCb = std::move(cb); }
+    bool isMusicTab() const;
+    void pollMusicDownloads();
+    void searchYouTube(const std::string& query);
+    void resetMusicTabState();
+    YouTubeClient& youTubeClient() { return m_youTubeClient; }
+    const YouTubeClient::TrackItem* selectedMusicTrack() const;
+
     const ThemeCatalogClient::Entry* selectedCommunityThemeEntry() const;
     const ThemeCatalogClient::Entry* findCommunityThemeEntry(const std::string& themeId) const;
     const std::string& communityCatalogUrl() const {
@@ -144,7 +173,7 @@ public:
 
 protected:
     void buildTabs() override;
-    bool usesCustomContentLayout() const override { return m_tabIndex < 3; }
+    bool usesCustomContentLayout() const override { return m_tabIndex <= 3; }
     bool consumeRenderDiagnosticsFrame() override;
     void drawCustomContent(nxui::Renderer& ren, const nxui::Rect& panel, const nxui::Rect& content, float opacity) override;
     void updateCustomContent(float dt) override;
@@ -166,6 +195,7 @@ private:
     friend class themeshop::tabs::InstalledTab;
     friend class themeshop::tabs::CommunityTab;
     friend class themeshop::tabs::AnimatedTab;
+    friend class themeshop::tabs::MusicTab;
     friend class themeshop::tabs::OptionsTab;
     friend class themeshop::tabs::UpdateTab;
     friend class themeshop::tabs::UninstallTab;
@@ -230,6 +260,7 @@ private:
     // O mesmo resumo para o que já está no console: quantos temas e quanto do
     // cartão eles ocupam.
     std::string installedThemeTotals() const;
+    std::string installedMusicTotals() const;
     // O que um tema instalado ocupa, ou 0 enquanto a medição não voltou.
     std::uint64_t installedThemeBytes(const std::string& installPath) const;
     // Põe na fila a medição dos temas que ainda não têm tamanho. Percorrer a
@@ -286,6 +317,7 @@ private:
     FloatCb m_backgroundBlurCb;
     IntCb m_gridColumnsCb;
     IntCb m_gridRowsCb;
+    BoolCb m_dynamicPagesCb;
     VoidCb m_nextTrackCb;
     StringCb m_themeShopApplyCb;
     StringCb m_themeShopDeleteCb;
@@ -320,6 +352,7 @@ private:
     float m_backgroundBlur = 0.f;
     int m_gridColumns = 5;
     int m_gridRows = 3;
+    bool m_dynamicPages = true;
     std::string m_searchQuery;
     std::vector<ThemeShopEntry> m_allThemeShopEntries;
     std::vector<ThemeShopEntry> m_themeShopEntries;
@@ -365,6 +398,16 @@ private:
     nxui::AnimatedFloat m_detailFullscreenAnim{0.f};
     int m_installedScrollRow = 0;
     int m_communityScrollRow = 0;
+    int m_musicScrollRow = 0;
+    int m_musicSelectedIndex = 0;
+    std::string m_youtubeSearchQuery;
+    YouTubeClient m_youTubeClient;
+    TextEntryRequestCb m_requestTextEntryCb;
+    ProgressShowCb m_progressShowCb;
+    ProgressUpdateCb m_progressUpdateCb;
+    ProgressHideCb m_progressHideCb;
+    VoidCb m_musicDownloadedCb;
+    PlayMusicCb m_playMusicCb;
     int m_lastCustomTabIndex = -1;
     std::string m_lastPreviewPrimeKey;
     float m_previewTrimTimer = 0.f;

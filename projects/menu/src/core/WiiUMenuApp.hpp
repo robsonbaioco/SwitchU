@@ -17,6 +17,7 @@
 #include "core/AccessibilityManager.hpp"
 #include "widgets/LaunchAnimation.hpp"
 #include "widgets/OverlayDialog.hpp"
+#include "widgets/QuickSettingsOverlay.hpp"
 #include "widgets/ContextMenu.hpp"
 #include "widgets/ProgressDialog.hpp"
 #include "widgets/LockScreen.hpp"
@@ -39,6 +40,16 @@
 #include "details/GameDetailsScreen.hpp"
 #include "update/UpdateClient.hpp"
 #include "mods/GameModsScreen.hpp"
+#include "cheats/GameCheatsScreen.hpp"
+#include "activity/ActivityLogScreen.hpp"
+#include "activity/ActivityLogManager.hpp"
+#include "warawara/MiiAvatarManager.hpp"
+#include "warawara/PlazaDialogueEngine.hpp"
+#include "warawara/AnimalesePlayer.hpp"
+#include "warawara/WaraWaraPlazaScreen.hpp"
+#include "warawara/PlazaScreenSwapButton.hpp"
+#include "widgets/MediaCenterButton.hpp"
+#include "media/MediaCenterScreen.hpp"
 #include "gallery/GameArtworkStore.hpp"
 #include "core/Config.hpp"
 #include "core/FolderStore.hpp"
@@ -122,7 +133,7 @@ private:
     // bar shows which one is in force rather than just naming the button.
     void cycleSortMode();
     std::string sortModeLabel() const;
-    // Play time for sort mode 3 and its badge. pdm is asked on the thread pool,
+    // Play time for sort mode 4 and its badge. pdm is asked on the thread pool,
     // in one batch; the sort comparator and the icons only ever read the cache
     // in m_config.playtime, never pdm itself.
     void requestPlaytimeRefresh(const char* reason);
@@ -147,6 +158,7 @@ private:
     void showGameDetails(std::uint64_t titleId, const std::string& title,
                          nxui::Texture* liveCover = nullptr);
     void showGameMods(std::uint64_t titleId, const std::string& title);
+    void showGameCheats(std::uint64_t titleId, const std::string& title);
     void confirmDeleteGameMod();
     void confirmGameArtwork(std::uint64_t titleId, const std::string& title,
                             GameGalleryClient::Category category,
@@ -261,7 +273,8 @@ private:
     // instead of waiting for a return value.
     void requestTextEntry(const std::string& title, const std::string& guide,
                           const std::string& initial, int maxLength, bool password,
-                          std::function<void(const std::string&)> onAccept);
+                          std::function<void(const std::string&)> onAccept,
+                          std::function<void()> onCancel = nullptr);
     void createTextEntry();
     std::string defaultFolderName() const;
     void editSteamGridDbApiKey();
@@ -288,6 +301,7 @@ private:
     // chegava depois, sobrescrevendo o que o tema tinha posto -- entao quem
     // carrega o preset precisa saber que nao deve tocar na musica.
     std::vector<std::string> m_themeMusicTracks;
+    std::vector<TrackInfo> m_customBgmTracks;
     void applyUiLanguage();
     void rebuildThemeFromColors();
     ThemePreset buildEffectiveThemePreset();
@@ -334,9 +348,20 @@ private:
     bool flipPage(int dir);
     bool addPageAvailable();
     void createFolderPage();
+    void createHomePage();
+    bool deletePageAvailable();
+    void deleteFolderPage();
+    void deleteHomePage();
     float m_addPageHold = 0.f;
     bool m_addPageMode = false;
     bool m_addPageTouchHold = false;
+    bool m_addPageTriggered = false;
+    float m_deletePageHold = 0.f;
+    bool m_deletePageMode = false;
+    bool m_deletePageTouchHold = false;
+    bool m_deletePageTriggered = false;
+    bool m_zlQuickFlipArmed = false;
+    float m_zlQuickFlipHeld = 0.f;
     int findTitleIndex(uint64_t titleId) const;
     bool focusTitle(uint64_t titleId);
     // Devolve o seletor para a grade quando não há um título específico para
@@ -364,19 +389,39 @@ private:
     void wireGlobalActions();
     void toggleAccessibilitySpeech();
     bool handleAccessibilityToggleCombo();
+    bool handleFrameDumpShortcut();
+    void syncFrameDumpCapture();
+    void checkNewGameSteamGridDbPrompt();
+    void promptSteamGridDbForGame(std::uint64_t titleId, const std::string& title);
+    std::string resolveAppTitle(std::uint64_t titleId, const std::string& currentTitle);
+    void pollAutoNtpSync(float dt);
     void handleSortShortcutRelease(float dt);
+    void handleZlShortcutRelease(float dt);
     // Longer than a deliberate tap, far shorter than the hold used to reach
     // Sphaira, so the two gestures never get confused for one another.
     static constexpr float kSortShortcutTapSeconds = 0.35f;
     bool isCurrentFocusableWidget(nxui::Widget* w) const;
     std::string accessibilityPositionFor(nxui::Widget* w) const;
     void createSettings();
+    void createQuickSettings();
+    void openQuickSettings();
+    void closeQuickSettings();
+    void createActivityLog();
+    void openActivityLog(std::uint64_t initialTitleId = 0);
+    void closeActivityLog();
     void createThemeShop();
     void createGameOptions();
     void createFolderOptions();
     void createControllerTest();
     void createGameGallery();
     void createGameDetails();
+    void createWaraWaraPlaza();
+    void openWaraWaraPlaza();
+    void closeWaraWaraPlaza();
+    void toggleWaraWaraPlaza();
+    void toggleMediaCenter();
+    void syncMediaCenterState();
+    void refreshPlazaCommunities();
     void reloadThemePresets();
     void refreshThemeShopState();
     std::vector<ThemeShopScreen::ThemeShopEntry> buildThemeShopEntries();
@@ -387,6 +432,8 @@ private:
     void loadSoundPreset(const std::string& preset);
     void changeSoundPreset(const std::string& preset);
     std::vector<std::string> scanAvailablePresets();
+    std::vector<TrackInfo> scanCustomBgmTracks();
+    void reloadMusicTracks();
     void loadMenuLayout();
     void saveMenuLayout();
     void quiesceWritersForPowerAction();
@@ -413,6 +460,12 @@ private:
     void setAppLayoutMode(AppLayoutMode mode);
     void configureDynamicLineNavigation();
     AppLayoutMode appLayoutMode() const { return m_appLayoutMode; }
+    warawara::MiiAvatarManager& miiAvatarManager() { return m_miiAvatarManager; }
+    const warawara::MiiAvatarManager& miiAvatarManager() const { return m_miiAvatarManager; }
+    warawara::PlazaDialogueEngine& plazaDialogueEngine() { return m_plazaDialogueEngine; }
+    const warawara::PlazaDialogueEngine& plazaDialogueEngine() const { return m_plazaDialogueEngine; }
+    warawara::AnimalesePlayer& animalesePlayer() { return m_animalesePlayer; }
+    const warawara::AnimalesePlayer& animalesePlayer() const { return m_animalesePlayer; }
 
 #ifdef SWITCHU_MENU
     void refreshAppList();
@@ -460,6 +513,7 @@ private:
     std::shared_ptr<LaunchAnimation>   m_launchAnim;
     std::shared_ptr<OverlayDialog>     m_userSelect;
     std::shared_ptr<OverlayDialog>     m_dialog;
+    std::shared_ptr<QuickSettingsOverlay> m_quickSettings;
     std::shared_ptr<ContextMenu>       m_contextMenu;
     std::shared_ptr<ProgressDialog>    m_progressDialog;
     std::shared_ptr<SettingsScreen>    m_settings;
@@ -467,6 +521,7 @@ private:
     std::shared_ptr<GameGalleryScreen> m_gameGallery;
     std::shared_ptr<GameDetailsScreen> m_gameDetails;
     std::shared_ptr<GameModsScreen>    m_gameMods;
+    std::shared_ptr<GameCheatsScreen>  m_gameCheats;
     std::shared_ptr<GameOptionsScreen> m_gameOptions;
     std::shared_ptr<SteamGridDbPickerScreen> m_steamGridDbPicker;
     std::shared_ptr<PlatformPickerScreen> m_platformPicker;
@@ -475,6 +530,20 @@ private:
     std::shared_ptr<FolderOptionsScreen> m_folderOptions;
     std::shared_ptr<ControllerTestScreen> m_controllerTest;
     std::shared_ptr<TextEntryScreen>      m_textEntry;
+    std::shared_ptr<ActivityLogScreen>    m_activityLog;
+    switchu::activity::ActivityLogManager m_activityLogManager;
+    warawara::MiiAvatarManager            m_miiAvatarManager;
+    warawara::PlazaDialogueEngine         m_plazaDialogueEngine;
+    warawara::AnimalesePlayer             m_animalesePlayer;
+    std::shared_ptr<warawara::WaraWaraPlazaScreen>   m_plazaScreen;
+    std::shared_ptr<nxui::Box>                       m_topCenterCluster;
+    std::shared_ptr<warawara::PlazaScreenSwapButton> m_screenSwapButton;
+    std::shared_ptr<widgets::MediaCenterButton>      m_mediaCenterButton;
+    std::shared_ptr<media::MediaCenterScreen>        m_mediaCenterScreen;
+    int m_plazaIconPumpIndex = 0;
+    nxui::Widget* m_activityLogReturnFocus = nullptr;
+    nxui::Widget* m_plazaReturnFocus = nullptr;
+    nxui::Widget* m_mediaCenterReturnFocus = nullptr;
 
     nxui::Texture m_gameCardTex;
     nxui::Texture m_arrowTexLeft;
@@ -608,6 +677,7 @@ private:
         std::unique_ptr<nxui::Texture> logo;
     };
     std::unordered_map<std::uint64_t, GameArtworkTextures> m_gameArtwork;
+    std::unordered_map<std::uint64_t, nxui::Texture> m_plazaCommunityTextures;
     struct GameArtworkDecodeState {
         std::uint64_t titleId = 0;
         steamgriddb::artwork::DecodedImage hero;
@@ -679,6 +749,9 @@ private:
     std::uint64_t m_steamGridDbUiRevision = 0;
     std::uint64_t m_steamGridDbLastCompletedTitleId = 0;
     bool m_steamGridDbWasRunning = false;
+    bool m_newGamePromptChecked = false;
+    bool m_autoNtpSynced = false;
+    float m_ntpCheckTimer = 0.f;
     bool m_startupConfigProvided = false;
     bool m_settingsNeedRefresh        = false;
     std::string m_loadedRegularFontPath;
@@ -757,6 +830,12 @@ private:
     bool m_hintPanelInitialized = false;
     bool m_hintCapsulesInitialized = false;
     bool m_accessibilityToggleComboHeld = false;
+    bool m_frameDumpShortcutHeld = false;
+    bool m_frameDumpActive = false;
+    int  m_frameDumpRemaining = 0;
+    int  m_frameDumpIndex = 0;
+    int  m_frameDumpCounter = 0;
+    std::string m_frameDumpBatchDir;
     // Set while R is held so a release only sorts when the press began here,
     // and not when R was already down on the way back from another screen.
     update::UpdateClient m_updateClient;

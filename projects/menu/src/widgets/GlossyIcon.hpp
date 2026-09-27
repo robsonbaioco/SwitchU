@@ -26,6 +26,7 @@ public:
     void setTexture(nxui::Texture* tex) { m_tex = tex; }
     nxui::Texture* texture() const      { return m_tex; }
     void setCustomArtwork(bool custom)  { m_customArtwork = custom; }
+    bool customArtwork() const          { return m_customArtwork; }
 
     void setGameCardTexture(nxui::Texture* tex) { m_gameCardTex = tex; }
     nxui::Texture* gameCardTexture() const      { return m_gameCardTex; }
@@ -35,6 +36,7 @@ public:
 
     void setSuspended(bool s)     { m_suspended = s; }
     bool isSuspended() const      { return m_suspended; }
+    const std::string& playtimeBadge() const { return m_playtimeBadge; }
 
     // Text of the play-time pill in the bottom-left corner. Empty hides it;
     // the owner decides when there is one to show.
@@ -109,6 +111,8 @@ public:
         m_wideGameHero = hero;
         m_wideGameLogo = logo;
     }
+    void setFavorite(bool fav) { m_isFavorite = fav; }
+    bool isFavorite() const { return m_isFavorite; }
     int gridSpanColumns() const { return m_widgetColumns; }
     int gridSpanRows() const { return m_widgetRows; }
 
@@ -137,6 +141,7 @@ private:
     bool        m_suspended = false;
     bool        m_isGameCard = false;
     bool        m_notLaunchable = false;
+    bool        m_isFavorite = false;
     bool        m_customArtwork = false;
     std::string m_playtimeBadge;
     nxui::Color m_loadingColor = nxui::Color::white();

@@ -84,6 +84,16 @@ public:
     // A ring of slots lets consecutive draws use distinct memory. 512 covers
     // the busiest measured frame (137 draws) with room to spare, at 128 KB.
     static constexpr int FS_UBO_RING    = 512;
+    // The projection matrix has exactly the same hazard and never got the same
+    // treatment. updateProjection() and bindRenderTarget() both memcpy a
+    // different ortho matrix into one 256-byte allocation, while the frame's
+    // command list is not submitted until endFrame — so the last CPU write of
+    // the frame silently applied to every draw already recorded in it. It stays
+    // invisible only because the blur passes use a clip-space vertex shader
+    // that ignores projection; any offscreen pass that did use it would have
+    // rendered the whole frame through the wrong matrix. A small ring removes
+    // the aliasing: render-target switches per frame are few.
+    static constexpr int VS_UBO_RING    = 32;
     static constexpr int CMD_BUF_SIZE   = 256 * 1024;
     static constexpr int CODE_POOL_SIZE = 256 * 1024;
 
@@ -93,6 +103,14 @@ public:
     int  beginFrame();
     void endFrame();
     void waitIdle();
+
+    // Arms a lossless diagnostic capture of the next fully-rendered frame.
+    // The GPU copies RGBA8 pixels into a CPU-visible block before present;
+    // takeFrameDump() returns them after queue completion on the following
+    // update. Only one capture can be armed or pending at a time.
+    bool requestFrameDump();
+    bool takeFrameDump(std::vector<std::uint8_t>& rgba);
+    bool frameDumpBusy() const { return m_frameDumpArmed || m_frameDumpPending; }
 
     // Application shutdown destroys a large texture graph. Waiting for the
     // same queue once per texture turns teardown into a chain of redundant
@@ -114,6 +132,31 @@ public:
     uint32_t lastFrameUploads()       const { return m_lastFrameUploads; }
     uint32_t lastFrameUploadBatches() const { return m_lastFrameUploadBatches; }
     uint64_t lastFrameUploadWaitNs()  const { return m_lastFrameUploadWaitNs; }
+
+    // Presentation timing, in nanoseconds, for the frame just submitted.
+    //
+    // The Plaza artifact attenuates a contiguous band of scanlines from row 0
+    // to a cut row that differs per occurrence, with the band holding *current*
+    // frame content multiplied by a scalar. That rules out both a submitted
+    // dimming draw and stale buffer content, and points at what happens between
+    // submission and scanout. These counters make the presentation interval
+    // observable so a frame that missed its deadline can be told apart from one
+    // that met it: a tear caused by present racing scanout must correlate with
+    // an anomalous interval, and an artifact that appears at a perfectly normal
+    // interval cannot be blamed on present timing.
+    uint64_t lastPresentIntervalNs() const { return m_lastPresentIntervalNs; }
+    uint64_t lastSubmitToPresentNs() const { return m_lastSubmitToPresentNs; }
+    uint64_t lastFrameCpuNs()        const { return m_lastFrameCpuNs; }
+
+    // Result of the dual-readback self-test performed by takeFrameDump: the
+    // same framebuffer image is copied into two buffers back to back in one
+    // command list, and the buffers are compared byte for byte. Zero mismatches
+    // means the readback path is reproducible and the captured pixels are what
+    // the GPU image holds. Non-zero means the capture itself is unstable, and
+    // any attenuation measured from these dumps is suspect.
+    uint32_t lastDumpMismatchBytes() const { return m_lastDumpMismatchBytes; }
+    uint32_t lastDumpFirstMismatch() const { return m_lastDumpFirstMismatch; }
+    uint32_t lastDumpMaxDelta()      const { return m_lastDumpMaxDelta; }
 
     int  width()  const { return FB_WIDTH; }
     int  height() const { return FB_HEIGHT; }
@@ -151,6 +194,23 @@ public:
         return m_dataPool.gpuAddr(m_fsUboOff[frame] + idx * FS_UBO_SIZE);
     }
     void resetFsUboRing(int frame) { m_fsUboRingPos[frame] = 0; }
+
+    // Same contract as the fragment ring above, for the projection matrix.
+    // Returns the CPU and GPU address of a slot no recorded draw is still
+    // pointing at, so a mid-frame projection change cannot rewrite the matrix
+    // an earlier draw in the same frame was recorded with.
+    uint32_t nextVsUboSlot(int frame) {
+        const uint32_t idx = m_vsUboRingPos[frame];
+        m_vsUboRingPos[frame] = (idx + 1u) % VS_UBO_RING;
+        return idx;
+    }
+    DkGpuAddr vsUboGpuAddrAt(int frame, uint32_t idx) const {
+        return m_dataPool.gpuAddr(m_vsUboOff[frame] + idx * VS_UBO_SIZE);
+    }
+    void* vsUboCpuAddrAt(int frame, uint32_t idx) const {
+        return m_dataPool.cpuAddr(m_vsUboOff[frame] + idx * VS_UBO_SIZE);
+    }
+    void resetVsUboRing(int frame) { m_vsUboRingPos[frame] = 0; }
 
     struct ImageAlloc {
         dk::MemBlock block;
@@ -297,6 +357,7 @@ private:
     GpuPool m_dataPool;
     GpuPool m_imagePool;
     GpuPool m_uploadStagingPool[UPLOAD_SLOT_COUNT];
+    dk::UniqueMemBlock m_frameDumpBuffers[2];
 
     // Normal icons, glyphs, and BC1 frames share a fixed arena per slot. A
     // larger upload owns one temporary block until the slot fence signals.
@@ -321,6 +382,7 @@ private:
     uint32_t m_vsUboOff[NUM_FB] {};
     uint32_t m_fsUboOff[NUM_FB] {};
     uint32_t m_fsUboRingPos[NUM_FB] {};
+    uint32_t m_vsUboRingPos[NUM_FB] {};
     uint32_t m_imgDescOff = 0;
     uint32_t m_samDescOff = 0;
 
@@ -340,6 +402,20 @@ private:
     SDL_Renderer* m_sdlRenderer = nullptr;
 #endif
     int m_slot = -1;
+    bool m_frameDumpArmed = false;
+    bool m_frameDumpPending = false;
+
+    // Presentation timing. See lastPresentIntervalNs().
+    uint64_t m_prevPresentTick = 0;
+    uint64_t m_frameBeginTick = 0;
+    uint64_t m_lastPresentIntervalNs = 0;
+    uint64_t m_lastSubmitToPresentNs = 0;
+    uint64_t m_lastFrameCpuNs = 0;
+
+    // Dual-readback self-test results. See lastDumpMismatchBytes().
+    uint32_t m_lastDumpMismatchBytes = 0;
+    uint32_t m_lastDumpFirstMismatch = UINT32_MAX;
+    uint32_t m_lastDumpMaxDelta = 0;
     uint32_t m_frameUploads = 0;
     uint32_t m_lastFrameUploads = 0;
     uint32_t m_frameUploadBatches = 0;

@@ -507,6 +507,7 @@ void OverlayDialog::show(const std::string& title,
     m_cachedBlurIterations = -1;
 
     buildWidgetTree();
+    layout(panelRect());
 
     m_overlayAlpha.setImmediate(0.f);
     m_panelScale.setImmediate(0.92f);
@@ -1444,6 +1445,15 @@ void OverlayDialog::render(nxui::Renderer& ren) {
         m_cachedBlurIterations = tuning.blurIterations;
     }
 
+    // Translucent backdrop scrim matching default window style (Settings / Quick Settings)
+    if (m_theme) {
+        nxui::Rect screen = {0.f, 0.f, (float)ren.width(), (float)ren.height()};
+        nxui::Color scrim = nxui::Color::lerp(m_theme->background, nxui::Color::black(),
+                                              m_theme->mode == nxui::ThemeMode::Dark ? 0.72f : 0.28f)
+            .withAlpha((m_theme->mode == nxui::ThemeMode::Dark ? 0.25f : 0.14f) * alpha);
+        ren.drawRect(screen, scrim);
+    }
+
     renderGlassPanel(ren, m_theme, panel, kPanelRadius, m_base, m_border, m_highlight,
                      alpha, kBackdropCacheTarget);
 
@@ -1459,4 +1469,18 @@ void OverlayDialog::render(nxui::Renderer& ren) {
     }
 
     m_cursor.render(ren);
+}
+
+nxui::Rect OverlayDialog::focusRect() const {
+    if (m_mode == DialogMode::Buttons && m_selected >= 0 &&
+        m_selected < (int)m_btnWidgets.size() && m_btnWidgets[m_selected]) {
+        return scaledRect(m_btnWidgets[m_selected]->rect(), m_panelScale.value());
+    }
+    if (m_mode == DialogMode::DateTime) {
+        return dateTimeFieldRect(m_dateTimeField);
+    }
+    if (m_mode == DialogMode::UserSelect && m_selected >= 0 && m_selected < userSlotCount()) {
+        return userAvatarRect(m_selected);
+    }
+    return panelRect();
 }

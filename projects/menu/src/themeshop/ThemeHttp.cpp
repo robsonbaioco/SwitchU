@@ -333,6 +333,7 @@ std::uint64_t getToFile(const std::string& url,
             curl_easy_setopt(request, CURLOPT_TIMEOUT, 0L);
             curl_easy_setopt(request, CURLOPT_LOW_SPEED_LIMIT, 1024L);
             curl_easy_setopt(request, CURLOPT_LOW_SPEED_TIME, 30L);
+            curl_easy_setopt(request, CURLOPT_BUFFERSIZE, 128 * 1024L);
             curl_easy_setopt(request, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
             curl_easy_setopt(request, CURLOPT_USERAGENT, agent.c_str());
             curl_easy_setopt(request, CURLOPT_WRITEFUNCTION, writeDownload);
@@ -383,6 +384,15 @@ std::string getText(const std::string& url,
 std::string postText(const std::string& url, const std::string& body,
                      const std::list<std::string>& headers) {
     auto bytes = performBytes(url, headers, {}, &body);
+    return std::string(bytes.begin(), bytes.end());
+}
+
+std::string postJson(const std::string& url,
+                     const std::string& jsonBody,
+                     const std::list<std::string>& headers) {
+    std::list<std::string> allHeaders = headers;
+    allHeaders.push_back("Content-Type: application/json");
+    auto bytes = performBytes(url, allHeaders, {}, &jsonBody);
     return std::string(bytes.begin(), bytes.end());
 }
 

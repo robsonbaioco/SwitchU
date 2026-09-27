@@ -1,6 +1,7 @@
 #include "AppListLoader.hpp"
 #include "core/DebugLog.hpp"
 #include "steamgriddb/SteamGridDbManager.hpp"
+#include "activity/ActivityLogManager.hpp"
 #include "smi_commands.hpp"
 #include <switch.h>
 #include <cstdio>
@@ -143,6 +144,14 @@ bool fetchDaemonCatalog(std::vector<PendingApp>& out, bool prefetchIcons) {
                     a.iconData = switchu::control_cache::readIcon(ent.titleId);
             }
         }
+        if (isTitleIdFallback(a.title, ent.titleId)) {
+            const char* known = switchu::control_cache::getKnownTitleName(ent.titleId);
+            if (known) {
+                a.title = known;
+                if (a.englishTitle.empty() || isTitleIdFallback(a.englishTitle, ent.titleId))
+                    a.englishTitle = known;
+            }
+        }
         if (a.englishTitle.empty()) a.englishTitle = a.title;
 
         if (!switchu::control_cache::isValidUtf8(a.title.c_str(), a.title.size() + 1)) {
@@ -283,8 +292,13 @@ void AppListLoader::fetchApps(std::vector<PendingApp>& output, bool prefetchIcon
             // A cached entry can carry no name: the control data had none to
             // give. The id stands in for it here rather than in the cache file,
             // so the real name is still picked up once it can be read.
-            a.title   = meta.name[0] != '\0' ? meta.name : tidBuf;
-            a.englishTitle = meta.english_name;
+            std::string resolvedName = meta.name[0] != '\0' ? meta.name : "";
+            if (resolvedName.empty()) {
+                const char* known = switchu::control_cache::getKnownTitleName(tid);
+                resolvedName = known ? known : tidBuf;
+            }
+            a.title   = resolvedName;
+            a.englishTitle = !meta.english_name[0] ? a.title : meta.english_name;
             a.titleId = tid;
             a.viewFlags = vf;
             a.startupUserKnown = true;
@@ -320,6 +334,9 @@ std::vector<uint8_t> AppListLoader::loadIconData(uint64_t titleId) {
         return iconData;
 
 #ifdef SWITCHU_MENU
+    const uint64_t canonicalId = switchu::activity::ActivityLogManager::canonicalTitleId(titleId);
+
+    // 1. SteamGridDb custom icon (check both titleId and canonicalId)
     {
         std::ifstream custom(SteamGridDbManager::iconPath(titleId), std::ios::binary);
         if (custom.is_open()) {
@@ -328,8 +345,83 @@ std::vector<uint8_t> AppListLoader::loadIconData(uint64_t titleId) {
             if (!iconData.empty())
                 return iconData;
         }
+        if (canonicalId != titleId) {
+            std::ifstream customCanon(SteamGridDbManager::iconPath(canonicalId), std::ios::binary);
+            if (customCanon.is_open()) {
+                iconData.assign(std::istreambuf_iterator<char>(customCanon),
+                                std::istreambuf_iterator<char>());
+                if (!iconData.empty())
+                    return iconData;
+            }
+        }
     }
+
+    // 2. Control cache (check both titleId and canonicalId)
     iconData = switchu::control_cache::readIcon(titleId);
+    if (!iconData.empty())
+        return iconData;
+
+    if (canonicalId != titleId) {
+        iconData = switchu::control_cache::readIcon(canonicalId);
+        if (!iconData.empty())
+            return iconData;
+    }
+
+    // 3. Fallback to P2PNX installed-icons
+    {
+        char p2pPath[128]{};
+        std::snprintf(p2pPath, sizeof(p2pPath), "sdmc:/switch/P2PNX/installed-icons/%016llX.jpg",
+                      static_cast<unsigned long long>(titleId));
+        std::ifstream p2pFile(p2pPath, std::ios::binary);
+        if (p2pFile.is_open()) {
+            iconData.assign(std::istreambuf_iterator<char>(p2pFile),
+                            std::istreambuf_iterator<char>());
+            if (!iconData.empty())
+                return iconData;
+        }
+
+        if (canonicalId != titleId) {
+            std::snprintf(p2pPath, sizeof(p2pPath), "sdmc:/switch/P2PNX/installed-icons/%016llX.jpg",
+                          static_cast<unsigned long long>(canonicalId));
+            std::ifstream p2pCanon(p2pPath, std::ios::binary);
+            if (p2pCanon.is_open()) {
+                iconData.assign(std::istreambuf_iterator<char>(p2pCanon),
+                                std::istreambuf_iterator<char>());
+                if (!iconData.empty())
+                    return iconData;
+            }
+        }
+    }
+
+#ifdef __SWITCH__
+    // 4. Live query from Horizon OS
+    {
+        auto* controlData = new (std::nothrow) NsApplicationControlData();
+        if (controlData) {
+            size_t controlSize = 0;
+            Result rc = nsGetApplicationControlData(NsApplicationControlSource_Storage,
+                                                    titleId,
+                                                    controlData,
+                                                    sizeof(NsApplicationControlData),
+                                                    &controlSize);
+            if (R_FAILED(rc) && canonicalId != titleId) {
+                rc = nsGetApplicationControlData(NsApplicationControlSource_Storage,
+                                                 canonicalId,
+                                                 controlData,
+                                                 sizeof(NsApplicationControlData),
+                                                 &controlSize);
+            }
+            if (R_SUCCEEDED(rc) && controlSize > sizeof(controlData->nacp)) {
+                switchu::control_cache::writeFromControlData(
+                    titleId, *controlData, controlSize);
+                iconData = switchu::control_cache::readIcon(titleId);
+            }
+            delete controlData;
+            if (!iconData.empty())
+                return iconData;
+        }
+    }
+#endif
 #endif
 
     return iconData;

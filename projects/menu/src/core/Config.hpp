@@ -1,5 +1,6 @@
 #pragma once
 #include "core/AppLayoutMode.hpp"
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <utility>
@@ -8,6 +9,9 @@
 
 struct AppConfig {
     bool  musicEnabled = true;
+    bool  customBgmEnabled = false;
+    bool  customBgmShuffle = true;
+    std::string audioSourcePreference = "custom_first";
     // Levels asked for after people used the menu on real hardware: the music
     // sits under the game audio rather than competing with it, and the effects
     // stay audible above it. Both were louder before and were turned down by
@@ -16,6 +20,7 @@ struct AppConfig {
     float sfxVolume    = 0.25f;
     int   gridColumns  = 5;
     int   gridRows     = 3;
+    bool  dynamicPages = true;
     AppLayoutMode appLayoutMode = AppLayoutMode::Grid;
     std::string actionHintStyle = "capsules";
     std::string uiLanguageOverride = "auto";
@@ -39,6 +44,8 @@ struct AppConfig {
     std::string rawgApiKey;
     std::string igdbClientId;
     std::string igdbClientSecret;
+    std::string ytdlBackendUrl;
+    std::vector<uint64_t> steamGridDbKnownTitles;
 
     // Softens the wallpaper and the shapes drifting over it.
     // This was zero on the argument that the blur costs half the wallpaper's
@@ -76,14 +83,16 @@ struct AppConfig {
 
     // 0 = the arrangement the owner made by hand, which stays the default:
     // somebody who dragged their icons into an order did not do that to have
-    // it thrown away. 1 = A to Z. 2 = most recently opened first. 3 = most
-    // played first, by the play time the system records (see playtime below).
+    // it thrown away. 1 = A to Z. 2 = most recently opened first. 3 = favorites
+    // first (ncarvalho99 2.6.x). 4 = most played first, by the play time the
+    // system records (see playtime below). This fork had most played at 3
+    // before 2.6.0; load() moves old configs over (sortModeScheme).
     int sortMode = 0;
-    static constexpr int kSortModeCount = 4;
+    static constexpr int kSortModeCount = 5;
 
     // Total play time per title id, in nanoseconds, as pdm last reported it.
     // A cache, not a record of our own: pdm is the authority and is re-read
-    // off the UI thread whenever the menu comes up in sort mode 3 or enters
+    // off the UI thread whenever the menu comes up in sort mode 4 or enters
     // it. Kept on disk only so the grid can open in the right order before
     // that query answers -- the menu is recreated on every return from a game,
     // so an in-memory copy would start empty every time. Titles never played
@@ -122,6 +131,21 @@ struct AppConfig {
     // every day for a year.
     std::vector<std::pair<std::uint64_t, std::uint64_t>> lastOpened;
     std::vector<std::pair<std::uint64_t, std::string>> gamePortPlatforms;
+    std::vector<std::uint64_t> favoriteTitleIds;
+    bool isFavorite(std::uint64_t titleId) const {
+        for (std::uint64_t id : favoriteTitleIds) {
+            if (id == titleId) return true;
+        }
+        return false;
+    }
+    void setFavorite(std::uint64_t titleId, bool favorite) {
+        auto it = std::find(favoriteTitleIds.begin(), favoriteTitleIds.end(), titleId);
+        if (favorite && it == favoriteTitleIds.end()) {
+            favoriteTitleIds.push_back(titleId);
+        } else if (!favorite && it != favoriteTitleIds.end()) {
+            favoriteTitleIds.erase(it);
+        }
+    }
     // The NACP/catalogue title a community port ships with is often noisy
     // (mod-author credit, ROM-hack branding, "Switch Port" suffixes) and the
     // online catalogue can't match it even after normalisation. This lets a

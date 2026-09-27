@@ -1,10 +1,12 @@
 #include "WiiUMenuApp.hpp"
 #include <fmt/format.h>
+#include <zlib.h>
 #include "widgets/GlossyIcon.hpp"
 #include "DebugLog.hpp"
 #include "NsService.hpp"
 #include "core/PlayTime.hpp"
 #include <switchu/title_footprint.hpp>
+#include <switchu/sd_commit.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -101,6 +103,8 @@ std::string WiiUMenuApp::accessibilityContextFor(nxui::Widget* w) const {
         return i18n.tr("dialog.gallery_title", "Gallery");
     if (m_gameMods && m_gameMods->isActive() && w == m_gameMods.get())
         return i18n.tr("dialog.mods_title", "Mods");
+    if (m_gameCheats && m_gameCheats->isActive() && w == m_gameCheats.get())
+        return i18n.tr("dialog.cheats_title", "Cheats");
     if (m_gameDetails && m_gameDetails->isActive() && w == m_gameDetails.get())
         return i18n.tr("dialog.details_title", "Game details");
     if (w->tag() == "glossy_icon" && m_grid)
@@ -140,6 +144,8 @@ std::string WiiUMenuApp::accessibilityActionsFor(nxui::Widget* w) const {
         return i18n.tr("accessibility.actions.themes", "Up and down to navigate. A to choose. B to close.");
     if (m_gameMods && w == m_gameMods.get())
         return i18n.tr("dialog.mods_hint", "A enable/disable. X remove. B back.");
+    if (m_gameCheats && w == m_gameCheats.get())
+        return i18n.tr("dialog.cheats_hint", "A toggle  •  X toggle all  •  B back");
     if (m_gameDetails && w == m_gameDetails.get())
         return i18n.tr("dialog.details_actions", "Left and right to select gameplay art. A to expand. B to return.");
     if ((m_dialog && w == m_dialog.get()) || (m_userSelect && w == m_userSelect.get()))
@@ -501,6 +507,7 @@ void WiiUMenuApp::wireFocusCallback() {
             (m_themeShop && m_themeShop->isActive()) ||
             (m_gameGallery && m_gameGallery->isActive()) ||
             (m_gameMods && m_gameMods->isActive()) ||
+            (m_gameCheats && m_gameCheats->isActive()) ||
             (m_gameDetails && m_gameDetails->isActive()) ||
             (m_settings && m_settings->isActive()) ||
             (m_userSelect && m_userSelect->isActive()))
@@ -557,6 +564,11 @@ void WiiUMenuApp::wireFocusCallback() {
                     return;
                 }
             }
+            if (m_screenSwapButton && m_screenSwapButton.get() == cur) {
+                m_titlePill->setText(m_screenSwapButton->isPlazaActive() ? "Home Menu" : "WaraWara Plaza");
+                m_titlePill->setVisible(true);
+                return;
+            }
             m_titlePill->hideAnimated();
         } else {
             refreshGameArtworkBackdrop(0);
@@ -603,6 +615,7 @@ void WiiUMenuApp::raiseOverlay(const std::shared_ptr<nxui::Widget>& overlay) {
 
 bool WiiUMenuApp::isCurrentFocusableWidget(nxui::Widget* w) const {
     if (!w) return false;
+    if (m_plazaScreen && m_plazaScreen.get() == w) return false;
     // m_dialog stayed focused-but-unchecked here: the homebrew "Mark as game
     // port" button has closeOnPress=false, so the dialog is still the current
     // focus when its handler opens the text-entry confirm step. Cancelling
@@ -620,13 +633,16 @@ bool WiiUMenuApp::isCurrentFocusableWidget(nxui::Widget* w) const {
     // panel that had just closed.
     if (m_folderHeader && m_folderHeader.get() == w) return w->isFocusable();
     if (m_textEntry && m_textEntry.get() == w) return w->isFocusable();
+    if (m_mediaCenterScreen && m_mediaCenterScreen.get() == w) return w->isFocusable();
     if (m_steamGridDbPicker && m_steamGridDbPicker.get() == w) return w->isFocusable();
     if (m_platformPicker && m_platformPicker.get() == w) return w->isFocusable();
     if (m_gameGallery && m_gameGallery.get() == w) return w->isFocusable();
     if (m_gameMods && m_gameMods.get() == w) return w->isFocusable();
+    if (m_gameCheats && m_gameCheats.get() == w) return w->isFocusable();
     if (m_gameDetails && m_gameDetails.get() == w) return w->isFocusable();
     if (m_themeShop && m_themeShop.get() == w) return w->isFocusable();
     if (m_settings && m_settings.get() == w) return w->isFocusable();
+    if (m_quickSettings && m_quickSettings.get() == w) return w->isFocusable();
     for (const auto& btn : m_sidebar.leftButtons())
         if (btn.get() == w) return w->isFocusable();
     for (const auto& btn : m_sidebar.rightButtons())
@@ -737,6 +753,8 @@ void WiiUMenuApp::closeActiveOverlays(bool preserveDialog) {
         m_contextMenu->hide();
     if (m_userSelect && m_userSelect->isActive())
         m_userSelect->hide();
+    if (m_quickSettings && m_quickSettings->isActive())
+        m_quickSettings->hide();
     if (!preserveDialog && m_dialog && m_dialog->isActive())
         m_dialog->hide();
     if (m_settings && m_settings->isActive())
@@ -747,10 +765,18 @@ void WiiUMenuApp::closeActiveOverlays(bool preserveDialog) {
         m_gameGallery->hide();
     if (m_gameMods && m_gameMods->isActive())
         m_gameMods->hide();
+    if (m_gameCheats && m_gameCheats->isActive())
+        m_gameCheats->hide();
     if (m_gameDetails && m_gameDetails->isActive())
         m_gameDetails->hide();
+    if (m_activityLog && m_activityLog->isActive())
+        m_activityLog->hide();
+    if (m_plazaScreen && m_plazaScreen->isActive())
+        closeWaraWaraPlaza();
     if (m_steamGridDbPicker && m_steamGridDbPicker->isActive())
         m_steamGridDbPicker->hide();
+    if (m_mediaCenterScreen && m_mediaCenterScreen->isActive())
+        m_mediaCenterScreen->hide();
     if (m_platformPicker && m_platformPicker->isActive())
         m_platformPicker->hide();
     if (m_gameOptions && m_gameOptions->isActive())
@@ -773,23 +799,27 @@ nxui::Widget* WiiUMenuApp::focusRoot() {
     if (m_launchAnim && m_launchAnim->isPlaying()) return nullptr;
     if (m_folderCaptureRequested) return nullptr;
     if (m_progressDialog && m_progressDialog->isActive()) return m_progressDialog.get();
-    if (m_contextMenu && m_contextMenu->isActive()) return m_contextMenu.get();
-    // The search-title keyboard can be opened from the still-visible "Mark as
-    // game port" dialog. It must take precedence over that parent, otherwise
-    // focusRoot hands d-pad dispatch back to the dialog despite the keyboard
-    // being visibly on top and explicitly focused by requestTextEntry().
+    // The on-screen keyboard is a modal overlay that can be opened from dialogs or
+    // context menus. It must take precedence over context menus and dialogs so it
+    // receives all button and direction inputs while active.
     if (m_textEntry && m_textEntry->isActive()) return m_textEntry.get();
+    if (m_contextMenu && m_contextMenu->isActive()) return m_contextMenu.get();
     if (m_platformPicker && m_platformPicker->isActive()) return m_platformPicker.get();
     if (m_dialog && m_dialog->isActive()) return m_dialog.get();
     if (m_steamGridDbPicker && m_steamGridDbPicker->isActive()) return m_steamGridDbPicker.get();
+    if (m_mediaCenterScreen && m_mediaCenterScreen->isActive()) return m_mediaCenterScreen.get();
     if (m_controllerTest && m_controllerTest->isActive()) return m_controllerTest.get();
     if (m_folderOptions && m_folderOptions->isActive()) return m_folderOptions.get();
     if (m_gameOptions && m_gameOptions->isActive()) return m_gameOptions.get();
+    if (m_gameCheats && m_gameCheats->isActive()) return m_gameCheats.get();
     if (m_gameMods && m_gameMods->isActive()) return m_gameMods.get();
     if (m_gameGallery && m_gameGallery->isActive()) return m_gameGallery.get();
     if (m_gameDetails && m_gameDetails->isActive()) return m_gameDetails.get();
+    if (m_activityLog && m_activityLog->isActive()) return m_activityLog.get();
+    if (m_plazaScreen && m_plazaScreen->isActive()) return m_plazaScreen.get();
     if (m_themeShop && m_themeShop->isActive()) return m_themeShop.get();
     if (m_settings && m_settings->isActive()) return m_settings.get();
+    if (m_quickSettings && m_quickSettings->isActive()) return m_quickSettings.get();
     if (m_userSelect && m_userSelect->isActive()) return m_userSelect.get();
     return &rootBox();
 }
@@ -806,8 +836,12 @@ void WiiUMenuApp::toggleAccessibilitySpeech() {
         m_gameGallery->setAccessibilityVoiceEnabled(enabled);
     if (m_gameMods)
         m_gameMods->setAccessibilityVoiceEnabled(enabled);
+    if (m_gameCheats)
+        m_gameCheats->setAccessibilityVoiceEnabled(enabled);
     if (m_gameDetails)
         m_gameDetails->setAccessibilityVoiceEnabled(enabled);
+    if (m_activityLog)
+        m_activityLog->setAccessibilityVoiceEnabled(enabled);
     if (m_gameOptions)
         m_gameOptions->setAccessibilityVoiceEnabled(enabled);
     if (m_folderOptions)
@@ -877,8 +911,10 @@ void WiiUMenuApp::handleSortShortcutRelease(float dt) {
         (m_themeShop && m_themeShop->isActive()) ||
         (m_gameGallery && m_gameGallery->isActive()) ||
         (m_gameMods && m_gameMods->isActive()) ||
+        (m_gameCheats && m_gameCheats->isActive()) ||
         (m_gameDetails && m_gameDetails->isActive()) ||
         (m_steamGridDbPicker && m_steamGridDbPicker->isActive()) ||
+        (m_mediaCenterScreen && m_mediaCenterScreen->isActive()) ||
         (m_gameOptions && m_gameOptions->isActive()) ||
         (m_folderOptions && m_folderOptions->isActive()) ||
         (m_controllerTest && m_controllerTest->isActive()) ||
@@ -888,6 +924,28 @@ void WiiUMenuApp::handleSortShortcutRelease(float dt) {
         return;
     }
     cycleSortMode();
+}
+
+void WiiUMenuApp::handleZlShortcutRelease(float dt) {
+    if (!m_zlQuickFlipArmed)
+        return;
+    auto& input = app().input();
+    if (input.isHeld(nxui::Button::ZL)) {
+        m_zlQuickFlipHeld += dt;
+    }
+    if (input.isUp(nxui::Button::ZL)) {
+        const bool armed = m_zlQuickFlipArmed;
+        const float held = m_zlQuickFlipHeld;
+        const bool triggered = m_deletePageTriggered;
+        m_zlQuickFlipArmed = false;
+        m_zlQuickFlipHeld = 0.f;
+        if (armed && !triggered && held < 0.35f) {
+            if (m_navigator.route() == switchu::navigation::Route::Home &&
+                focusRoot() == &rootBox()) {
+                flipPage(-1);
+            }
+        }
+    }
 }
 
 bool WiiUMenuApp::handleAccessibilityToggleCombo() {
@@ -904,6 +962,288 @@ bool WiiUMenuApp::handleAccessibilityToggleCombo() {
     toggleAccessibilitySpeech();
     return true;
 }
+
+bool WiiUMenuApp::handleFrameDumpShortcut() {
+    if (m_navigator.route() == switchu::navigation::Route::ControllerTest)
+        return false;
+    auto& input = app().input();
+    const bool combo = input.isHeld(nxui::Button::ZL) &&
+                       input.isHeld(nxui::Button::ZR) &&
+                       input.isHeld(nxui::Button::RStick);
+    if (!combo) {
+        m_frameDumpShortcutHeld = false;
+        return false;
+    }
+    if (m_frameDumpShortcutHeld)
+        return true;
+    m_frameDumpShortcutHeld = true;
+
+    // Toggle: if recording is already active, stop early
+    if (m_frameDumpActive) {
+        m_frameDumpActive = false;
+        m_frameDumpRemaining = 0;
+        app().renderer().setDrawJournalEnabled(false);
+        m_audio.playSfx(Sfx::ModalHide);
+        DebugLog::log("[frame-dump] stopped early by user (captured %d frames)", m_frameDumpIndex);
+        return true;
+    }
+
+    // Start 10-second diagnostic recording (200 frames @ 20 FPS, 1 frame every 3 vsyncs)
+    char ts[32];
+    std::time_t now = std::time(nullptr);
+    std::tm tmNow{};
+    localtime_r(&now, &tmNow);
+    std::strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", &tmNow);
+
+    m_frameDumpBatchDir = fmt::format("sdmc:/config/SwitchU/frame_dumps/{}", ts);
+    std::error_code ec;
+    std::filesystem::create_directories(m_frameDumpBatchDir, ec);
+
+    // Drop helper Python script into the directory for 1-click PC extraction and
+    // automatic artifact analysis. Finding the glitched frames by eye is what
+    // made previous rounds slow and subjective: the attenuation is an exact
+    // constant multiply, so it can be detected numerically and matched against
+    // the frame's own recorded command list without anyone judging a thumbnail.
+    std::ofstream py(m_frameDumpBatchDir + "/extract_frames.py");
+    if (py) {
+        py << R"PY(import os, glob, struct, zlib
+
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
+zraws = sorted(glob.glob('frame_*.zraw'))
+print(f'Extracting {len(zraws)} frames...')
+
+frames = []
+for zf in zraws:
+    with open(zf, 'rb') as f:
+        data = f.read()
+    if len(data) < 16 or data[:4] != b'ZRAW':
+        continue
+    magic, w, h, raw_sz = struct.unpack('<4sIII', data[:16])
+    raw = zlib.decompress(data[16:])
+    base = os.path.splitext(zf)[0]
+    if Image:
+        Image.frombytes('RGBA', (w, h), raw).save(f'{base}.png')
+    if np is not None:
+        a = np.frombuffer(raw, dtype=np.uint8).reshape(h, w, 4)[:, :, :3]
+        frames.append((base, a.astype(np.float32)))
+print('Done extracting PNGs!')
+
+
+def half_ratio(cur, ref, x0, x1):
+    """Median ratio and coherent-pixel fraction, over bright reference pixels.
+
+    The Plaza is animated, so ordinary ratio standard deviation is dominated
+    by moving Miis even when >80% of the framebuffer follows one exact scalar.
+    Coherence measures the fraction within +/-0.035 of the median instead. The
+    thresholds below were replayed against both existing native captures: all
+    seven known glitches were found, with zero extra frames.
+    """
+    c = cur[:, x0:x1].ravel()
+    r = ref[:, x0:x1].ravel()
+    m = r > 24.0
+    if m.sum() < 1000:
+        return None, None
+    q = c[m] / r[m]
+    med = float(np.median(q))
+    coherent = float(np.mean(np.abs(q - med) < 0.035))
+    return med, coherent
+
+
+def scan_band(cur, prev, nxt):
+    """Locate a contiguous run of attenuated scanlines, if one exists.
+
+    Measured captures show the artifact is not always fullscreen: it covers a
+    run of rows starting at row 0 and ending at a cut row that differs per
+    occurrence (720, 266 and 25 rows were observed in one capture). A
+    whole-frame or half-frame median therefore reports 1.0000 and hides it.
+    Comparing row by row against a pixel-stable reference exposes the band and
+    its boundary, which is the measurement that distinguishes a scanout-side
+    tear from a submitted darkening draw.
+    """
+    static = (np.all(np.abs(prev - nxt) < 2, axis=2) & (prev.mean(2) > 40))
+    ratios = np.full(cur.shape[0], np.nan)
+    for y in range(cur.shape[0]):
+        m = static[y]
+        if m.sum() < 60:
+            continue
+        ratios[y] = np.median(cur[y][m].ravel() /
+                              np.maximum(prev[y][m].ravel(), 1e-6))
+    hit = np.nonzero((ratios < 0.95) & ~np.isnan(ratios))[0]
+    if hit.size < 3:
+        return None
+    return int(hit.min()), int(hit.max()), float(np.median(ratios[hit]))
+
+
+if np is not None and len(frames) >= 3:
+    h, w = frames[0][1].shape[:2]
+    mid = w // 2
+    print('\n=== attenuation analysis ===')
+    print('a half is flagged when BOTH neighbours give ratio <0.95, agree')
+    print('within 0.02, and >=72% of bright channels follow that scalar.\n')
+    flagged = []
+    for i in range(1, len(frames) - 1):
+        base, cur = frames[i]
+        prev, nxt = frames[i - 1][1], frames[i + 1][1]
+        row = []
+        for name, x0, x1 in (('left', 0, mid), ('right', mid, w)):
+            rp, cp = half_ratio(cur, prev, x0, x1)
+            rn, cn = half_ratio(cur, nxt, x0, x1)
+            if rp is None or rn is None:
+                row.append((name, None, None))
+                continue
+            # Both comparisons must agree, otherwise this is a scene change.
+            if (rp < 0.95 and rn < 0.95 and abs(rp - rn) < 0.02 and
+                    cp >= 0.72 and cn >= 0.72):
+                row.append((name, (rp + rn) / 2.0, min(cp, cn)))
+            else:
+                row.append((name, None, None))
+        band = scan_band(cur, prev, nxt)
+        if any(r[1] is not None for r in row) or band:
+            flagged.append((base, row, band))
+
+    if not flagged:
+        print('no attenuated frames in this capture.')
+    for base, row, band in flagged:
+        parts = []
+        for name, ratio, coherent in row:
+            parts.append(f'{name}=clean' if ratio is None
+                         else f'{name}=x{ratio:.4f}(coherent {coherent:.1%})')
+        print(f'{base}: ' + '  '.join(parts))
+        if band:
+            first, last, ratio = band
+            span = last - first + 1
+            kind = 'WHOLE FRAME' if span >= 719 else f'BAND rows {first}..{last}'
+            print(f'    {kind}  x{ratio:.4f}  ({span}/720 rows)')
+        jp = f'{base}.journal.txt'
+        if os.path.exists(jp):
+            with open(jp, 'r', errors='replace') as jf:
+                lines = jf.read().splitlines()
+            head = [l for l in lines[:3]]
+            for hl in head:
+                print('    ' + hl)
+            if lines and 'dropped=0' not in lines[0]:
+                print('    INCONCLUSIVE: journal truncated; zero verdict is not evidence')
+            # Any backbuffer draw with a partial alpha. The journal's verdict
+            # applies the stricter geometry + all-vertices-dark test; printing
+            # these lines preserves the raw candidates for manual inspection.
+            for l in lines:
+                if 'DIMMER' in l:
+                    print('    DIMMER ' + l.strip())
+            for l in lines:
+                if 'PRIMITIVE' in l and 'attenRange=' in l and ' tgt=-1 ' in l:
+                    try:
+                        hi = float(l.split('attenRange=')[1].split()[0].split('..')[1])
+                    except (IndexError, ValueError):
+                        continue
+                    if hi < 0.99:
+                        print('    CANDIDATE ' + l.strip())
+        else:
+            print('    (no journal for this frame)')
+    print('\nverdict dimmer_quads>0 names the exact quad that dims the frame.')
+    print('A 0 verdict only counts when unreadable_batches and non_quad_batches')
+    print('are also 0; otherwise some geometry could not be tested at all.')
+elif np is None:
+    print('install numpy for automatic attenuation analysis')
+
+if os.system('ffmpeg -version') == 0:
+    os.system('ffmpeg -y -framerate 20 -i frame_%03d.png -c:v libx264 -pix_fmt yuv420p clip.mp4')
+    print('Created clip.mp4 successfully!')
+)PY";
+        py.flush();
+    }
+
+    m_frameDumpActive = true;
+    m_frameDumpRemaining = 200; // 200 frames @ 20 FPS = 10.0 seconds
+    m_frameDumpIndex = 0;
+    m_frameDumpCounter = 0;
+    // Record every frame, not just the captured ones: a frame is only known to
+    // be glitched after its pixels are examined on PC, and by then the chance
+    // to have journalled it is gone.
+    app().renderer().setDrawJournalEnabled(true);
+    app().gpu().requestFrameDump();
+    m_audio.playSfx(Sfx::Activate);
+    DebugLog::log("[frame-dump] started 10-second recording (200 frames @ 20 FPS) into %s (mkdir: %s)",
+                  m_frameDumpBatchDir.c_str(), ec ? ec.message().c_str() : "ok");
+    return true;
+}
+
+void WiiUMenuApp::syncFrameDumpCapture() {
+    if (!m_frameDumpActive)
+        return;
+
+    std::vector<std::uint8_t> pixels;
+    if (app().gpu().takeFrameDump(pixels)) {
+        const int curIndex = m_frameDumpIndex++;
+        const std::string outPath = fmt::format("{}/frame_{:03d}.zraw",
+                                                m_frameDumpBatchDir, curIndex);
+
+        // The journal still describes the frame whose pixels were just taken:
+        // the dump's copy was recorded in that frame's endFrame, and the next
+        // beginFrame (which would reset the journal) has not run yet. Writing
+        // it here therefore pairs frame_NNN.zraw with frame_NNN.journal.txt by
+        // construction rather than by timing luck.
+        auto journal = app().renderer().formatDrawJournal();
+        const std::string journalPath = fmt::format("{}/frame_{:03d}.journal.txt",
+                                                    m_frameDumpBatchDir, curIndex);
+        m_threadPool.submit([journalPath, journal = std::move(journal)]() {
+            std::ofstream out(journalPath, std::ios::binary);
+            if (out) {
+                out.write(journal.data(), (std::streamsize)journal.size());
+                out.flush();
+            }
+        });
+
+        // Offload lossless zlib compression and writing to the background thread pool
+        m_threadPool.submit([outPath, data = std::move(pixels)]() {
+            uLongf compBound = compressBound(static_cast<uLong>(data.size()));
+            std::vector<std::uint8_t> compBuf(16 + compBound);
+            std::memcpy(compBuf.data(), "ZRAW", 4);
+            const uint32_t w = 1280;
+            const uint32_t h = 720;
+            const uint32_t rawSize = static_cast<uint32_t>(data.size());
+            std::memcpy(compBuf.data() + 4, &w, 4);
+            std::memcpy(compBuf.data() + 8, &h, 4);
+            std::memcpy(compBuf.data() + 12, &rawSize, 4);
+
+            uLongf destLen = compBound;
+            if (compress2(compBuf.data() + 16, &destLen, data.data(), data.size(), 1) == Z_OK) {
+                std::ofstream out(outPath, std::ios::binary);
+                if (out) {
+                    out.write(reinterpret_cast<const char*>(compBuf.data()), 16 + destLen);
+                    out.flush();
+                }
+            }
+        });
+
+        --m_frameDumpRemaining;
+        if (m_frameDumpRemaining <= 0) {
+            m_frameDumpActive = false;
+            app().renderer().setDrawJournalEnabled(false);
+            m_audio.playSfx(Sfx::ModalHide);
+            DebugLog::log("[frame-dump] completed 10-second recording in %s (200 frames)",
+                          m_frameDumpBatchDir.c_str());
+            return;
+        }
+    }
+
+    // Schedule next frame according to cadence (every 3 vsync frames = 20 FPS)
+    if (m_frameDumpActive && !app().gpu().frameDumpBusy()) {
+        ++m_frameDumpCounter;
+        if (m_frameDumpCounter >= 3) {
+            m_frameDumpCounter = 0;
+            app().gpu().requestFrameDump();
+        }
+    }
+}
+
 
 void WiiUMenuApp::wireGlobalActions() {
     auto& root = rootBox();
@@ -929,6 +1269,83 @@ void WiiUMenuApp::wireGlobalActions() {
         m_accessibility.repeatLastAnnouncement();
     });
 
+    root.addAction(static_cast<uint64_t>(nxui::Button::LStick), [this]() {
+        if (m_editMode) return;
+        if (m_quickSettings && m_quickSettings->isActive()) {
+            closeQuickSettings();
+            return;
+        }
+        if ((m_dialog && m_dialog->isActive()) ||
+            (m_contextMenu && m_contextMenu->isActive()) ||
+            (m_themeShop && m_themeShop->isActive()) ||
+            (m_gameGallery && m_gameGallery->isActive()) ||
+            (m_gameMods && m_gameMods->isActive()) ||
+            (m_gameCheats && m_gameCheats->isActive()) ||
+            (m_gameDetails && m_gameDetails->isActive()) ||
+            (m_settings && m_settings->isActive()) ||
+            (m_steamGridDbPicker && m_steamGridDbPicker->isActive()) ||
+        (m_mediaCenterScreen && m_mediaCenterScreen->isActive()) ||
+            (m_platformPicker && m_platformPicker->isActive()) ||
+            (m_gameOptions && m_gameOptions->isActive()) ||
+            (m_folderOptions && m_folderOptions->isActive()) ||
+            (m_controllerTest && m_controllerTest->isActive()) ||
+            (m_userSelect && m_userSelect->isActive())) {
+            return;
+        }
+        openQuickSettings();
+    });
+
+    root.addAction(static_cast<uint64_t>(nxui::Button::RStick), [this]() {
+        if (m_editMode) return;
+        if (app().input().isHeld(nxui::Button::ZL) && app().input().isHeld(nxui::Button::ZR))
+            return;
+        if ((m_dialog && m_dialog->isActive()) ||
+            (m_quickSettings && m_quickSettings->isActive()) ||
+            (m_contextMenu && m_contextMenu->isActive()) ||
+            (m_themeShop && m_themeShop->isActive()) ||
+            (m_gameGallery && m_gameGallery->isActive()) ||
+            (m_gameMods && m_gameMods->isActive()) ||
+            (m_gameCheats && m_gameCheats->isActive()) ||
+            (m_gameDetails && m_gameDetails->isActive()) ||
+            (m_settings && m_settings->isActive()) ||
+            (m_steamGridDbPicker && m_steamGridDbPicker->isActive()) ||
+        (m_mediaCenterScreen && m_mediaCenterScreen->isActive()) ||
+            (m_platformPicker && m_platformPicker->isActive()) ||
+            (m_gameOptions && m_gameOptions->isActive()) ||
+            (m_folderOptions && m_folderOptions->isActive()) ||
+            (m_controllerTest && m_controllerTest->isActive()) ||
+            (m_userSelect && m_userSelect->isActive())) {
+            return;
+        }
+        auto* cur = focusManager().current();
+        if (!cur || cur->tag() != "glossy_icon") return;
+        auto* icon = static_cast<GlossyIcon*>(cur);
+        const std::uint64_t titleId = icon->titleId();
+        if (titleId == 0 || (titleId >> 56) == 0xF1ULL || (titleId >> 56) == 0xF2ULL)
+            return;
+
+        const bool currentFav = m_config.isFavorite(titleId);
+        m_config.setFavorite(titleId, !currentFav);
+        m_config.save();
+        switchu::commitSdCard("toggle favorite");
+
+        if (!currentFav) {
+            m_audio.playSfx(Sfx::Activate);
+        } else {
+            m_audio.playSfx(Sfx::ToggleOff);
+        }
+
+        icon->setFavorite(!currentFav);
+        const int idx = findTitleIndex(titleId);
+        if (idx >= 0) {
+            m_model.at(idx).isFavorite = !currentFav;
+        }
+
+        if (m_config.sortMode == 3 || m_config.sortMode == 4) {
+            reflowHomeGrid();
+        }
+    });
+
     // R is deliberately not wired as a press action. Holding it over a game is
     // how the homebrew override reaches Sphaira, and reordering the grid on the
     // initial press moved the tiles out from under the player mid-hold. The
@@ -939,6 +1356,11 @@ void WiiUMenuApp::wireGlobalActions() {
         if (m_navigator.route() != switchu::navigation::Route::Home ||
             focusRoot() != &rootBox())
             return;
+        if (deletePageAvailable()) {
+            m_zlQuickFlipArmed = true;
+            m_zlQuickFlipHeld = 0.f;
+            return;
+        }
         flipPage(-1);
     });
     root.addAction(static_cast<uint64_t>(nxui::Button::ZR), [this]() {
@@ -949,13 +1371,16 @@ void WiiUMenuApp::wireGlobalActions() {
     });
     root.addAction(static_cast<uint64_t>(nxui::Button::Y), [this]() {
         if ((m_dialog && m_dialog->isActive()) ||
+            (m_quickSettings && m_quickSettings->isActive()) ||
             (m_contextMenu && m_contextMenu->isActive()) ||
             (m_themeShop && m_themeShop->isActive()) ||
             (m_gameGallery && m_gameGallery->isActive()) ||
             (m_gameMods && m_gameMods->isActive()) ||
+            (m_gameCheats && m_gameCheats->isActive()) ||
             (m_gameDetails && m_gameDetails->isActive()) ||
             (m_settings && m_settings->isActive()) ||
             (m_steamGridDbPicker && m_steamGridDbPicker->isActive()) ||
+        (m_mediaCenterScreen && m_mediaCenterScreen->isActive()) ||
             (m_platformPicker && m_platformPicker->isActive()) ||
             (m_gameOptions && m_gameOptions->isActive()) ||
             (m_folderOptions && m_folderOptions->isActive()) ||
@@ -1026,101 +1451,96 @@ void WiiUMenuApp::wireGlobalActions() {
 #ifdef SWITCHU_MENU
     root.addAction(static_cast<uint64_t>(nxui::Button::X), [this]() {
         if (m_editMode) return;
+        if (m_navigator.route() != switchu::navigation::Route::Home ||
+            focusRoot() != &rootBox())
+            return;
+
+        if (deletePageAvailable()) {
+            if (m_openFolderId != 0)
+                deleteFolderPage();
+            else
+                deleteHomePage();
+            return;
+        }
+
         auto* cur = focusManager().current();
         if (!cur || cur->tag() != "glossy_icon") return;
         auto* icon = static_cast<GlossyIcon*>(cur);
 
-        // X is the folder button, both ways round: on the home screen it files
-        // the focused title into a folder, and inside an open folder it takes
-        // the focused title out. One button for one idea, rather than X to put
-        // in and R to take out.
-        //
-        // It is the only free press on either screen: A launches, B is back, Y
-        // moves, R sorts, ZL and ZR page, Plus opens the options, Minus switches
-        // view, L repeats the announcement. X itself is claimed only while a
-        // title is suspended, where it closes it -- that case is tested first
-        // and keeps the button, and the hint bar says which of the two it is.
-        if (!(m_launcher.suspendedTitleId() != 0 &&
-              m_launcher.isAppSuspended(icon->titleId()))) {
-            const std::uint64_t titleId = icon->titleId();
-            // Folder and widget tiles share the id space and are neither filed
-            // nor removed.
-            if (titleId == 0 || (titleId >> 56) == 0xF1ULL || (titleId >> 56) == 0xF2ULL)
-                return;
-            if (m_openFolderId != 0) {
-                if (m_folderStore.folderForTitle(titleId) != m_openFolderId)
-                    return;
-                DebugLog::log("[folders] X removes %016llX from folder %u",
-                              static_cast<unsigned long long>(titleId), m_openFolderId);
-                removeTitleFromFolder(titleId);
-                return;
-            }
+        if (m_launcher.suspendedTitleId() != 0 &&
+            m_launcher.isAppSuspended(icon->titleId())) {
+            m_audio.playSfx(Sfx::ModalShow);
             m_dialogReturnFocus = cur;
-            showFolderAssignment(titleId, icon->title());
+            auto& i18n = nxui::I18n::instance();
+            const auto markCloseRequested = [this]() {
+                m_launcher.setAppRunning(false);
+                m_launcher.setAppHasForeground(false);
+                m_launcher.setSuspendedTitleId(0);
+                for (auto& ic : m_grid->allIcons())
+                    ic->setSuspended(false);
+                if (auto* current = m_grid->focusManager().current()) {
+                    auto* focusedIcon = static_cast<GlossyIcon*>(current);
+                    m_titlePill->setText(focusedIcon->title());
+                }
+            };
+#ifdef SWITCHU_TERMINATION_QUEUE_TEST
+            m_dialog->show(
+                "Lifecycle close test",
+                "DIAGNOSTIC BUILD. B cancels. Applet close: use after HOME from a game's "
+                "full-screen keyboard. Sleep powers down. Force 15s: wait.",
+                {
+                    {"Applet close", [this, markCloseRequested]() {
+                        m_launcher.terminateApplication();
+                        markCloseRequested();
+                    }, true},
+                    {"Duplicate", [this, markCloseRequested]() {
+                        m_launcher.terminateApplicationDuplicate();
+                        markCloseRequested();
+                    }, true},
+                    {"Sleep test", [this, markCloseRequested]() {
+                        m_launcher.terminateApplicationHold();
+                        m_launcher.enterSleep();
+                        markCloseRequested();
+                    }, true},
+                    {"Force 15s", [this, markCloseRequested]() {
+                        m_launcher.terminateApplicationForce();
+                        markCloseRequested();
+                    }, true}
+                },
+                0,
+                {}
+            );
+#else
+            m_dialog->show(
+                i18n.tr("game.close_title", "Close game"),
+                i18n.tr("game.close_prefix", "Close") + std::string(" ") + icon->title()
+                    + i18n.tr("game.close_suffix", "?\nUnsaved progress will be lost."),
+                {
+                    {i18n.tr("button.cancel", "Cancel"), [this]() {}, true},
+                    {i18n.tr("button.close", "Close"),  [this, markCloseRequested]() {
+                        m_launcher.terminateApplication();
+                        markCloseRequested();
+                    }, true}
+                },
+                1,
+                {}
+            );
+#endif
+            focusManager().setFocus(m_dialog.get());
             return;
         }
 
-        if (m_launcher.suspendedTitleId() == 0) return;
-        if (!m_launcher.isAppSuspended(icon->titleId())) return;
-
-        m_audio.playSfx(Sfx::ModalShow);
-        m_dialogReturnFocus = cur;
-        auto& i18n = nxui::I18n::instance();
-        const auto markCloseRequested = [this]() {
-            m_launcher.setAppRunning(false);
-            m_launcher.setAppHasForeground(false);
-            m_launcher.setSuspendedTitleId(0);
-            for (auto& ic : m_grid->allIcons())
-                ic->setSuspended(false);
-            if (auto* current = m_grid->focusManager().current()) {
-                auto* focusedIcon = static_cast<GlossyIcon*>(current);
-                m_titlePill->setText(focusedIcon->title());
-            }
-        };
-#ifdef SWITCHU_TERMINATION_QUEUE_TEST
-        m_dialog->show(
-            "Lifecycle close test",
-            "DIAGNOSTIC BUILD. B cancels. Applet close: use after HOME from a game's "
-            "full-screen keyboard. Sleep powers down. Force 15s: wait.",
-            {
-                {"Applet close", [this, markCloseRequested]() {
-                    m_launcher.terminateApplication();
-                    markCloseRequested();
-                }, true},
-                {"Duplicate", [this, markCloseRequested]() {
-                    m_launcher.terminateApplicationDuplicate();
-                    markCloseRequested();
-                }, true},
-                {"Sleep test", [this, markCloseRequested]() {
-                    m_launcher.terminateApplicationHold();
-                    m_launcher.enterSleep();
-                    markCloseRequested();
-                }, true},
-                {"Force 15s", [this, markCloseRequested]() {
-                    m_launcher.terminateApplicationForce();
-                    markCloseRequested();
-                }, true}
-            },
-            0,
-            {}
-        );
-#else
-        m_dialog->show(
-            i18n.tr("game.close_title", "Close game"),
-            i18n.tr("game.close_prefix", "Close") + std::string(" ") + icon->title()
-                + i18n.tr("game.close_suffix", "?\nUnsaved progress will be lost."),
-            {
-                {i18n.tr("button.cancel", "Cancel"), [this]() {}, true},
-                {i18n.tr("button.close", "Close"),  [this, markCloseRequested]() {
-                    m_launcher.terminateApplication();
-                    markCloseRequested();
-                }, true}
-            },
-            1,
-            {}
-        );
-#endif
-        focusManager().setFocus(m_dialog.get());
+        if (m_openFolderId != 0) {
+            const std::uint64_t titleId = icon->titleId();
+            if (titleId == 0 || (titleId >> 56) == 0xF1ULL || (titleId >> 56) == 0xF2ULL)
+                return;
+            if (m_folderStore.folderForTitle(titleId) != m_openFolderId)
+                return;
+            DebugLog::log("[folders] X removes %016llX from folder %u",
+                          static_cast<unsigned long long>(titleId), m_openFolderId);
+            removeTitleFromFolder(titleId);
+            return;
+        }
     });
 #endif
 }
@@ -1172,6 +1592,16 @@ void WiiUMenuApp::handleTouch() {
         m_touchAvatarTarget = hitAvatar(tx, ty);
         m_touchAvatarWasFocused = m_touchAvatarTarget && (focusManager().current() == m_touchAvatarTarget);
         if (m_touchAvatarTarget) {
+            m_touchHitIndex = -1;
+            m_touchOnFocused = false;
+            m_touchEditDragActive = false;
+            return;
+        }
+
+        if (ty <= 80.f && !m_editMode &&
+            !(m_dialog && m_dialog->isActive()) &&
+            !(m_quickSettings && m_quickSettings->isActive())) {
+            openQuickSettings();
             m_touchHitIndex = -1;
             m_touchOnFocused = false;
             m_touchEditDragActive = false;
@@ -1290,11 +1720,13 @@ void WiiUMenuApp::handleSystemAction(SysAction a) {
 #if 0 // Replaced by the dynamic-layout-aware 1.2 implementation.
 void WiiUMenuApp::updateCursor() {
     if ((m_themeShop && m_themeShop->isActive()) ||
+        (m_mediaCenterScreen && m_mediaCenterScreen->isActive()) ||
         (m_gameGallery && m_gameGallery->isActive()) ||
         (m_gameMods && m_gameMods->isActive()) ||
         (m_gameDetails && m_gameDetails->isActive()) ||
         (m_settings && m_settings->isActive()) ||
         (m_dialog && m_dialog->isActive()) ||
+        (m_quickSettings && m_quickSettings->isActive()) ||
         (m_userSelect && m_userSelect->isActive()))
         return;
 
@@ -1315,6 +1747,7 @@ void WiiUMenuApp::showIconOptions() {
 #ifdef SWITCHU_MENU
     if (m_editMode) return;
     if ((m_dialog && m_dialog->isActive()) || (m_gameMods && m_gameMods->isActive()) ||
+        (m_gameCheats && m_gameCheats->isActive()) ||
         (m_gameDetails && m_gameDetails->isActive())) return;
 
     auto* cur = focusManager().current();
@@ -1517,7 +1950,12 @@ void WiiUMenuApp::showGameArtworkStatus(std::uint64_t titleId, const std::string
             focusManager().setFocus(m_gameDetails.get());
     };
     m_dialog->show(i18n.tr("dialog.customize_active_art", "Active artwork"), body,
-                   {{i18n.tr("button.ok", "OK"), returnToDetails, true}}, 0, returnToDetails);
+                   {
+                       {i18n.tr("dialog.customize_restore_default", "Restore default"),
+                        [this, titleId, title]() { showGameArtworkRestoreMenu(titleId, title); }, false},
+                       {i18n.tr("button.ok", "OK"), returnToDetails, true},
+                   },
+                   0, returnToDetails);
     focusManager().setFocus(m_dialog.get());
 #else
     (void)titleId;
@@ -1626,7 +2064,14 @@ void WiiUMenuApp::showGameDetails(std::uint64_t titleId, const std::string& titl
     m_gameDetails->openForGame(titleId, title, searchTitle, std::move(cover), liveCover,
                                 installedDisplayVersion(titleId), installedModSummary(titleId),
                                 installedPlayTime(titleId), metadataPlatform,
-                                m_config.isGamePort(titleId));
+                                m_config.isGamePort(titleId),
+                                m_config.isFavorite(titleId));
+    // Game Details is persistent and may already sit below an overlay created
+    // later (notably Activity Log). Opening it changed visibility and focus but
+    // did not change sibling draw order, so selecting an activity row left the
+    // dossier rendered behind the still-active log. Reinsert it at the top just
+    // like every other overlay that can be opened from another overlay.
+    raiseOverlay(m_gameDetails);
     focusManager().setFocus(m_gameDetails.get());
 #else
     (void)titleId;
@@ -1656,12 +2101,51 @@ void WiiUMenuApp::showGameMods(std::uint64_t titleId, const std::string& title) 
             if (m_gameDetails && m_gameDetails->isActive()) {
                 m_suppressNextNavigateSfx = true;
                 focusManager().setFocus(m_gameDetails.get());
+            } else if (auto* target = m_grid ? m_grid->focusManager().current() : nullptr) {
+                focusManager().setFocus(target);
             }
         });
     }
     m_audio.playSfx(Sfx::ModalShow);
     m_gameMods->openForGame(titleId, title);
     focusManager().setFocus(m_gameMods.get());
+#else
+    (void)titleId;
+    (void)title;
+#endif
+}
+
+void WiiUMenuApp::showGameCheats(std::uint64_t titleId, const std::string& title) {
+#ifdef SWITCHU_MENU
+    if (!m_gameCheats) {
+        m_gameCheats = std::make_shared<GameCheatsScreen>();
+        if (m_overlayLayer) m_overlayLayer->addChild(m_gameCheats);
+        m_gameCheats->setFont(&m_fontNormal);
+        m_gameCheats->setSmallFont(&m_fontSmall);
+        m_gameCheats->setTheme(&m_theme);
+        m_gameCheats->setAccessibilityVoiceEnabled(m_config.accessibilityEnabled);
+        m_gameCheats->setAccessibilitySpeechPreferences(m_config.accessibilitySpeakHints,
+                                                        m_config.accessibilitySpeakPosition);
+        m_gameCheats->onNavigateSfx([this]() { m_audio.playSfx(Sfx::Navigate); });
+        m_gameCheats->onActivateSfx([this]() { m_audio.playSfx(Sfx::Activate); });
+        m_gameCheats->onToggleOffSfx([this]() { m_audio.playSfx(Sfx::ToggleOff); });
+        m_gameCheats->onCloseSfx([this]() { m_audio.playSfx(Sfx::ModalHide); });
+        m_gameCheats->onAccessibilityAnnouncement([this](const std::string& text) {
+            m_accessibility.announce(text);
+        });
+        m_gameCheats->onClosed([this]() {
+            if (m_gameDetails && m_gameDetails->isActive()) {
+                m_suppressNextNavigateSfx = true;
+                focusManager().setFocus(m_gameDetails.get());
+            } else if (auto* target = m_grid ? m_grid->focusManager().current() : nullptr) {
+                focusManager().setFocus(target);
+            }
+        });
+    }
+    raiseOverlay(m_gameCheats);
+    m_audio.playSfx(Sfx::ModalShow);
+    m_gameCheats->openForGame(titleId, title);
+    focusManager().setFocus(m_gameCheats.get());
 #else
     (void)titleId;
     (void)title;

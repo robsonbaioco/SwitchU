@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cmath>
 #include <fstream>
+#include <iterator>
 
 namespace nxui {
 
@@ -21,6 +22,11 @@ static void ortho(float* m, float w, float h) {
 
 Renderer::Renderer(GpuDevice& gpu) : m_gpu(gpu) {
     m_clipStack.reserve(8);
+    // Reserved once, here, so that recording a frame never allocates: an
+    // allocation inside the render loop would perturb the very timing the
+    // journal exists to observe.
+    m_journal.reserve(kJournalCap);
+    m_vtxShadow.resize(kVtxShadowCap);
     resetLiquidGlassSettings();
 }
 Renderer::~Renderer() {}
@@ -281,6 +287,7 @@ void Renderer::beginFrame() {
     m_frameBlurPasses = 0;
     m_frameCaptures = 0;
     m_gpu.resetFsUboRing(slot);
+    m_gpu.resetVsUboRing(slot);
     m_curTexSlot = -1;
     m_texturing  = false;
     m_curShader  = ShaderProgram::Basic;
@@ -290,6 +297,8 @@ void Renderer::beginFrame() {
     m_boundTexSlot = kTexSlotUnset;
     m_vtxBufferBound = false;
     m_clipStack.clear();
+    ++m_frameSerial;
+    if (m_journalEnabled) journalReset();
     // Normally the capture cannot outlive a frame: the framebuffer it copies is
     // redrawn every frame. An overlay that knows nothing behind it has changed
     // can hold it, which skips a 1280x720 to 640x360 blit and two full pipeline
@@ -311,6 +320,13 @@ void Renderer::beginFrame() {
 
     cmd.clearColor(0, DkColorMask_RGBA, 0.05f, 0.08f, 0.15f, 1.f);
     cmd.clearDepthStencil(false, 0.f, 0xFF, 0);
+    if (m_journalEnabled) {
+        m_journalTarget = -1;
+        m_journalScissor = {0.f, 0.f, (float)m_gpu.width(), (float)m_gpu.height()};
+        m_journalBackbufferClearSeen = true;
+        m_journalBackbufferClear = {0.05f, 0.08f, 0.15f, 1.f};
+        journalEvent(JournalKind::Clear, m_journalBackbufferClear);
+    }
 
     int idx = (int)ShaderProgram::Basic;
     cmd.bindShaders(DkStageFlag_GraphicsMask, {&m_vertShaders[idx], &m_fragShaders[idx]});
@@ -354,19 +370,158 @@ void Renderer::endFrame() {
 
 void Renderer::updateProjection() {
     int slot = m_gpu.slot();
-    auto* ubo = static_cast<uint8_t*>(m_gpu.vsUboCpuAddr(slot));
+    // A fresh ring slot per projection change: the previously recorded draws
+    // keep pointing at the matrix they were recorded with.
+    const uint32_t ring = m_gpu.nextVsUboSlot(slot);
+    auto* ubo = static_cast<uint8_t*>(m_gpu.vsUboCpuAddrAt(slot, ring));
     VsUniforms vs;
     ortho(vs.projection, (float)m_gpu.width(), (float)m_gpu.height());
     std::memcpy(ubo, &vs, sizeof(vs));
 
     auto cmd = m_gpu.cmdBuf();
-    cmd.bindUniformBuffer(DkStage_Vertex, 0, m_gpu.vsUboGpuAddr(slot), GpuDevice::VS_UBO_SIZE);
+    cmd.bindUniformBuffer(DkStage_Vertex, 0, m_gpu.vsUboGpuAddrAt(slot, ring),
+                          GpuDevice::VS_UBO_SIZE);
+}
+
+void Renderer::journalReset() {
+    m_journal.clear();
+    m_journalDropped = 0;
+    m_journalTarget = -1;
+    m_journalScissor = {0.f, 0.f, (float)m_gpu.width(), (float)m_gpu.height()};
+    m_journalBackbufferClearSeen = false;
+    m_journalNonQuadBatches = 0;
+    m_journalUnshadowed = 0;
+    m_journalBadVertices = 0;
+    m_journalBadSamples = 0;
+    m_probes.clear();
+    m_probesDropped = 0;
+    m_journalBackbufferClear = {0.f, 0.f, 0.f, 0.f};
+}
+
+void Renderer::journalPush(const DrawJournalEntry& e) {
+    // Past the cap the journal stops recording rather than reallocating, and
+    // counts what it dropped. A truncated journal is still evidence as long as
+    // it is honest about being truncated; a journal that reallocated mid-frame
+    // would have changed the frame it was measuring.
+    if (m_journal.size() >= kJournalCap) { ++m_journalDropped; return; }
+    m_journal.push_back(e);
+}
+
+void Renderer::journalEvent(JournalKind kind, const Color& c) {
+    DrawJournalEntry e;
+    e.kind   = kind;
+    e.target = (int16_t)m_journalTarget;
+    e.minR = e.maxR = c.r; e.minG = e.maxG = c.g;
+    e.minB = e.maxB = c.b; e.minA = e.maxA = c.a;
+    e.sx = m_journalScissor.x;     e.sy = m_journalScissor.y;
+    e.sw = m_journalScissor.width; e.sh = m_journalScissor.height;
+    journalPush(e);
 }
 
 void Renderer::flush() {
     uint32_t batchVerts = m_vtxCount - m_vtxBatchStart;
     if (batchVerts == 0) return;
     ++m_frameDrawCalls;
+
+    // Record the batch before it is submitted. The bounds come from the
+    // vertices actually in the arena, not from the caller's rect, so a draw
+    // that reached the GPU with different geometry than its caller intended
+    // still shows up here as what the GPU will receive.
+    if (m_journalEnabled) {
+        DrawJournalEntry e;
+        e.kind    = JournalKind::Batch;
+        e.shader  = (uint16_t)m_curShader;
+        e.target  = (int16_t)m_journalTarget;
+        e.texSlot = (int16_t)((m_texturing && m_curTexSlot >= 0) ? m_curTexSlot : WHITE_TEX_SLOT);
+        e.verts   = batchVerts;
+
+        // Batch bounds also come from the cached shadow, for the same reason the
+        // per-quad scan below does: re-reading the uncached arena yields
+        // corrupted exponents. UV is not shadowed, so it is reported as zero
+        // rather than as an untrustworthy re-read.
+        const uint32_t sEnd = std::min(m_vtxBatchStart + batchVerts, kVtxShadowCap);
+        if (m_vtxBatchStart < sEnd) {
+            const VtxShadow& v0 = m_vtxShadow[m_vtxBatchStart];
+            float minX = v0.x, minY = v0.y, maxX = v0.x, maxY = v0.y;
+            e.minR = e.maxR = v0.r; e.minG = e.maxG = v0.g;
+            e.minB = e.maxB = v0.b; e.minA = e.maxA = v0.a;
+            for (uint32_t i = m_vtxBatchStart + 1; i < sEnd; ++i) {
+                const VtxShadow& v = m_vtxShadow[i];
+                minX = std::min(minX, v.x); maxX = std::max(maxX, v.x);
+                minY = std::min(minY, v.y); maxY = std::max(maxY, v.y);
+                e.minR = std::min(e.minR, v.r); e.maxR = std::max(e.maxR, v.r);
+                e.minG = std::min(e.minG, v.g); e.maxG = std::max(e.maxG, v.g);
+                e.minB = std::min(e.minB, v.b); e.maxB = std::max(e.maxB, v.b);
+                e.minA = std::min(e.minA, v.a); e.maxA = std::max(e.maxA, v.a);
+            }
+            e.x0 = minX; e.y0 = minY; e.x1 = maxX; e.y1 = maxY;
+        } else {
+            ++m_journalUnshadowed;
+        }
+
+        // Scan the batch one six-vertex quad at a time, and record any single
+        // quad that could itself dim the framebuffer.
+        //
+        // The whole-batch min/max above cannot answer that question, and
+        // believing it could was an error in entries 122, 124 and 128. A
+        // fullscreen black quad at alpha 0.2 batched together with thirteen
+        // opaque quads yields maxRGB = 1.0 and maxA = 1.0 for the batch, so a
+        // test requiring *every* vertex to be dark and translucent rejects it.
+        // Frame 073's journal contains exactly that shape: v=84, colour range
+        // 0.000..1.000, alpha range 0.200..1.000 — and 1 - 0.200 = 0.800 is the
+        // measured attenuation. Per-quad scanning closes that hole.
+        //
+        // Only whole quads are examined; a batch whose vertex count is not a
+        // multiple of six also contains triangles or line segments, which
+        // cannot cover the framebuffer on their own and are counted separately
+        // rather than ignored silently.
+        if (m_journalTarget == -1 && batchVerts >= 6) {
+            const float fbW = (float)m_gpu.width();
+            const float fbH = (float)m_gpu.height();
+            for (uint32_t q = 0; q + 6 <= batchVerts; q += 6) {
+                const uint32_t base = m_vtxBatchStart + q;
+                if (base + 6 > kVtxShadowCap) { ++m_journalUnshadowed; continue; }
+                const VtxShadow* v = &m_vtxShadow[base];
+                float qx0 = v[0].x, qy0 = v[0].y, qx1 = v[0].x, qy1 = v[0].y;
+                float mr = v[0].r, mg = v[0].g, mb = v[0].b;
+                float minA = v[0].a, maxA = v[0].a;
+                for (int k = 1; k < 6; ++k) {
+                    qx0 = std::min(qx0, v[k].x); qx1 = std::max(qx1, v[k].x);
+                    qy0 = std::min(qy0, v[k].y); qy1 = std::max(qy1, v[k].y);
+                    mr = std::max(mr, v[k].r);
+                    mg = std::max(mg, v[k].g);
+                    mb = std::max(mb, v[k].b);
+                    minA = std::min(minA, v[k].a);
+                    maxA = std::max(maxA, v[k].a);
+                }
+                const float qw = qx1 - qx0, qh = qy1 - qy0;
+                if (!(std::fabs(qx0) < 1e6f && std::fabs(qy0) < 1e6f &&
+                      qw < 1e6f && qh < 1e6f)) continue;
+                // Cover the visible framebuffer in both axes, be dark at every
+                // corner, and be partially transparent at every corner.
+                if (qx0 > 0.5f || qy0 > 0.5f || qx1 < fbW - 0.5f || qy1 < fbH - 0.5f)
+                    continue;
+                if ((mr + mg + mb) > 0.35f) continue;
+                if (!(minA > 0.004f && maxA < 0.999f)) continue;
+                DrawJournalEntry d;
+                d.kind    = JournalKind::Dimmer;
+                d.shader  = e.shader;
+                d.target  = e.target;
+                d.texSlot = e.texSlot;
+                d.verts   = 6;
+                d.x0 = qx0; d.y0 = qy0; d.x1 = qx1; d.y1 = qy1;
+                d.minR = d.maxR = mr; d.minG = d.maxG = mg; d.minB = d.maxB = mb;
+                d.minA = minA; d.maxA = maxA;
+                d.sx = m_journalScissor.x;     d.sy = m_journalScissor.y;
+                d.sw = m_journalScissor.width; d.sh = m_journalScissor.height;
+                journalPush(d);
+            }
+            if (batchVerts % 6u != 0u) ++m_journalNonQuadBatches;
+        }
+        e.sx = m_journalScissor.x;     e.sy = m_journalScissor.y;
+        e.sw = m_journalScissor.width; e.sh = m_journalScissor.height;
+        journalPush(e);
+    }
 
     auto cmd = m_gpu.cmdBuf();
     int slot = m_gpu.slot();
@@ -431,6 +586,11 @@ void Renderer::bindRenderTarget(int offscreenIdx, float logicalW, float logicalH
     const uint32_t offH = (uint32_t)GpuDevice::offscreenHeight(offscreenIdx);
     cmd.setViewports(0, DkViewport{0.f, 0.f, (float)offW, (float)offH, 0.f, 1.f});
     cmd.setScissors(0, DkScissor{0, 0, offW, offH});
+    if (m_journalEnabled) {
+        m_journalTarget = offscreenIdx;
+        m_journalScissor = {0.f, 0.f, (float)offW, (float)offH};
+        journalEvent(JournalKind::BindTarget);
+    }
 
     // Zero means "address it in its own pixels", which is what the blur passes
     // want. A caller drawing a screen-space layer passes the screen size, and
@@ -441,9 +601,11 @@ void Renderer::bindRenderTarget(int offscreenIdx, float logicalW, float logicalH
     int slot = m_gpu.slot();
     VsUniforms vs;
     ortho(vs.projection, projW, projH);
-    auto* ubo = static_cast<uint8_t*>(m_gpu.vsUboCpuAddr(slot));
+    const uint32_t ring = m_gpu.nextVsUboSlot(slot);
+    auto* ubo = static_cast<uint8_t*>(m_gpu.vsUboCpuAddrAt(slot, ring));
     std::memcpy(ubo, &vs, sizeof(vs));
-    cmd.bindUniformBuffer(DkStage_Vertex, 0, m_gpu.vsUboGpuAddr(slot), GpuDevice::VS_UBO_SIZE);
+    cmd.bindUniformBuffer(DkStage_Vertex, 0, m_gpu.vsUboGpuAddrAt(slot, ring),
+                          GpuDevice::VS_UBO_SIZE);
 }
 
 void Renderer::restoreRenderTarget() {
@@ -464,6 +626,14 @@ void Renderer::restoreRenderTarget() {
                                      (uint32_t)std::max(0.f, r.width), (uint32_t)std::max(0.f, r.height)});
     }
 
+    if (m_journalEnabled) {
+        m_journalTarget = -1;
+        m_journalScissor = m_clipStack.empty()
+            ? Rect{0.f, 0.f, (float)m_gpu.width(), (float)m_gpu.height()}
+            : m_clipStack.back();
+        journalEvent(JournalKind::RestoreTarget);
+    }
+
     updateProjection();
 }
 
@@ -474,6 +644,7 @@ void Renderer::captureToOffscreen(bool reuseIfValid) {
 
     flush();
     ++m_frameCaptures;
+    if (m_journalEnabled) journalEvent(JournalKind::Capture);
     auto cmd = m_gpu.cmdBuf();
     int slot = m_gpu.slot();
 
@@ -699,6 +870,7 @@ void Renderer::applyBlurBetween(int a, int b, float radius, int passes) {
     }
 
     m_frameBlurPasses += passes * 2;
+    if (m_journalEnabled) journalEvent(JournalKind::BlurPass);
 
     const float offW = (float)GpuDevice::offscreenWidth(a);
     const float offH = (float)GpuDevice::offscreenHeight(a);
@@ -767,6 +939,51 @@ void Renderer::addVertex(float x, float y, float u, float v, const Color& c) {
         std::printf("[Renderer] WARN: vertex buffer full (%u)\n", m_vtxCount);
         return;
     }
+    // Shadow the geometry the journal needs, in normal cached memory, at the
+    // moment it is written, and check the incoming coordinate here.
+    //
+    // Shadowing was added to remove a suspected uncached-readback artifact.
+    // It did not: 40-47 batches per frame still carry bounds near 1e19 even
+    // though both the write and the read now happen in an ordinary vector, so
+    // the value is already wrong when it arrives. The bit patterns decode to
+    // plausible screen coordinates under a different exponent byte
+    // (0xDF43EB6C -> 195.920, 0x5FC3EB6C -> 391.839) and differ from a sane
+    // exponent by the same mask in both cases (0xDF^0xC3 == 0x5F^0x43 == 0x1C).
+    //
+    // This records the offending value at its entry point, together with the
+    // shape state and emission site active at the time, so the caller that
+    // produces it can be named instead of inferred. It matters because the
+    // affected batches are the ones carrying alpha 0.200, and 1 - 0.200 is the
+    // attenuation measured in the artifact.
+    if (m_journalEnabled) {
+        if (m_vtxCount < kVtxShadowCap) {
+            auto& s = m_vtxShadow[m_vtxCount];
+            s.x = x; s.y = y;
+            s.r = c.r; s.g = c.g; s.b = c.b; s.a = c.a;
+        }
+        const bool sane = std::isfinite(x) && std::isfinite(y) &&
+                          std::fabs(x) < 1e5f && std::fabs(y) < 1e5f;
+        if (!sane) {
+            ++m_journalBadVertices;
+            if (m_journalBadSamples < kBadVertexSamples) {
+                auto& b = m_journalBadVertex[m_journalBadSamples++];
+                std::memcpy(&b.xBits, &x, 4);
+                std::memcpy(&b.yBits, &y, 4);
+                b.vtxIndex   = m_vtxCount;
+                b.batchStart = m_vtxBatchStart;
+                b.site       = (uint16_t)m_emitSite;
+                b.tag        = m_drawTag;
+                b.shader     = (uint16_t)m_curShader;
+                b.radius     = m_shapeRadius;
+                b.thickness  = m_shapeThickness;
+                b.centreX    = m_shapeCentre.x;
+                b.centreY    = m_shapeCentre.y;
+                b.halfX      = m_shapeHalf.x;
+                b.halfY      = m_shapeHalf.y;
+                b.a          = c.a;
+            }
+        }
+    }
     auto& vtx  = m_vtxBase[m_vtxCount++];
     if (m_vtxCount > m_peakVtxCount) m_peakVtxCount = m_vtxCount;
     vtx.x = x; vtx.y = y;
@@ -781,7 +998,11 @@ void Renderer::addQuad(float x0, float y0, float x1, float y1,
                         float u0, float v0, float u1, float v1,
                         const Color& c)
 {
-    if (m_vtxCount + 6 > GpuDevice::MAX_VERTICES) flush();
+    // flush() advances the batch marker but does not reclaim arena space — that
+    // happens once per frame in beginFrame — so flushing here left the quad to
+    // tear anyway. Drop it whole so the triangle stream stays aligned.
+    if (m_vtxCount + 6 > GpuDevice::MAX_VERTICES) return;
+    const EmitSiteScope site{*this, EmitSite::Quad};
     addVertex(x0, y0, u0, v0, c);
     addVertex(x1, y0, u1, v0, c);
     addVertex(x1, y1, u1, v1, c);
@@ -794,7 +1015,8 @@ void Renderer::addQuadGrad(float x0, float y0, float x1, float y1,
                             float u0, float v0, float u1, float v1,
                             const Color& cTop, const Color& cBot)
 {
-    if (m_vtxCount + 6 > GpuDevice::MAX_VERTICES) flush();
+    if (m_vtxCount + 6 > GpuDevice::MAX_VERTICES) return;   // see addQuad
+    const EmitSiteScope site{*this, EmitSite::QuadGrad};
     addVertex(x0, y0, u0, v0, cTop);
     addVertex(x1, y0, u1, v0, cTop);
     addVertex(x1, y1, u1, v1, cBot);
@@ -804,6 +1026,25 @@ void Renderer::addQuadGrad(float x0, float y0, float x1, float y1,
 }
 
 void Renderer::drawRect(const Rect& r, const Color& c) {
+    // Record at the primitive boundary as well as at flush(). Batching can put
+    // a fullscreen scrim and unrelated widgets into one GPU draw; a batch-only
+    // record would then show their union and colour range but not prove that a
+    // standalone dimming primitive actually existed. This entry preserves the
+    // caller's exact rect and colour while Batch preserves what reached the GPU.
+    if (m_journalEnabled) {
+        DrawJournalEntry e;
+        e.kind = JournalKind::Primitive;
+        e.shader = (uint16_t)m_curShader;
+        e.target = (int16_t)m_journalTarget;
+        e.texSlot = WHITE_TEX_SLOT;
+        e.verts = 6;
+        e.x0 = r.x; e.y0 = r.y; e.x1 = r.right(); e.y1 = r.bottom();
+        e.minR = e.maxR = c.r; e.minG = e.maxG = c.g;
+        e.minB = e.maxB = c.b; e.minA = e.maxA = c.a;
+        e.sx = m_journalScissor.x;     e.sy = m_journalScissor.y;
+        e.sw = m_journalScissor.width; e.sh = m_journalScissor.height;
+        journalPush(e);
+    }
     bindTexture(-1);
     addQuad(r.x, r.y, r.right(), r.bottom(), 0, 0, 1, 1, c);
 }
@@ -863,6 +1104,7 @@ void Renderer::drawRoundedRectOutline(const Rect& r, const Color& c, float radiu
     }
 
     beginShape(r, rad, t);
+    const EmitSiteScope site{*this, EmitSite::RoundedOutline};
 
     const float x0 = r.x - 1.f, y0 = r.y - 1.f;
     const float x1 = r.right() + 1.f, y1 = r.bottom() + 1.f;
@@ -915,20 +1157,34 @@ void Renderer::drawCircle(const Vec2& center, float radius, const Color& c, int 
     drawRoundedMasked(box, radius, c, Rect{0.f, 0.f, 1.f, 1.f});
 }
 
+// These two emitted straight into the arena with no capacity check. addVertex
+// drops silently once it is full, so a primitive that ran out part-way left a
+// batch whose vertex count was no longer a multiple of three, and every
+// triangle after it was assembled from a shifted triple — thin black streaks
+// across the screen, which is a torn vertex stream rather than a shape bug.
+//
+// Flushing cannot help here: it only advances the batch marker, and the arena
+// is reclaimed once per frame in beginFrame. So the primitive is dropped whole
+// instead, which keeps the stream aligned and costs one shape rather than the
+// rest of the frame.
 void Renderer::drawTriangle(const Vec2& p1, const Vec2& p2, const Vec2& p3, const Color& c) {
+    if (m_vtxCount + 3 > GpuDevice::MAX_VERTICES) return;
     bindTexture(-1);
+    const EmitSiteScope site{*this, EmitSite::Triangle};
     addVertex(p1.x, p1.y, 0, 0, c);
     addVertex(p2.x, p2.y, 0, 0, c);
     addVertex(p3.x, p3.y, 0, 0, c);
 }
 
 void Renderer::drawLine(const Vec2& from, const Vec2& to, const Color& c, float thickness) {
+    if (m_vtxCount + 6 > GpuDevice::MAX_VERTICES) return;
     Vec2 d = (to - from).normalized();
     Vec2 n = {-d.y, d.x};
     float ht = thickness * 0.5f;
     Vec2 a = from + n * ht, b = from - n * ht;
     Vec2 cc = to + n * ht,  dd = to - n * ht;
     bindTexture(-1);
+    const EmitSiteScope site{*this, EmitSite::Line};
     addVertex(a.x, a.y, 0, 0, c);
     addVertex(b.x, b.y, 0, 0, c);
     addVertex(cc.x, cc.y, 0, 0, c);
@@ -970,6 +1226,7 @@ void Renderer::endShape() {
 void Renderer::drawRoundedMasked(const Rect& dest, float radius, const Color& c,
                                  const Rect& uv, float thickness) {
     beginShape(dest, radius, thickness);
+    const EmitSiteScope site{*this, EmitSite::RoundedMasked};
     addQuad(dest.x, dest.y, dest.right(), dest.bottom(),
             uv.x, uv.y, uv.right(), uv.bottom(), c);
     endShape();
@@ -1014,6 +1271,210 @@ void Renderer::drawText(const std::string& text, const Vec2& pos, Font* font,
     font->draw(*this, text, pos, color, scale);
 }
 
+std::string Renderer::formatDrawJournal() const {
+    static const char* kKindName[] = {
+        "PRIMITIVE", "BATCH", "DIMMER", "CLEAR", "BIND-TGT", "RESTORE-TGT",
+        "CLIP-PUSH", "CLIP-POP", "CAPTURE", "BLUR", "PRESENT",
+    };
+    static const char* kShaderName[] = {
+        "Basic", "Backdrop", "BlurH", "BlurV", "Wave", "LiquidGlass", "Gradient",
+    };
+
+    std::string out;
+    out.reserve(m_journal.size() * 128 + 512);
+
+    char line[320];
+    // The swapchain slot is recorded because a double-buffer hazard would bind
+    // the artifact to one slot's parity. Across a 200-frame capture, glitches
+    // landing on a single slot value is evidence no still image can give.
+    std::snprintf(line, sizeof(line),
+                  "frame_serial=%llu slot=%d entries=%zu dropped=%u fb=%dx%d "
+                  "backbuffer_clear=%s rgba=(%.3f,%.3f,%.3f,%.3f)\n",
+                  (unsigned long long)m_frameSerial, m_gpu.slot(), m_journal.size(),
+                  m_journalDropped, m_gpu.width(), m_gpu.height(),
+                  m_journalBackbufferClearSeen ? "yes" : "NO",
+                  m_journalBackbufferClear.r, m_journalBackbufferClear.g,
+                  m_journalBackbufferClear.b, m_journalBackbufferClear.a);
+    out += line;
+
+    // Timing of the frame this journal describes, sampled at its present.
+    // present_interval is the gap since the previous present: at 60 Hz a frame
+    // that met its deadline sits near 16.67ms, and the dump cadence of one
+    // capture every third frame adds a known hitch on capture frames only.
+    // acquire/fence separate waiting on the display from waiting on the GPU.
+    std::snprintf(line, sizeof(line),
+                  "timing: present_interval=%.3fms submit_to_present=%.3fms "
+                  "frame_cpu=%.3fms acquire=%.3fms fence=%.3fms\n",
+                  m_gpu.lastPresentIntervalNs() / 1e6,
+                  m_gpu.lastSubmitToPresentNs() / 1e6,
+                  m_gpu.lastFrameCpuNs() / 1e6,
+                  m_gpu.lastAcquireNs() / 1e6,
+                  m_gpu.lastFenceWaitNs() / 1e6);
+    out += line;
+
+    // Dual-readback self-test. The same GPU image was copied twice, back to
+    // back, into separate buffers. Nothing downstream of presentation can write
+    // into that image, so if these two reads disagree the capture path is the
+    // unstable element and every attenuation figure measured from these dumps
+    // must be re-read in that light.
+    std::snprintf(line, sizeof(line),
+                  "readback: mismatched_bytes=%u first_at=%d max_delta=%u %s\n",
+                  m_gpu.lastDumpMismatchBytes(),
+                  m_gpu.lastDumpFirstMismatch() == UINT32_MAX
+                      ? -1 : (int)m_gpu.lastDumpFirstMismatch(),
+                  m_gpu.lastDumpMaxDelta(),
+                  m_gpu.lastDumpMismatchBytes() == 0
+                      ? "(stable: captured pixels are what the GPU image holds)"
+                      : "(UNSTABLE: capture path differs between two reads)");
+    out += line;
+
+    // The verdict line is computed here rather than on the PC, because the
+    // question it answers is binary and the on-device record is the only place
+    // where the answer is not a reconstruction. A "dimming draw" is a
+    // backbuffer draw whose geometry covers essentially the whole framebuffer
+    // (or an exact half of it), whose colour is dark, and whose alpha is
+    // partial — the only combination that multiplies the existing image by a
+    // constant instead of replacing it.
+    //
+    // The first version of this test scanned only Primitive entries, which
+    // drawRect emits. The Plaza screen never calls drawRect: its captures
+    // recorded zero Primitive entries, so the verdict read "0" for every frame
+    // whether or not a dimmer existed. A zero that cannot become non-zero is
+    // not evidence. Batch entries are scanned too, so any submitted geometry
+    // covering the framebuffer is tested regardless of which caller emitted it.
+    //
+    // Batch bounds are read from the vertex arena, which lives in
+    // DkMemBlockFlags_CpuUncached memory and has been observed to read back
+    // with a corrupted exponent byte (values near 1e19). Those entries are
+    // skipped rather than counted, since their geometry cannot be trusted; the
+    // skipped count is reported so a frame full of them cannot masquerade as a
+    // clean negative.
+    // The per-quad scan in flush() already applied the geometry and colour
+    // tests to each individual quad, so the verdict is a count of what it
+    // found. Whole-batch ranges are no longer consulted for this decision:
+    // batching mixes quads, and a batch summary cannot represent any single
+    // one of them.
+    int suspects = 0;
+    int unreadable = 0;
+    for (const auto& e : m_journal) {
+        if (e.kind == JournalKind::Dimmer) { ++suspects; continue; }
+        if (e.kind != JournalKind::Batch || e.target != -1) continue;
+        const float w = e.x1 - e.x0;
+        const float h = e.y1 - e.y0;
+        if (!(std::fabs(e.x0) < 1e6f && std::fabs(e.y0) < 1e6f &&
+              w >= 0.f && w < 1e6f && h >= 0.f && h < 1e6f))
+            ++unreadable;
+    }
+    const bool trustworthy = (m_journalDropped == 0 && unreadable == 0 &&
+                              m_journalNonQuadBatches == 0 &&
+                              m_journalUnshadowed == 0);
+    std::snprintf(line, sizeof(line),
+                  "verdict: dimmer_quads=%d unreadable_batches=%d "
+                  "non_quad_batches=%u unshadowed=%u %s\n",
+                  suspects, unreadable, m_journalNonQuadBatches,
+                  m_journalUnshadowed,
+                  suspects > 0
+                      ? "(a submitted quad covers the framebuffer and dims it)"
+                      : (trustworthy
+                             ? "(0 => no submitted quad could have dimmed it)"
+                             : "(INCONCLUSIVE: some geometry was untestable)"));
+    out += line;
+
+    // Vertices that were already invalid when they reached addVertex, reported
+    // with the raw bits and the state that produced them. The mantissa is
+    // printed re-exponented to 0x43 so the plausible original coordinate is
+    // visible next to the corrupted value.
+    static const char* kSiteName[] = {
+        "none", "quad", "quadGrad", "roundedMasked", "roundedOutline",
+        "circle", "triangle", "line", "text", "offscreen", "glass", "blur",
+    };
+    // Scene population and submitted work for this frame. The artifact becomes
+    // more frequent the longer Plaza runs, so something accumulates; these make
+    // "something" measurable per frame instead of inferred. Draw counts come
+    // from the previous frame's totals, which is what the existing counters
+    // expose, and the scene counts are whatever the owning screen last
+    // reported.
+    std::snprintf(line, sizeof(line),
+                  "scene: miis=%u pedestals=%u bubbles=%u ambient=%u shapes=%u "
+                  "draws=%u binds=%u verts=%u blurs=%u captures=%u\n",
+                  m_sceneMiis, m_scenePedestals, m_sceneBubbles,
+                  m_sceneAmbient, m_sceneShapes,
+                  m_lastFrameDrawCalls, m_lastFramePipelineBinds,
+                  m_lastFrameVertices, m_lastFrameBlurPasses,
+                  m_lastFrameCaptures);
+    out += line;
+
+    std::snprintf(line, sizeof(line),
+                  "badverts: total=%u sampled=%u\n",
+                  m_journalBadVertices, m_journalBadSamples);
+    out += line;
+
+    if (!m_probes.empty() || m_probesDropped) {
+        std::snprintf(line, sizeof(line), "probes: %zu dropped=%u\n",
+                      m_probes.size(), m_probesDropped);
+        out += line;
+        for (const auto& p : m_probes) {
+            out += "  ";
+            out += p;
+            out += '\n';
+        }
+    }
+    for (uint32_t i = 0; i < m_journalBadSamples; ++i) {
+        const auto& b = m_journalBadVertex[i];
+        const uint32_t rx = (0x43u << 24) | (b.xBits & 0x00FFFFFFu);
+        const uint32_t ry = (0x43u << 24) | (b.yBits & 0x00FFFFFFu);
+        float fx, fy;
+        std::memcpy(&fx, &rx, 4);
+        std::memcpy(&fy, &ry, 4);
+        const char* site = ((size_t)b.site < std::size(kSiteName))
+                         ? kSiteName[b.site] : "?";
+        std::snprintf(line, sizeof(line),
+            "  bad[%u] tag=%-22s site=%-14s shader=%u vtx=%u batchStart=%u alpha=%.3f\n"
+            "        xbits=0x%08X ybits=0x%08X remantissa=(%.3f,%.3f)\n"
+            "        shape centre=(%.1f,%.1f) half=(%.1f,%.1f) rad=%.2f thick=%.2f\n",
+            i, (b.tag && *b.tag) ? b.tag : "(untagged)", site,
+            b.shader, b.vtxIndex, b.batchStart, b.a,
+            b.xBits, b.yBits, fx, fy,
+            b.centreX, b.centreY, b.halfX, b.halfY, b.radius, b.thickness);
+        out += line;
+    }
+
+    for (size_t i = 0; i < m_journal.size(); ++i) {
+        const auto& e = m_journal[i];
+        const char* kind = ((size_t)e.kind < std::size(kKindName))
+                         ? kKindName[(size_t)e.kind] : "?";
+        if (e.kind == JournalKind::Primitive || e.kind == JournalKind::Batch ||
+            e.kind == JournalKind::Dimmer) {
+            const char* sh = ((size_t)e.shader < std::size(kShaderName))
+                           ? kShaderName[e.shader] : "?";
+            // Attenuation is what this draw would multiply the destination by
+            // under the frame's SrcAlpha/InvSrcAlpha blend, for a black source.
+            // Printing it makes the comparison against the measured 0.8000 /
+            // 0.6091 / 0.4711 ratios direct rather than mental arithmetic.
+            std::snprintf(line, sizeof(line),
+                "%03zu %-11s tgt=%-3d sh=%-11s v=%-4u rect=[%.1f,%.1f %.1fx%.1f] "
+                "rgbaRange=(%.3f..%.3f,%.3f..%.3f,%.3f..%.3f,%.3f..%.3f) "
+                "attenRange=%.4f..%.4f tex=%d uv=[%.3f..%.3f,%.3f..%.3f] "
+                "scissor=[%.0f,%.0f %.0fx%.0f]\n",
+                i, kind, (int)e.target, sh, e.verts,
+                e.x0, e.y0, e.x1 - e.x0, e.y1 - e.y0,
+                e.minR, e.maxR, e.minG, e.maxG, e.minB, e.maxB,
+                e.minA, e.maxA, 1.f - e.maxA, 1.f - e.minA, (int)e.texSlot,
+                e.minU, e.maxU, e.minV, e.maxV,
+                e.sx, e.sy, e.sw, e.sh);
+        } else {
+            std::snprintf(line, sizeof(line),
+                "%03zu %-11s tgt=%-3d rgba=(%.3f,%.3f,%.3f,%.3f) "
+                "scissor=[%.0f,%.0f %.0fx%.0f]\n",
+                i, kind, (int)e.target,
+                e.minR, e.minG, e.minB, e.minA,
+                e.sx, e.sy, e.sw, e.sh);
+        }
+        out += line;
+    }
+    return out;
+}
+
 void Renderer::pushClipRect(const Rect& r) {
     flush();
     Rect clip = r;
@@ -1029,6 +1490,10 @@ void Renderer::pushClipRect(const Rect& r) {
     m_gpu.cmdBuf().setScissors(0, DkScissor{
         (uint32_t)std::max(0.f, clip.x), (uint32_t)std::max(0.f, clip.y),
         (uint32_t)std::max(0.f, clip.width), (uint32_t)std::max(0.f, clip.height)});
+    if (m_journalEnabled) {
+        m_journalScissor = clip;
+        journalEvent(JournalKind::ClipPush);
+    }
 }
 
 void Renderer::popClipRect() {
@@ -1042,6 +1507,12 @@ void Renderer::popClipRect() {
         m_gpu.cmdBuf().setScissors(0, DkScissor{
             (uint32_t)std::max(0.f, r.x), (uint32_t)std::max(0.f, r.y),
             (uint32_t)std::max(0.f, r.width), (uint32_t)std::max(0.f, r.height)});
+    }
+    if (m_journalEnabled) {
+        m_journalScissor = m_clipStack.empty()
+            ? Rect{0.f, 0.f, (float)m_gpu.width(), (float)m_gpu.height()}
+            : m_clipStack.back();
+        journalEvent(JournalKind::ClipPop);
     }
 }
 

@@ -239,6 +239,7 @@ void WiiUMenuApp::offerUpdate(const update::UpdateClient::Release& release, bool
         if (m_dialog->isActive() || (m_settings && m_settings->isActive())
             || (m_themeShop && m_themeShop->isActive()) || (m_gameDetails && m_gameDetails->isActive())
             || (m_gameGallery && m_gameGallery->isActive()) || (m_gameMods && m_gameMods->isActive())
+            || (m_gameCheats && m_gameCheats->isActive())
             || (m_userSelect && m_userSelect->isActive()) || m_editMode)
             return;
     }
@@ -384,12 +385,14 @@ void WiiUMenuApp::startUpdateDownload(const update::UpdateClient::Release& relea
         } catch (const std::exception& error) {
             std::remove(kUpdateArchive);
             std::remove(kReadyMarker);
+            std::remove(kDaemonMarker);
             std::lock_guard<std::mutex> lock(shared->mutex);
             shared->error = error.what();
             shared->done = true;
         } catch (...) {
             std::remove(kUpdateArchive);
             std::remove(kReadyMarker);
+            std::remove(kDaemonMarker);
             std::lock_guard<std::mutex> lock(shared->mutex);
             shared->error = "unknown update failure";
             shared->done = true;

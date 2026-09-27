@@ -708,6 +708,12 @@ void WaraWaraBackground::onUpdate(float dt) {
         }
         s.rotation += s.rotSpeed * dt;
     }
+
+    if (m_ambientMiisEnabled && !m_ambientMiis.empty()) {
+        for (auto& mii : m_ambientMiis) {
+            mii->update(dt);
+        }
+    }
 }
 
 nxui::Rect WaraWaraBackground::backgroundImageRect() const {
@@ -809,8 +815,25 @@ void WaraWaraBackground::renderLayer(nxui::Renderer& ren, bool intoOffscreen) {
         }
     }
 
-    for (const auto& s : m_shapes)
-        drawShapeWithSymmetry(ren, s);
+    {
+        const nxui::Renderer::DrawTagScope tag{ren, "bg.shapes"};
+        for (const auto& s : m_shapes)
+            drawShapeWithSymmetry(ren, s);
+    }
+
+    if (m_ambientMiisEnabled && !m_ambientMiis.empty()) {
+        const nxui::Renderer::DrawTagScope tag{ren, "bg.ambientMii"};
+        for (const auto& mii : m_ambientMiis) {
+            mii->render(ren, m_ambientFont, m_ambientSmallFont);
+        }
+    }
+
+    // The background owns the shape field and the ambient Miis, so it reports
+    // those two counts; the Plaza screen reports its own population and does
+    // not overwrite them.
+    if (ren.drawJournalEnabled())
+        ren.setBackgroundCounts((uint32_t)m_ambientMiis.size(),
+                                (uint32_t)m_shapes.size());
 
     ren.flush();
 }
@@ -870,75 +893,63 @@ void WaraWaraBackground::drawGlassShape(nxui::Renderer& ren, const Shape& s) con
 }
 
 void WaraWaraBackground::drawRoundedShape(nxui::Renderer& ren, const Shape& s, const nxui::Color& c) const {
-    float r  = s.rotation;
     float sz = s.size;
-
-    auto rot = [&](float lx, float ly) -> nxui::Vec2 {
-        float cs = std::cos(r), sn = std::sin(r);
-        return {s.pos.x + lx * cs - ly * sn,
-                s.pos.y + lx * sn + ly * cs};
-    };
+    float h = sz * 0.707f;
 
     switch (s.type) {
     case Circle:
         ren.drawCircle(s.pos, sz, c, 12);
         break;
-    case Triangle: {
-        nxui::Vec2 p0 = rot(0,             -sz);
-        nxui::Vec2 p1 = rot(-sz * 0.866f,   sz * 0.5f);
-        nxui::Vec2 p2 = rot( sz * 0.866f,   sz * 0.5f);
-        ren.drawTriangle(p0, p1, p2, c);
-        break;
-    }
-    case Square: {
-        float h = sz * 0.707f;
+    case Square:
+    case Triangle:
+    case Diamond:
+    case Hexagon:
+    default: {
         float roundness = std::clamp(m_config.cornerRoundness, 0.f, 1.f);
-        if (roundness > 0.001f) {
-            float radius = h * roundness;
-            std::vector<nxui::Vec2> points;
-            points.reserve(16);
-            appendArcPoints(points,  h - radius, -h + radius, radius, -kHalfPi, 0.f,      3, true);
-            appendArcPoints(points,  h - radius,  h - radius, radius,  0.f,      kHalfPi,  3, false);
-            appendArcPoints(points, -h + radius,  h - radius, radius,  kHalfPi,  kPi,      3, false);
-            appendArcPoints(points, -h + radius, -h + radius, radius,  kPi,      kPi * 1.5f, 3, false);
-
-            for (size_t i = 0; i < points.size(); ++i)
-                points[i] = rot(points[i].x, points[i].y);
-
-            for (size_t i = 0; i < points.size(); ++i)
-                ren.drawTriangle(s.pos, points[i], points[(i + 1) % points.size()], c);
-            break;
-        }
-
-        nxui::Vec2 p0 = rot(-h, -h);
-        nxui::Vec2 p1 = rot( h, -h);
-        nxui::Vec2 p2 = rot( h,  h);
-        nxui::Vec2 p3 = rot(-h,  h);
-        ren.drawTriangle(p0, p1, p2, c);
-        ren.drawTriangle(p0, p2, p3, c);
+        float radius = h * (roundness > 0.001f ? roundness : 0.32f);
+        ren.drawRoundedRect(nxui::Rect{s.pos.x - h, s.pos.y - h, h * 2.f, h * 2.f}, c, radius);
         break;
     }
-    case Diamond: {
-        nxui::Vec2 p0 = rot(0,            -sz);
-        nxui::Vec2 p1 = rot( sz * 0.6f,    0);
-        nxui::Vec2 p2 = rot(0,             sz);
-        nxui::Vec2 p3 = rot(-sz * 0.6f,    0);
-        ren.drawTriangle(p0, p1, p2, c);
-        ren.drawTriangle(p0, p2, p3, c);
-        break;
     }
-    case Hexagon: {
-        constexpr int N = 6;
-        const float step = 6.28318f / N;
-        nxui::Vec2 pts[N];
-        for (int i = 0; i < N; ++i) {
-            float a2 = step * i;
-            pts[i] = rot(std::cos(a2) * sz, std::sin(a2) * sz);
-        }
-        for (int i = 1; i < N - 1; ++i)
-            ren.drawTriangle(pts[0], pts[i], pts[i + 1], c);
-        break;
+}
+
+void WaraWaraBackground::setAmbientAvatars(const std::vector<warawara::MiiAvatarData>& avatars,
+                                          nxui::Font* font,
+                                          nxui::Font* smallFont) {
+    m_ambientFont = font;
+    m_ambientSmallFont = smallFont;
+    m_ambientMiis.clear();
+
+    if (avatars.empty()) {
+        return;
     }
-    default: break;
+
+    // Spawn 6 roaming ambient Miis behind the main grid
+    const size_t count = std::min<size_t>(8, std::max<size_t>(4, avatars.size()));
+    m_ambientMiis.reserve(count);
+
+    for (size_t i = 0; i < count; ++i) {
+        const auto& av = avatars[i % avatars.size()];
+        auto mii = std::make_unique<warawara::MiiFigure>(av);
+
+        // Place along the lower half of the screen
+        float x = 80.0f + static_cast<float>(i) * (1120.0f / static_cast<float>(count));
+        float y = 520.0f + static_cast<float>(i % 3) * 35.0f;
+        mii->setPosition({x, y});
+
+        // Ambient scale: slightly smaller (0.84f) so they sit gently in the background
+        mii->setScale(0.84f);
+
+        // Gentle ambient shadow and subtle nickname pill
+        auto cfg = mii->config();
+        cfg.wanderBounds = nxui::Rect{60.0f, 490.0f, 1160.0f, 140.0f};
+        cfg.walkSpeed = 38.0f; // Slower, calmer stroll
+        cfg.showNamePill = true;
+        mii->setConfig(cfg);
+
+        mii->setAutonomous(true);
+        mii->idle(1.0f + static_cast<float>(i) * 0.7f);
+
+        m_ambientMiis.push_back(std::move(mii));
     }
 }

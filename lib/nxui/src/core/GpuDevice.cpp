@@ -35,8 +35,34 @@ bool GpuDevice::initialize() {
     m_lastFrameUploadBatches = 0;
     m_frameUploadWaitNs = 0;
     m_lastFrameUploadWaitNs = 0;
+    m_frameDumpArmed = false;
+    m_frameDumpPending = false;
     m_dev   = dk::DeviceMaker{}.setCbDebug(deviceDebug).create();
     m_queue = dk::QueueMaker{m_dev}.setFlags(DkQueueFlags_Graphics).create();
+
+    // Two dump buffers, not one. The second is a self-test: endFrame copies the
+    // same framebuffer image into both, back to back in one command list, and
+    // takeFrameDump compares them.
+    //
+    // This separates the only two possibilities left for the Plaza artifact.
+    // The dump reads the rendered image on the GPU before presentImage, so
+    // nothing downstream of presentation — backlight, panel, scanout, dock —
+    // can write back into it. Either the image genuinely contains attenuated
+    // pixels, or the readback path returned something the image does not hold.
+    // Identical copies mean the former and exonerate the capture; differing
+    // copies mean the measurement itself is unstable and every attenuation
+    // figure recorded so far has to be re-read in that light.
+    constexpr uint32_t frameDumpSize = FB_WIDTH * FB_HEIGHT * 4u;
+    for (int i = 0; i < 2; ++i) {
+        m_frameDumpBuffers[i] = dk::MemBlockMaker{m_dev, frameDumpSize}
+            .setFlags(DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached)
+            .create();
+        if (!m_frameDumpBuffers[i]) {
+            std::fprintf(stderr,
+                         "[GpuDevice] frame-dump buffer %d allocation failed (%u bytes)\n",
+                         i, frameDumpSize);
+        }
+    }
 
     for (int i = 0; i < NUM_FB; ++i) {
         m_cmdPool[i].create(m_dev, CMD_BUF_SIZE, DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached);
@@ -68,7 +94,7 @@ bool GpuDevice::initialize() {
     for (int i = 0; i < NUM_FB; ++i) {
         dataSize += VTX_BUF_SIZE + 256;
         dataSize += IDX_BUF_SIZE + 256;
-        dataSize += VS_UBO_SIZE + 256;
+        dataSize += VS_UBO_SIZE * VS_UBO_RING + 256;
         dataSize += FS_UBO_SIZE * FS_UBO_RING + 256;
     }
     dataSize += MAX_TEXTURES * sizeof(DkImageDescriptor) + DK_IMAGE_DESCRIPTOR_ALIGNMENT;
@@ -79,7 +105,7 @@ bool GpuDevice::initialize() {
     for (int i = 0; i < NUM_FB; ++i) {
         m_vtxOff[i]   = m_dataPool.alloc(VTX_BUF_SIZE, 256);
         m_idxOff[i]   = m_dataPool.alloc(IDX_BUF_SIZE, 256);
-        m_vsUboOff[i] = m_dataPool.alloc(VS_UBO_SIZE, DK_UNIFORM_BUF_ALIGNMENT);
+        m_vsUboOff[i] = m_dataPool.alloc(VS_UBO_SIZE * VS_UBO_RING, DK_UNIFORM_BUF_ALIGNMENT);
         m_fsUboOff[i] = m_dataPool.alloc(FS_UBO_SIZE * FS_UBO_RING, DK_UNIFORM_BUF_ALIGNMENT);
     }
     m_imgDescOff = m_dataPool.alloc(MAX_TEXTURES * sizeof(DkImageDescriptor), DK_IMAGE_DESCRIPTOR_ALIGNMENT);
@@ -103,7 +129,7 @@ void GpuDevice::createFramebuffers() {
     dk::ImageLayout fbLayout;
     dk::ImageLayoutMaker{m_dev}
         .setFlags(DkImageFlags_UsageRender | DkImageFlags_UsagePresent |
-                  DkImageFlags_Usage2DEngine | DkImageFlags_HwCompression)
+                  DkImageFlags_Usage2DEngine)
         .setFormat(DkImageFormat_RGBA8_Unorm)
         .setDimensions(FB_WIDTH, FB_HEIGHT)
         .initialize(fbLayout);
@@ -128,7 +154,7 @@ void GpuDevice::createFramebuffers() {
 void GpuDevice::createDepthStencil() {
     dk::ImageLayout dsLayout;
     dk::ImageLayoutMaker{m_dev}
-        .setFlags(DkImageFlags_UsageRender | DkImageFlags_HwCompression)
+        .setFlags(DkImageFlags_UsageRender)
         .setFormat(DkImageFormat_S8)
         .setDimensions(FB_WIDTH, FB_HEIGHT)
         .initialize(dsLayout);
@@ -164,6 +190,34 @@ void GpuDevice::createOffscreenTargets() {
         m_offImages[i].initialize(layouts[i], m_offPool.block, off);
         off += layouts[i].getSize();
     }
+
+    // Freshly mapped VRAM holds whatever the previous process left in it. These
+    // targets are sampled by descriptor slot, and not every consumer writes one
+    // before reading it in the same frame: FolderBackdrop draws OFF_SETTINGS
+    // gated only on its own fade alpha, so before the first folder capture ever
+    // runs it samples uninitialised memory. That is the boot-time-only garbage —
+    // once a capture has written a target the stale contents are gone, which is
+    // why the artifacts were never reproducible after the first interaction and
+    // why two previous fixes aimed at shape geometry could not land.
+    //
+    // Zero them once, here, before m_offscreenReady lets anything sample them.
+    // This is init-time and runs exactly once, so it costs nothing per frame.
+    auto& cmd = m_cmdbuf[0];
+    cmd.clear();
+    cmd.addMemory(m_cmdPool[0].block, 0, CMD_BUF_SIZE);
+    for (int i = 0; i < NUM_OFFSCREEN; ++i) {
+        const uint32_t w = (uint32_t)offscreenWidth(i);
+        const uint32_t h = (uint32_t)offscreenHeight(i);
+        dk::ImageView target{m_offImages[i]};
+        cmd.bindRenderTargets(&target);
+        cmd.setViewports(0, DkViewport{0.f, 0.f, (float)w, (float)h, 0.f, 1.f});
+        cmd.setScissors(0, DkScissor{0, 0, w, h});
+        cmd.clearColor(0, DkColorMask_RGBA, 0.f, 0.f, 0.f, 0.f);
+    }
+    cmd.barrier(DkBarrier_Full, DkInvalidateFlags_Image);
+    m_queue.submitCommands(cmd.finishList());
+    m_queue.waitIdle();
+
     m_offscreenReady = true;
 }
 
@@ -207,6 +261,7 @@ int GpuDevice::beginFrame() {
     // tracking — following the deko3d sample framework pattern).
     m_cmdbuf[m_slot].clear();
     m_cmdbuf[m_slot].addMemory(m_cmdPool[m_slot].block, 0, CMD_BUF_SIZE);
+    m_frameBeginTick = tDone;
     return m_slot;
 }
 
@@ -216,13 +271,80 @@ void GpuDevice::endFrame() {
     // no device-wide idle is needed here.
     submitUploadBatch();
 
+    if (m_frameDumpArmed && m_frameDumpBuffers[0] && m_frameDumpBuffers[1]) {
+        auto& cmd = m_cmdbuf[m_slot];
+        const DkImageRect rect{0, 0, 0, (uint32_t)FB_WIDTH, (uint32_t)FB_HEIGHT, 1};
+        cmd.barrier(DkBarrier_Full, DkInvalidateFlags_Image);
+        // Both copies read the same image with the same barriers around them,
+        // so any difference between them is produced by the readback path
+        // rather than by the scene.
+        for (int i = 0; i < 2; ++i) {
+            cmd.copyImageToBuffer(
+                dk::ImageView{m_fbImages[m_slot]}, rect,
+                DkCopyBuf{m_frameDumpBuffers[i].getGpuAddr(),
+                          (uint32_t)(FB_WIDTH * 4u),
+                          (uint32_t)(FB_WIDTH * FB_HEIGHT * 4u)});
+            cmd.barrier(DkBarrier_Full, DkInvalidateFlags_Image);
+        }
+        cmd.barrier(DkBarrier_Full, DkInvalidateFlags_L2Cache);
+        m_frameDumpArmed = false;
+        m_frameDumpPending = true;
+    }
+
     // Signal the fence for this slot so the NEXT time beginFrame()
     // acquires the same slot, it can wait for completion.
     m_cmdbuf[m_slot].signalFence(m_frameFences[m_slot]);
 
     auto cmdList = m_cmdbuf[m_slot].finishList();
+    const uint64_t tSubmit = armGetSystemTick();
     m_queue.submitCommands(cmdList);
     m_queue.presentImage(m_swapchain, m_slot);
+    const uint64_t tPresent = armGetSystemTick();
+
+    m_lastSubmitToPresentNs = armTicksToNs(tPresent - tSubmit);
+    m_lastFrameCpuNs = m_frameBeginTick ? armTicksToNs(tPresent - m_frameBeginTick) : 0;
+    m_lastPresentIntervalNs =
+        m_prevPresentTick ? armTicksToNs(tPresent - m_prevPresentTick) : 0;
+    m_prevPresentTick = tPresent;
+}
+
+bool GpuDevice::requestFrameDump() {
+    if (!m_frameDumpBuffers[0] || !m_frameDumpBuffers[1] || frameDumpBusy())
+        return false;
+    m_frameDumpArmed = true;
+    return true;
+}
+
+bool GpuDevice::takeFrameDump(std::vector<std::uint8_t>& rgba) {
+    if (!m_frameDumpPending || !m_frameDumpBuffers[0] || !m_frameDumpBuffers[1])
+        return false;
+
+    // endFrame submitted the copy before present. A dump is diagnostic and
+    // deliberately trades one visible hitch for an exact, fully-composed frame.
+    m_queue.waitIdle();
+    constexpr uint32_t kBytes = FB_WIDTH * FB_HEIGHT * 4u;
+    const auto* a = static_cast<const std::uint8_t*>(m_frameDumpBuffers[0].getCpuAddr());
+    const auto* b = static_cast<const std::uint8_t*>(m_frameDumpBuffers[1].getCpuAddr());
+
+    // Compare the two independent reads of the same image. Record where they
+    // first diverge and how far apart they are, so a disagreement is diagnosed
+    // rather than merely counted: a readback that is unstable in the same
+    // diagonal pattern as the artifact would be the artifact's explanation.
+    m_lastDumpMismatchBytes = 0;
+    m_lastDumpFirstMismatch = UINT32_MAX;
+    m_lastDumpMaxDelta = 0;
+    for (uint32_t i = 0; i < kBytes; ++i) {
+        if (a[i] == b[i]) continue;
+        ++m_lastDumpMismatchBytes;
+        if (m_lastDumpFirstMismatch == UINT32_MAX) m_lastDumpFirstMismatch = i;
+        const int d = (int)a[i] - (int)b[i];
+        const uint32_t ad = (uint32_t)(d < 0 ? -d : d);
+        if (ad > m_lastDumpMaxDelta) m_lastDumpMaxDelta = ad;
+    }
+
+    rgba.assign(a, a + kBytes);
+    m_frameDumpPending = false;
+    return true;
 }
 
 void GpuDevice::beginUploadBatch() {
@@ -489,6 +611,10 @@ void GpuDevice::shutdown() {
     for (int i = 0; i < UPLOAD_SLOT_COUNT; ++i)
         m_uploadCmdbuf[i] = {};
     m_queue        = {};
+    for (int i = 0; i < 2; ++i)
+        m_frameDumpBuffers[i] = {};
+    m_frameDumpArmed = false;
+    m_frameDumpPending = false;
     m_imageChunks.clear();
     m_imageMemUsed = 0;
     m_poolMemUsed  = 0;

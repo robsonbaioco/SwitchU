@@ -42,5 +42,9 @@ std::string getText(const std::string& url,
 // POST with the given body; same retries and errors as getText.
 std::string postText(const std::string& url, const std::string& body,
                      const std::list<std::string>& headers = {});
+// postText with a JSON content type.
+std::string postJson(const std::string& url,
+                     const std::string& jsonBody,
+                     const std::list<std::string>& headers = {});
 
 } // namespace themeshop::http

@@ -181,7 +181,9 @@
     "sort_recent": "Zuletzt",
     "sort_playtime": "Meistgespielt",
     "options": "Optionen",
-    "switch_layout": "Ansicht wechseln"
+    "switch_layout": "Ansicht wechseln",
+    "sort_favorites": "Favoriten",
+    "favorite": "Favorit"
   },
   "settings": {
     "tabs": {
@@ -328,7 +330,9 @@
       "reload_grid_done": "Installierte Titel werden erneut gelesen...",
       "reload_grid_failed": "Neuladen konnte nicht angefordert werden.",
       "ui_wireframe": "UI-Drahtgitter",
-      "ui_wireframe_desc": "Zeigt Umrisse aller Box-Widgets zur Layout-Fehlersuche an."
+      "ui_wireframe_desc": "Zeigt Umrisse aller Box-Widgets zur Layout-Fehlersuche an.",
+      "dynamic_pages": "Dynamische Seiten",
+      "dynamic_pages_desc": "Passt die Seitenzahl an die installierte Software an, anstatt 8 feste Seiten beizubehalten."
     },
     "internet": {
       "wifi_ssid": "WLAN-Netzwerk",
@@ -612,7 +616,12 @@
     "size_large": "Groß",
     "items": "Elemente",
     "move": "Verschieben",
-    "page_added": "Seite hinzugefügt"
+    "page_added": "Seite hinzugefügt",
+    "page_deleted": "Seite gelöscht",
+    "delete_page": "Seite löschen",
+    "delete_page_desc": "Diese leere Seite entfernen.",
+    "delete_empty_pages": "Leere Seiten löschen",
+    "delete_empty_pages_desc": "Leere Seiten am Ende dieses Ordners entfernen."
   },
   "add": {
     "title": "Hinzufügen"
@@ -706,7 +715,9 @@
     "select": "Auswählen",
     "stop": "Stopp",
     "test": "Testen",
-    "uninstall": "Deinstallieren"
+    "uninstall": "Deinstallieren",
+    "close_hint": "(B) Schließen",
+    "rescan": "Neu scannen"
   },
   "themeshop": {
     "update_status": "Status",
@@ -744,7 +755,8 @@
       "animated": "Animierte Themes",
       "options": "Optionen",
       "update": "Update",
-      "uninstall": "Deinstallieren"
+      "uninstall": "Deinstallieren",
+      "music": "Musik (YouTube)"
     },
     "accessibility": {
       "fullscreen_preview": "Vollbildvorschau",
@@ -930,8 +942,8 @@
     "details_mods_none": "Keine erkannt",
     "details_mods_detected": "Erkannt",
     "details_rename": "Umbenennen",
-      "details_rename_guide": "Gib einen Namen ein. Leer lassen für den Originalnamen.",
-      "details_manage_mods": "Mods verwalten",
+    "details_rename_guide": "Gib einen Namen ein. Leer lassen für den Originalnamen.",
+    "details_manage_mods": "Mods verwalten",
     "mods_title": "Mods",
     "mods_hint": "A aktiviert/deaktiviert  •  X entfernt  •  B zurück",
     "mods_empty": "Für dieses Spiel wurden keine Mods gefunden.",
@@ -985,7 +997,29 @@
     "delete_software_done": "Die Software wurde gelöscht.",
     "delete_software_failed": "Die Software konnte nicht gelöscht werden.",
     "delete_software_files": "Diese Ordner auf der SD-Karte werden ebenfalls entfernt:",
-    "non_game_options_body_folder": "Homebrew und Ports haben keine Spieldetails, Artworks oder Mods zum Verwalten. Sie können in einen Ordner abgelegt oder entfernt werden."
+    "non_game_options_body_folder": "Homebrew und Ports haben keine Spieldetails, Artworks oder Mods zum Verwalten. Sie können in einen Ordner abgelegt oder entfernt werden.",
+    "port_options": "Port-Optionen",
+    "mark_as_favorite": "Zu Favoriten hinzufügen",
+    "unmark_favorite": "Aus Favoriten entfernen",
+    "details_cheats": "Cheats",
+    "cheats_title": "Cheats",
+    "cheats_hint": "A umschalten  •  X alle umschalten  •  B zurück",
+    "cheats_hint_build": "A umschalten  •  X alle umschalten  •  Links/Rechts Build wechseln  •  B zurück",
+    "cheats_hint_empty": "B zurück",
+    "cheats_empty": "Keine Cheats für dieses Spiel gefunden.",
+    "cheats_empty_path": "Atmosphere-Cheatdateien ablegen in:",
+    "cheats_active": "Aktiviert",
+    "cheats_disabled": "Deaktiviert",
+    "cheats_build_id": "Build",
+    "cheats_active_summary": "aktiv",
+    "cheats_master": "Master-Code",
+    "cheats_opcodes": "Zeilen",
+    "cheats_toggle_all": "Alle umschalten",
+    "cheats_on": "EIN",
+    "cheats_off": "AUS",
+    "cheats_preview": "Opcode-Vorschau",
+    "cheats_enabled_all_toast": "Alle Cheats aktiviert.",
+    "cheats_disabled_all_toast": "Alle Cheats deaktiviert."
   },
   "platform_picker": {
     "title": "Ursprüngliche Plattform",
@@ -997,11 +1031,92 @@
   "text_entry": {
     "erase": "Löschen",
     "full": "Maximale Länge erreicht",
-    "hint": "A: Eingeben   X: Löschen   Y: Umschalten   L/R: Symbole   Plus: Bestätigen   B: Abbrechen",
+    "hint": "A: Eingeben   B: Löschen   Y: Umschalten   L/R: Symbole   Plus: Bestätigen   X: Abbrechen",
     "letters": "ABC",
-    "opened": "Bildschirmtastatur. Steuerkreuz zum Wählen einer Taste, A zum Eingeben, X zum Löschen, Plus zum Bestätigen, B zum Abbrechen.",
+    "opened": "Bildschirmtastatur. Steuerkreuz zum Wählen einer Taste, A zum Eingeben, B zum Löschen, Plus zum Bestätigen, X zum Abbrechen.",
     "shift": "Umschalten",
     "space": "Leerzeichen",
     "symbols": "?12#"
+  },
+  "home": {
+    "page_added": "Seite hinzugefügt",
+    "page_deleted": "Seite gelöscht"
+  },
+  "media": {
+    "title": "Medien-Center",
+    "no_track": "Keine Musik wird abgespielt",
+    "status_playing": "Wiedergabe • Titel {} von {}",
+    "status_paused": "Pausiert",
+    "status_stopped": "Angehalten",
+    "btn_prev": "Vorheriger",
+    "btn_play": "Abspielen",
+    "btn_pause": "Pause",
+    "btn_next": "Nächster",
+    "btn_shuffle": "Zufall",
+    "badge_on": "EIN",
+    "badge_off": "AUS",
+    "mode": {
+      "custom_first": "Zuerst SD-Karte",
+      "custom_first_desc": "Spielt Musik von der SD-Karte. Nutzt Theme-Musik, falls Ordner leer ist.",
+      "theme_first": "Zuerst Theme-Musik",
+      "theme_first_desc": "Theme-Musik hat Vorrang. Nutzt SD-Karte, falls Theme keine Musik hat.",
+      "custom_only": "Nur SD-Karte",
+      "custom_only_desc": "Spielt nur SD-Karten-Musik ab. Theme-Musik wird ignoriert.",
+      "theme_only": "Nur Theme & Standard",
+      "theme_only_desc": "Spielt nur Theme- oder Standardtöne ab. SD-Musik wird ignoriert."
+    },
+    "rescan": "Ordner neu scannen",
+    "tracklist_count": "Titelliste ({} Titel)",
+    "empty_folder": "Keine Musiktitel in sdmc:/config/SwitchU/music/ gefunden\nFüge .mp3-, .ogg- oder .wav-Dateien auf der SD-Karte hinzu.",
+    "playing": "Wiedergabe",
+    "play": "Abspielen",
+    "hint_play_pause": "Wiedergabe/Pause",
+    "hint_rescan": "Neu scannen"
+  },
+  "quicksettings": {
+    "title": "Schnelleinstellungen",
+    "close_hint": "[B] Schließen",
+    "battery": "BATTERIE",
+    "charging": "⚡ Lädt",
+    "discharging": "Entladen",
+    "hardware_temp": "TEMPERATUR",
+    "temp_optimal": "Optimal",
+    "temp_warm": "Warm",
+    "brightness": "☀ Helligkeit",
+    "bgm_volume": "♫ Musiklautstärke",
+    "sfx_volume": "♪ Toneffekte",
+    "airplane_mode": "✈ Flugzeugmodus",
+    "wifi": "Wi-Fi",
+    "on": "EIN",
+    "off": "AUS",
+    "power_options": "ENERGIEOPTIONEN",
+    "sleep": "Standby",
+    "reboot": "Neustart",
+    "power_off": "Ausschalten",
+    "hint_adjust": "Einstellen",
+    "hint_shortcut": "Schnelleinstellungen"
+  },
+  "activity_log": {
+    "title": "Tägliches Aktivitätslog",
+    "tab_daily": "Tagesprotokoll",
+    "tab_monthly": "Monatsprotokoll",
+    "tab_titles": "Software-Bibliothek",
+    "today": "Heute",
+    "total_playtime": "Gesamte Spielzeit",
+    "titles_played": "Gespielte Titel",
+    "empty_day": "Keine Spielaufzeichnungen für diesen Tag.",
+    "empty_day_sub": "Spiele ein Spiel, damit sein Tagesbericht hier erscheint!",
+    "active_days": "Aktive Tage",
+    "daily_distribution": "Tägliche Spielzeitverteilung",
+    "empty_month": "Keine Spielaufzeichnungen für diesen Monat.",
+    "empty_titles": "Bisher kein Spielverlauf aufgezeichnet.",
+    "all_time": "Gesamtrangliste",
+    "times_played": "Gespielt",
+    "avg_playtime": "Durchschnitt",
+    "last_played": "Zuletzt",
+    "view_activity": "Im Aktivitätslog ansehen",
+    "hint_shortcut": "Aktivitätslog",
+    "hint_step": "Datum ändern",
+    "hint_today": "Heute"
   }
 }

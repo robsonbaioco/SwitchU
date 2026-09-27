@@ -119,6 +119,112 @@ public:
     // show a stale scene.
     void setHoldOffscreenCapture(bool hold) { m_holdOffscreenCapture = hold; }
     bool holdOffscreenCapture() const       { return m_holdOffscreenCapture; }
+
+    // --- Diagnostic draw journal -------------------------------------------
+    //
+    // The Plaza dimming artifact reproduces losslessly in the native GPU
+    // framebuffer dump: whole frames (or the exact right half, split at
+    // x = 640.0) come back multiplied by a constant factor with every pixel of
+    // UI geometry still intact. A likely author is a CPU-recorded dimming draw
+    // (a fullscreen translucent black quad from a scrim/fade path); alternatives
+    // include a textured/computed draw or a GPU state/synchronisation hazard.
+    // Reading the code cannot tell which path executed in a glitched frame.
+    //
+    // The journal records what the CPU actually submitted for the frame the
+    // dump captured, so the dumped pixels can be read against their own
+    // command list instead of against a hypothesis. If a glitched frame's
+    // journal contains a fullscreen dark drawRect, that caller-level path is
+    // identified. If it does not, that specific mechanism is excluded for the
+    // frame; textured/computed draws and unobserved GPU state remain possible,
+    // while recorded scissor, target, clear and swapchain slot narrow them.
+    //
+    // Recording is off unless a dump is running, so the normal path pays one
+    // predicted branch per draw and allocates nothing: the backing store is
+    // reserved once in the constructor.
+    enum class JournalKind : uint16_t {
+        Primitive = 0, Batch, Dimmer, Clear, BindTarget, RestoreTarget,
+        ClipPush, ClipPop, Capture, BlurPass, Present,
+    };
+
+    struct DrawJournalEntry {
+        JournalKind kind = JournalKind::Primitive;
+        uint16_t shader  = 0;
+        int16_t  target  = -1;      // -1 = backbuffer, else offscreen index
+        int16_t  texSlot = -1;
+        uint32_t verts   = 0;
+        float    x0 = 0.f, y0 = 0.f, x1 = 0.f, y1 = 0.f;   // batch bounds
+        float    minR = 0.f, maxR = 0.f;
+        float    minG = 0.f, maxG = 0.f;
+        float    minB = 0.f, maxB = 0.f;
+        float    minA = 0.f, maxA = 0.f;                    // all-vertex ranges
+        float    minU = 0.f, maxU = 0.f;
+        float    minV = 0.f, maxV = 0.f;                    // sampled UV range
+        float    sx = 0.f, sy = 0.f, sw = 0.f, sh = 0.f;   // scissor in effect
+    };
+
+    void setDrawJournalEnabled(bool on) { m_journalEnabled = on; }
+    bool drawJournalEnabled() const     { return m_journalEnabled; }
+
+    // Names the widget currently drawing, so a corrupted vertex can be blamed
+    // on a caller rather than on the geometry helper it happened to pass
+    // through. Every sample recorded so far reported `site=quad`, which
+    // identifies addQuad and no further. The tag is a borrowed string literal,
+    // not a copy: callers pass a compile-time constant that outlives the frame.
+    void setDrawTag(const char* tag) { m_drawTag = tag ? tag : ""; }
+    const char* drawTag() const      { return m_drawTag; }
+
+    // Scoped form, so an early return cannot leave a stale tag behind.
+    struct DrawTagScope {
+        Renderer&   r;
+        const char* prev;
+        DrawTagScope(Renderer& rr, const char* t) : r(rr), prev(rr.m_drawTag) {
+            r.setDrawTag(t);
+        }
+        ~DrawTagScope() { r.m_drawTag = prev; }
+    };
+
+    // Per-frame scene population, reported by the screen that owns it. The
+    // artifact grows more frequent the longer Plaza runs, so whatever
+    // accumulates has to be measurable per frame to be identified.
+    void setPlazaCounts(uint32_t miis, uint32_t pedestals, uint32_t bubbles) {
+        m_sceneMiis = miis; m_scenePedestals = pedestals;
+        m_sceneBubbles = bubbles;
+    }
+
+    // The background layer owns the shape field and ambient Miis; the Plaza
+    // screen owns the rest. Split so neither clears the other's counts.
+    void setBackgroundCounts(uint32_t ambient, uint32_t shapes) {
+        m_sceneAmbient = ambient; m_sceneShapes = shapes;
+    }
+
+    // Free-form probe line, for a widget to report its own state at the moment
+    // it emits something the journal flagged.
+    //
+    // The corrupted geometry is now pinned to MiiFigure's floor shadow, and
+    // every corrupted value is a small constant scaled by exactly 2^64. What
+    // the journal cannot see is which input produced it: the renderer only
+    // receives the finished coordinates. The widget writes its own inputs here
+    // so the faulty variable is named rather than inferred. Lines are dropped
+    // once the per-frame budget is reached, and the drop is reported.
+    void addProbe(const char* text) {
+        if (!m_journalEnabled || !text) return;
+        if (m_probes.size() >= kProbeCap) { ++m_probesDropped; return; }
+        m_probes.emplace_back(text);
+    }
+    bool probeBudgetLeft() const {
+        return m_journalEnabled && m_probes.size() < kProbeCap;
+    }
+
+    // Monotonic frame counter, incremented by beginFrame. Written into the
+    // journal header so a dumped frame can be proven to line up with the
+    // journal that claims to describe it, rather than assumed to.
+    uint64_t frameSerial() const { return m_frameSerial; }
+
+    // Human-readable dump of the journal as it stands. Called after
+    // takeFrameDump() and before the next beginFrame(), it describes exactly
+    // the frame whose pixels were just retrieved.
+    std::string formatDrawJournal() const;
+
     void endFrame();
 
     // 2D drawing
@@ -248,6 +354,79 @@ private:
     uint32_t m_lastFrameBlurPasses = 0;
     uint32_t m_lastFrameCaptures = 0;
     bool     m_holdOffscreenCapture = false;
+
+    // Diagnostic draw journal. See setDrawJournalEnabled.
+    // Measured Plaza frames stay well below this even with one record per
+    // drawRect plus one per submitted batch. The cap is deliberately generous
+    // because truncating before a late overlay would make a zero verdict
+    // inconclusive; if it is ever exceeded the header says `dropped=N` and the
+    // analyser must not treat that frame as negative evidence.
+    static constexpr size_t kJournalCap = 2048;
+    bool     m_journalEnabled = false;
+    uint64_t m_frameSerial = 0;
+    int      m_journalTarget = -1;             // current render target
+    Rect     m_journalScissor {0.f, 0.f, 0.f, 0.f};
+    // Cached-memory shadow of the vertex fields the journal inspects, written
+    // alongside each vertex so the journal never re-reads uncached GPU memory.
+    // See addVertex for why that re-read cannot be trusted.
+    struct VtxShadow { float x, y, r, g, b, a; };
+    static constexpr uint32_t kVtxShadowCap = 16384;
+    std::vector<VtxShadow> m_vtxShadow;
+    uint32_t m_journalNonQuadBatches = 0;
+    uint32_t m_journalUnshadowed = 0;
+
+    // First few vertices that arrive at addVertex already non-finite or wildly
+    // out of range, captured as raw bits together with the state that produced
+    // them. See addVertex for why this is recorded at the entry point.
+    struct BadVertex {
+        uint32_t xBits = 0, yBits = 0;
+        uint32_t vtxIndex = 0, batchStart = 0;
+        uint16_t site = 0, shader = 0;
+        const char* tag = "";
+        float radius = 0.f, thickness = 0.f;
+        float centreX = 0.f, centreY = 0.f;
+        float halfX = 0.f, halfY = 0.f;
+        float a = 0.f;
+    };
+    static constexpr uint32_t kBadVertexSamples = 8;
+    BadVertex m_journalBadVertex[kBadVertexSamples] {};
+    uint32_t  m_journalBadSamples = 0;
+    uint32_t  m_journalBadVertices = 0;
+
+    // Identifies which emission helper is currently adding vertices, so a bad
+    // coordinate can be attributed to a caller rather than guessed at.
+    enum class EmitSite : uint16_t {
+        None = 0, Quad, QuadGrad, RoundedMasked, RoundedOutline,
+        Circle, Triangle, Line, Text, Offscreen, Glass, Blur,
+    };
+    EmitSite m_emitSite = EmitSite::None;
+    const char* m_drawTag = "";
+
+    uint32_t m_sceneMiis = 0, m_scenePedestals = 0, m_sceneBubbles = 0;
+    uint32_t m_sceneAmbient = 0, m_sceneShapes = 0;
+
+    static constexpr size_t kProbeCap = 24;
+    std::vector<std::string> m_probes;
+    uint32_t m_probesDropped = 0;
+
+    // Sets the emission site for the duration of one helper and restores the
+    // previous value, so nested helpers report the innermost one.
+    struct EmitSiteScope {
+        Renderer& r;
+        EmitSite  prev;
+        EmitSiteScope(Renderer& rr, EmitSite s) : r(rr), prev(rr.m_emitSite) {
+            r.m_emitSite = s;
+        }
+        ~EmitSiteScope() { r.m_emitSite = prev; }
+    };
+    bool     m_journalBackbufferClearSeen = false;
+    Color    m_journalBackbufferClear {0.f, 0.f, 0.f, 0.f};
+    uint32_t m_journalDropped = 0;             // entries past the cap
+    std::vector<DrawJournalEntry> m_journal;
+
+    void journalReset();
+    void journalPush(const DrawJournalEntry& e);
+    void journalEvent(JournalKind kind, const Color& c = Color{0.f, 0.f, 0.f, 0.f});
 
     void addVertex(float x, float y, float u, float v, const Color& c);
     void addQuad(float x0, float y0, float x1, float y1,

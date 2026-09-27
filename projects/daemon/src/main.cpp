@@ -563,6 +563,9 @@ static bool rebuildAppCatalog(const char* reason, bool* outChanged = nullptr) {
             ent.startupUserAccount = meta.startup_user_account;
             ent.startupUserAccountOption = meta.startup_user_account_option;
         } else if (tid != 0) {
+            const char* known = switchu::control_cache::getKnownTitleName(tid);
+            if (known)
+                ent.name = known;
             missingMeta.push_back(tid);
         }
 
@@ -2490,6 +2493,7 @@ static void controlCacheThreadFunc(void* arg) {
             switchu::FileLog::log("[control-cache] no name for 0x%016lX from any source",
                                   titleId);
         }
+        switchu::FileLog::flush();
 
         delete controlData;
         svcSleepThread(10'000'000ULL);

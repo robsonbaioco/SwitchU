@@ -1,5 +1,6 @@
 #include "AppletLauncher.hpp"
 #include "core/DebugLog.hpp"
+#include <switchu/file_log.hpp>
 #ifdef SWITCHU_MENU
 #include "smi_commands.hpp"
 #include <switchu/smi_protocol.hpp>

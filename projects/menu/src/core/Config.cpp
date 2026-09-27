@@ -57,10 +57,14 @@ bool AppConfig::load() {
     if (!parsed) return false;
 
     readJsonOpt(j, "musicEnabled", musicEnabled);
+    readJsonOpt(j, "customBgmEnabled", customBgmEnabled);
+    readJsonOpt(j, "customBgmShuffle", customBgmShuffle);
+    readJsonOpt(j, "audioSourcePreference", audioSourcePreference);
     readJsonOpt(j, "musicVolume", musicVolume);
     readJsonOpt(j, "sfxVolume", sfxVolume);
     readJsonOpt(j, "gridColumns", gridColumns);
     readJsonOpt(j, "gridRows", gridRows);
+    readJsonOpt(j, "dynamicPages", dynamicPages);
     {
         std::string mode;
         readJsonOpt(j, "appLayoutMode", mode);
@@ -91,6 +95,7 @@ bool AppConfig::load() {
     readJsonOpt(j, "rawgApiKey", rawgApiKey);
     readJsonOpt(j, "igdbClientId", igdbClientId);
     readJsonOpt(j, "igdbClientSecret", igdbClientSecret);
+    readJsonOpt(j, "ytdlBackendUrl", ytdlBackendUrl);
     readJsonOpt(j, "themePreset", themePreset);
     readJsonOpt(j, "lastPageTitleId", lastPageTitleId);
     readJsonOpt(j, "sortMode", sortMode);
@@ -140,12 +145,45 @@ bool AppConfig::load() {
             customTitles.emplace_back(std::strtoull(k.c_str(), nullptr, 16), title);
         }
     }
+    favoriteTitleIds.clear();
+    if (auto it = j.find("favorites"); it != j.end() && it->is_array()) {
+        for (auto& v : *it) {
+            if (v.is_string()) {
+                const std::string s = v.get<std::string>();
+                if (!s.empty()) {
+                    favoriteTitleIds.push_back(std::strtoull(s.c_str(), nullptr, 16));
+                }
+            } else if (v.is_number_unsigned()) {
+                favoriteTitleIds.push_back(v.get<std::uint64_t>());
+            }
+        }
+    }
+    steamGridDbKnownTitles.clear();
+    if (auto it = j.find("steamGridDbKnownTitles"); it != j.end() && it->is_array()) {
+        for (auto& v : *it) {
+            if (v.is_string()) {
+                const std::string s = v.get<std::string>();
+                if (!s.empty()) {
+                    steamGridDbKnownTitles.push_back(std::strtoull(s.c_str(), nullptr, 16));
+                }
+            } else if (v.is_number_unsigned()) {
+                steamGridDbKnownTitles.push_back(v.get<std::uint64_t>());
+            }
+        }
+    }
     if (musicVolume < 0.f) musicVolume = 0.f;
     if (musicVolume > 1.f) musicVolume = 1.f;
     if (sfxVolume   < 0.f) sfxVolume   = 0.f;
     if (sfxVolume   > 1.f) sfxVolume   = 1.f;
     gridColumns = std::clamp(gridColumns, 3, 8);
     gridRows = std::clamp(gridRows, 2, 5);
+    // Before 2.6.0 this fork had four sort modes and mode 3 was Most played.
+    // ncarvalho99 2.6.x put Favorites at 3 and Most played at 4, and his code
+    // came in with that numbering; a config saved by the old scheme is moved
+    // over once, so nobody finds their grid sorted by favorites they never set.
+    int sortModeScheme = 1;
+    readJsonOpt(j, "sortModeScheme", sortModeScheme);
+    if (sortModeScheme < 2 && sortMode == 3) sortMode = 4;
     if (sortMode < 0 || sortMode >= kSortModeCount) sortMode = 0;
     if (actionHintStyle != "panel" && actionHintStyle != "capsules")
         actionHintStyle = "capsules";
@@ -166,10 +204,14 @@ bool AppConfig::save() const {
 
     nlohmann::json j;
     j["musicEnabled"] = musicEnabled;
+    j["customBgmEnabled"] = customBgmEnabled;
+    j["customBgmShuffle"] = customBgmShuffle;
+    j["audioSourcePreference"] = audioSourcePreference;
     j["musicVolume"] = musicVolume;
     j["sfxVolume"] = sfxVolume;
     j["gridColumns"] = std::clamp(gridColumns, 3, 8);
     j["gridRows"] = std::clamp(gridRows, 2, 5);
+    j["dynamicPages"] = dynamicPages;
     j["appLayoutMode"] = appLayoutMode == AppLayoutMode::DynamicLine ? "dynamic_line" : "grid";
     j["actionHintStyle"] = actionHintStyle == "panel" ? "panel" : "capsules";
     j["uiLanguageOverride"] = uiLanguageOverride;
@@ -193,9 +235,11 @@ bool AppConfig::save() const {
     j["rawgApiKey"] = rawgApiKey;
     j["igdbClientId"] = igdbClientId;
     j["igdbClientSecret"] = igdbClientSecret;
+    j["ytdlBackendUrl"] = ytdlBackendUrl;
     j["themePreset"] = themePreset;
     j["lastPageTitleId"] = lastPageTitleId;
     j["sortMode"] = sortMode;
+    j["sortModeScheme"] = 2;
     j["lastOpenedSequence"] = lastOpenedSequence;
     {
         nlohmann::json opened = nlohmann::json::object();
@@ -241,6 +285,24 @@ bool AppConfig::save() const {
             titles[key] = entry.second;
         }
         j["customTitles"] = std::move(titles);
+    }
+    {
+        nlohmann::json favorites = nlohmann::json::array();
+        char key[17];
+        for (std::uint64_t tid : favoriteTitleIds) {
+            std::snprintf(key, sizeof(key), "%016llX", (unsigned long long)tid);
+            favorites.push_back(std::string(key));
+        }
+        j["favorites"] = std::move(favorites);
+    }
+    {
+        nlohmann::json known = nlohmann::json::array();
+        char key[17];
+        for (std::uint64_t tid : steamGridDbKnownTitles) {
+            std::snprintf(key, sizeof(key), "%016llX", (unsigned long long)tid);
+            known.push_back(std::string(key));
+        }
+        j["steamGridDbKnownTitles"] = std::move(known);
     }
 
     // Written beside the real file and swapped in, never over it. Truncating

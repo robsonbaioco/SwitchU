@@ -181,7 +181,9 @@
     "sort_recent": "Недавние",
     "sort_playtime": "По времени игры",
     "options": "Опции",
-    "switch_layout": "Сменить вид"
+    "switch_layout": "Сменить вид",
+    "sort_favorites": "Избранное",
+    "favorite": "Избранное"
   },
   "settings": {
     "tabs": {
@@ -328,7 +330,9 @@
       "reload_grid_done": "Повторное чтение установленных игр...",
       "reload_grid_failed": "Не удалось запросить обновление.",
       "ui_wireframe": "Каркас интерфейса",
-      "ui_wireframe_desc": "Показывать контуры всех блоков Box для отладки макета."
+      "ui_wireframe_desc": "Показывать контуры всех блоков Box для отладки макета.",
+      "dynamic_pages": "Динамические страницы",
+      "dynamic_pages_desc": "Подстраивает количество страниц под установленные программы вместо 8 фиксированных страниц."
     },
     "internet": {
       "wifi_ssid": "WiFi-сеть",
@@ -612,7 +616,12 @@
     "size_large": "Крупный",
     "items": "элементов",
     "move": "Переместить",
-    "page_added": "Страница добавлена"
+    "page_added": "Страница добавлена",
+    "page_deleted": "Страница удалена",
+    "delete_page": "Удалить страницу",
+    "delete_page_desc": "Удалить эту пустую страницу.",
+    "delete_empty_pages": "Удалить пустые страницы",
+    "delete_empty_pages_desc": "Удалить пустые страницы в конце этой папки."
   },
   "add": {
     "title": "Добавить"
@@ -706,7 +715,9 @@
     "select": "Выбрать",
     "stop": "Остановить",
     "test": "Проверить",
-    "uninstall": "Удалить"
+    "uninstall": "Удалить",
+    "close_hint": "(B) Закрыть",
+    "rescan": "Пересканировать"
   },
   "themeshop": {
     "update_status": "Состояние",
@@ -744,7 +755,8 @@
       "animated": "Анимированные темы",
       "options": "Опции",
       "update": "Обновление",
-      "uninstall": "Удаление"
+      "uninstall": "Удаление",
+      "music": "Музыка (YouTube)"
     },
     "accessibility": {
       "fullscreen_preview": "Полноэкранный просмотр",
@@ -930,8 +942,8 @@
     "details_mods_none": "Не обнаружены",
     "details_mods_detected": "Обнаружено",
     "details_rename": "Переименовать",
-      "details_rename_guide": "Введите имя. Оставьте пустым, чтобы вернуть исходное.",
-      "details_manage_mods": "Управление модами",
+    "details_rename_guide": "Введите имя. Оставьте пустым, чтобы вернуть исходное.",
+    "details_manage_mods": "Управление модами",
     "mods_title": "Моды",
     "mods_hint": "A включает/выключает  •  X удаляет  •  B назад",
     "mods_empty": "Для этой игры моды не найдены.",
@@ -985,7 +997,29 @@
     "delete_software_done": "Программа удалена.",
     "delete_software_failed": "Не удалось удалить программу.",
     "delete_software_files": "Эти папки на карте SD также будут удалены:",
-    "non_game_options_body_folder": "У самодельных программ и портов нет сведений об игре, обложек или модов для управления. Их можно переместить в папку или удалить."
+    "non_game_options_body_folder": "У самодельных программ и портов нет сведений об игре, обложек или модов для управления. Их можно переместить в папку или удалить.",
+    "port_options": "Параметры порта",
+    "mark_as_favorite": "Добавить в избранное",
+    "unmark_favorite": "Удалить из избранного",
+    "details_cheats": "Читы",
+    "cheats_title": "Читы",
+    "cheats_hint": "A переключить  •  X переключить все  •  B назад",
+    "cheats_hint_build": "A переключить  •  X переключить все  •  Влево/Вправо сменить билд  •  B назад",
+    "cheats_hint_empty": "B назад",
+    "cheats_empty": "Читы для этой игры не найдены.",
+    "cheats_empty_path": "Поместите файлы читов Atmosphere в:",
+    "cheats_active": "Включено",
+    "cheats_disabled": "Отключено",
+    "cheats_build_id": "Билд",
+    "cheats_active_summary": "активно",
+    "cheats_master": "Мастер-код",
+    "cheats_opcodes": "строк",
+    "cheats_toggle_all": "Переключить все",
+    "cheats_on": "ВКЛ",
+    "cheats_off": "ВЫКЛ",
+    "cheats_preview": "Предпросмотр опкодов",
+    "cheats_enabled_all_toast": "Все читы включены.",
+    "cheats_disabled_all_toast": "Все читы отключены."
   },
   "platform_picker": {
     "title": "Исходная платформа",
@@ -997,11 +1031,92 @@
   "text_entry": {
     "erase": "Стереть",
     "full": "Достигнута максимальная длина",
-    "hint": "A: ввод   X: стереть   Y: регистр   L/R: символы   Plus: подтвердить   B: отмена",
+    "hint": "A: ввод   B: стереть   Y: регистр   L/R: символы   Plus: подтвердить   X: отмена",
     "letters": "АБВ",
-    "opened": "Экранная клавиатура. Крестовина для выбора символа, A — ввести, X — стереть, Plus — подтвердить, B — отмена.",
+    "opened": "Экранная клавиатура. Крестовина для выбора символа, A — ввести, B — стереть, Plus — подтвердить, X — отмена.",
     "shift": "Регистр",
     "space": "Пробел",
     "symbols": "?12#"
+  },
+  "home": {
+    "page_added": "Страница добавлена",
+    "page_deleted": "Страница удалена"
+  },
+  "media": {
+    "title": "Медиацентр",
+    "no_track": "Музыка не воспроизводится",
+    "status_playing": "Играет • Трек {} из {}",
+    "status_paused": "На паузе",
+    "status_stopped": "Остановлено",
+    "btn_prev": "Назад",
+    "btn_play": "Играть",
+    "btn_pause": "Пауза",
+    "btn_next": "Вперед",
+    "btn_shuffle": "Случайно",
+    "badge_on": "ВКЛ",
+    "badge_off": "ВЫКЛ",
+    "mode": {
+      "custom_first": "Сначала карта SD",
+      "custom_first_desc": "Воспроизводит музыку с SD. Если папка пуста, играет музыка темы.",
+      "theme_first": "Сначала музыка темы",
+      "theme_first_desc": "Музыка темы в приоритете. Если в теме нет музыки, играет с SD.",
+      "custom_only": "Только карта SD",
+      "custom_only_desc": "Воспроизводит только с карты SD. Музыка темы игнорируется.",
+      "theme_only": "Только тема и звуки",
+      "theme_only_desc": "Воспроизводит только звуки темы или стандартные. SD игнорируется."
+    },
+    "rescan": "Пересканировать папку",
+    "tracklist_count": "Список треков ({} треков)",
+    "empty_folder": "Аудиофайлы не найдены в sdmc:/config/SwitchU/music/\nДобавьте файлы .mp3, .ogg или .wav на SD-карту.",
+    "playing": "Играет",
+    "play": "Играть",
+    "hint_play_pause": "Играть/Пауза",
+    "hint_rescan": "Пересканировать"
+  },
+  "quicksettings": {
+    "title": "Быстрые настройки",
+    "close_hint": "[B] Закрыть",
+    "battery": "БАТАРЕЯ",
+    "charging": "⚡ Зарядка",
+    "discharging": "Разрядка",
+    "hardware_temp": "ТЕМПЕРАТУРА",
+    "temp_optimal": "Норма",
+    "temp_warm": "Нагрев",
+    "brightness": "☀ Яркость экрана",
+    "bgm_volume": "♫ Громкость музыки",
+    "sfx_volume": "♪ Звуковые эффекты",
+    "airplane_mode": "✈ Режим полёта",
+    "wifi": "Wi-Fi",
+    "on": "ВКЛ",
+    "off": "ВЫКЛ",
+    "power_options": "ПИТАНИЕ",
+    "sleep": "Сон",
+    "reboot": "Перезагрузить",
+    "power_off": "Выключить",
+    "hint_adjust": "Настроить",
+    "hint_shortcut": "Быстрые настройки"
+  },
+  "activity_log": {
+    "title": "Ежедневный журнал активности",
+    "tab_daily": "Дневной журнал",
+    "tab_monthly": "Месячный журнал",
+    "tab_titles": "Библиотека программ",
+    "today": "Сегодня",
+    "total_playtime": "Общее время игры",
+    "titles_played": "Сыгранные игры",
+    "empty_day": "Нет записей об игре за этот день.",
+    "empty_day_sub": "Запустите игру, чтобы ее дневная запись появилась здесь!",
+    "active_days": "Активные дни",
+    "daily_distribution": "Дневное распределение времени игры",
+    "empty_month": "Нет записей об игре за этот месяц.",
+    "empty_titles": "История игр пока не записана.",
+    "all_time": "Общий рейтинг",
+    "times_played": "Запусков",
+    "avg_playtime": "В среднем",
+    "last_played": "Посл.",
+    "view_activity": "Открыть в журнале активности",
+    "hint_shortcut": "Журнал",
+    "hint_step": "Изменить дату",
+    "hint_today": "Сегодня"
   }
 }

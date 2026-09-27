@@ -417,6 +417,8 @@ void WiiUMenuApp::createSettings() {
             m_gameGallery->setAccessibilityVoiceEnabled(enabled);
         if (m_gameMods)
             m_gameMods->setAccessibilityVoiceEnabled(enabled);
+        if (m_gameCheats)
+            m_gameCheats->setAccessibilityVoiceEnabled(enabled);
         if (m_gameDetails)
             m_gameDetails->setAccessibilityVoiceEnabled(enabled);
         if (enabled) {
@@ -445,6 +447,9 @@ void WiiUMenuApp::createSettings() {
         if (m_gameMods)
             m_gameMods->setAccessibilitySpeechPreferences(m_config.accessibilitySpeakHints,
                                                           m_config.accessibilitySpeakPosition);
+        if (m_gameCheats)
+            m_gameCheats->setAccessibilitySpeechPreferences(m_config.accessibilitySpeakHints,
+                                                            m_config.accessibilitySpeakPosition);
         if (m_gameDetails)
             m_gameDetails->setAccessibilitySpeechPreferences(m_config.accessibilitySpeakHints,
                                                               m_config.accessibilitySpeakPosition);
@@ -473,6 +478,9 @@ void WiiUMenuApp::createSettings() {
         if (m_gameMods)
             m_gameMods->setAccessibilitySpeechPreferences(m_config.accessibilitySpeakHints,
                                                           m_config.accessibilitySpeakPosition);
+        if (m_gameCheats)
+            m_gameCheats->setAccessibilitySpeechPreferences(m_config.accessibilitySpeakHints,
+                                                            m_config.accessibilitySpeakPosition);
         if (m_gameDetails)
             m_gameDetails->setAccessibilitySpeechPreferences(m_config.accessibilitySpeakHints,
                                                               m_config.accessibilitySpeakPosition);
@@ -658,6 +666,480 @@ void WiiUMenuApp::createSettings() {
 
 }
 
+void WiiUMenuApp::createQuickSettings() {
+    if (m_quickSettings) return;
+
+    m_quickSettings = std::make_shared<QuickSettingsOverlay>();
+    if (m_overlayLayer) {
+        m_overlayLayer->addChild(m_quickSettings);
+    }
+    m_quickSettings->setFont(&m_fontNormal);
+    m_quickSettings->setSmallFont(&m_fontSmall);
+    m_quickSettings->setIconFont(&m_fontIcons);
+    m_quickSettings->setTheme(&m_theme);
+    m_quickSettings->setInput(&app().input());
+
+    QuickSettingsOverlay::Callbacks cbs;
+    cbs.onBrightnessChanged = [](float /*val*/) {
+    };
+    cbs.onBgmVolumeChanged = [this](float val) {
+        m_audio.setVolume(val);
+        m_config.musicVolume = val;
+    };
+    cbs.onSfxVolumeChanged = [this](float val) {
+        m_audio.setSfxVolume(val);
+        m_config.sfxVolume = val;
+    };
+    cbs.onAirplaneModeToggled = [](bool /*enabled*/) {
+    };
+    cbs.onWifiToggled = [](bool /*enabled*/) {
+    };
+    cbs.onActivityLogRequested = [this]() {
+        closeQuickSettings();
+        openActivityLog();
+    };
+    cbs.onSleepRequested = [this]() {
+        if (!m_dialog) return;
+        auto& i18n = nxui::I18n::instance();
+        m_audio.playSfx(Sfx::ModalShow);
+        m_dialogReturnFocus = focusManager().current();
+        raiseOverlay(m_dialog);
+        m_dialog->show(
+            i18n.tr("power.title", "Power"),
+            i18n.tr("settings.sleep.sleep_confirm", "Put the console into sleep mode?"),
+            {
+                {i18n.tr("button.cancel", "Cancel"), []() {}, true},
+                {i18n.tr("power.sleep", "Sleep"), [this]() {
+#ifdef SWITCHU_MENU
+                    m_audio.playSfx(Sfx::ConfirmPositive);
+                    m_launcher.enterSleep();
+#else
+                    m_audio.playSfx(Sfx::ConfirmPositive);
+                    app().requestExit();
+#endif
+                }, true}
+            });
+    };
+    cbs.onRebootRequested = [this]() {
+        if (!m_dialog) return;
+        auto& i18n = nxui::I18n::instance();
+        m_audio.playSfx(Sfx::ModalShow);
+        m_dialogReturnFocus = focusManager().current();
+        raiseOverlay(m_dialog);
+        m_dialog->show(
+            i18n.tr("power.title", "Power"),
+            i18n.tr("settings.sleep.reboot_confirm", "Restart the console?"),
+            {
+                {i18n.tr("button.cancel", "Cancel"), []() {}, true},
+                {i18n.tr("power.reboot", "Reboot"), [this]() {
+#ifdef SWITCHU_MENU
+                    m_audio.playSfx(Sfx::ConfirmPositive);
+                    m_launcher.reboot();
+#else
+                    m_audio.playSfx(Sfx::ConfirmPositive);
+                    app().requestExit();
+#endif
+                }, true}
+            });
+    };
+    cbs.onShutdownRequested = [this]() {
+        if (!m_dialog) return;
+        auto& i18n = nxui::I18n::instance();
+        m_audio.playSfx(Sfx::ModalShow);
+        m_dialogReturnFocus = focusManager().current();
+        raiseOverlay(m_dialog);
+        m_dialog->show(
+            i18n.tr("power.title", "Power"),
+            i18n.tr("settings.sleep.shutdown_confirm", "Power off the console?"),
+            {
+                {i18n.tr("button.cancel", "Cancel"), []() {}, true},
+                {i18n.tr("power.shutdown", "Shutdown"), [this]() {
+#ifdef SWITCHU_MENU
+                    m_audio.playSfx(Sfx::ConfirmPositive);
+                    m_launcher.shutdown();
+#else
+                    m_audio.playSfx(Sfx::ConfirmPositive);
+                    app().requestExit();
+#endif
+                }, true}
+            });
+    };
+    cbs.onClose = [this]() {
+        closeQuickSettings();
+    };
+    cbs.onNavigateSfx = [this]() { m_audio.playSfx(Sfx::Navigate); };
+    cbs.onActivateSfx = [this]() { m_audio.playSfx(Sfx::Activate); };
+    cbs.onToggleOffSfx = [this]() { m_audio.playSfx(Sfx::ToggleOff); };
+
+    m_quickSettings->setCallbacks(cbs);
+}
+
+void WiiUMenuApp::openQuickSettings() {
+    createQuickSettings();
+    if (!m_quickSettings || m_quickSettings->isActive()) return;
+
+    if (m_editMode) return;
+    if (m_dialog && m_dialog->isActive()) return;
+    if (m_userSelect && m_userSelect->isActive()) return;
+
+    m_dialogReturnFocus = focusManager().current();
+
+    m_quickSettings->setInitialValues(0.5f, m_audio.volume(), m_audio.sfxVolume(), false, true);
+    m_quickSettings->setBatteryStatus(m_consoleBatteryPercent, m_consoleBatteryCharging);
+
+    raiseOverlay(m_quickSettings);
+    m_quickSettings->show();
+    focusManager().setFocus(m_quickSettings.get());
+    m_audio.playSfx(Sfx::ModalShow);
+}
+
+void WiiUMenuApp::closeQuickSettings() {
+    if (!m_quickSettings || !m_quickSettings->isActive()) return;
+    m_quickSettings->hide();
+    m_config.save();
+    if (isCurrentFocusableWidget(m_dialogReturnFocus)) {
+        m_suppressNextNavigateSfx = true;
+        focusManager().setFocus(m_dialogReturnFocus);
+    } else if (m_grid) {
+        auto* target = m_grid->focusManager().current();
+        if (target && isCurrentFocusableWidget(target)) {
+            m_suppressNextNavigateSfx = true;
+            focusManager().setFocus(target);
+        } else {
+            auto icons = m_grid->allIcons();
+            if (!icons.empty()) {
+                m_suppressNextNavigateSfx = true;
+                focusManager().setFocus(icons[0].get());
+            }
+        }
+    }
+    m_dialogReturnFocus = nullptr;
+    m_audio.playSfx(Sfx::ModalHide);
+}
+
+void WiiUMenuApp::createActivityLog() {
+    if (m_activityLog) return;
+
+    m_activityLog = std::make_shared<ActivityLogScreen>();
+    m_activityLog->setRect({32.f, 20.f, 1216.f, 642.f});
+    if (m_overlayLayer) {
+        m_overlayLayer->addChild(m_activityLog);
+    }
+    m_activityLog->setFont(&m_fontNormal);
+    m_activityLog->setSmallFont(&m_fontSmall);
+    m_activityLog->setTheme(&m_theme);
+    m_activityLog->setThreadPool(&m_threadPool);
+    m_activityLog->setRenderContext(&app().gpu(), &app().renderer());
+    m_activityLog->setManager(&m_activityLogManager);
+    m_activityLog->setInput(&app().input());
+    m_activityLog->setIconProvider([this](std::uint64_t titleId) -> nxui::Texture* {
+        if (m_grid) {
+            for (const auto& icon : m_grid->allIcons()) {
+                if (icon && icon->titleId() == titleId && icon->texture()) {
+                    return icon->texture();
+                }
+            }
+        }
+        return nullptr;
+    });
+
+    m_activityLog->onNavigateSfx([this]() { m_audio.playSfx(Sfx::Navigate); });
+    m_activityLog->onActivateSfx([this]() { m_audio.playSfx(Sfx::Activate); });
+    m_activityLog->onCloseSfx([this]() { m_audio.playSfx(Sfx::ModalHide); });
+    m_activityLog->onTabChangeSfx([this]() { m_audio.playSfx(Sfx::ThemeToggle); });
+    m_activityLog->onDateChangeSfx([this](bool forward) {
+        m_audio.playSfx(forward ? Sfx::SliderUp : Sfx::SliderDown);
+    });
+    m_activityLog->onClose([this]() {
+        closeActivityLog();
+    });
+    m_activityLog->onTitleSelected([this](std::uint64_t titleId) {
+        if (titleId != 0) {
+            m_gameDetailsReturnFocus = m_activityLog.get();
+            showGameDetails(titleId, "");
+        }
+    });
+}
+
+void WiiUMenuApp::openActivityLog(std::uint64_t initialTitleId) {
+    if (m_editMode) return;
+    if (m_dialog && m_dialog->isActive()) return;
+    if (m_userSelect && m_userSelect->isActive()) return;
+
+    createActivityLog();
+    if (!m_activityLog || m_activityLog->isActive()) return;
+
+    m_activityLogReturnFocus = focusManager().current();
+
+    if (m_activityLogManager.allTimeRankings().empty()) {
+        // Fallback: populate if prefetch hasn't finished yet
+        std::vector<std::pair<std::uint64_t, std::string>> installed;
+        if (!m_allApps.empty()) {
+            for (const auto& app : m_allApps) {
+                if (app.titleId != 0 && (app.isApplication() || m_config.isGamePort(app.titleId))) {
+                    installed.emplace_back(app.titleId, app.title);
+                }
+            }
+        } else {
+            for (int i = 0; i < m_model.count(); ++i) {
+                const auto& entry = m_model.at(i);
+                if (entry.titleId != 0 && (entry.isApplication() || m_config.isGamePort(entry.titleId))) {
+                    installed.emplace_back(entry.titleId, entry.title);
+                }
+            }
+        }
+        m_activityLogManager.refresh(installed);
+    }
+
+    raiseOverlay(m_activityLog);
+    m_activityLog->open(initialTitleId);
+    m_navigator.navigate(switchu::navigation::Route::ActivityLog);
+    focusManager().setFocus(m_activityLog.get());
+    m_audio.playSfx(Sfx::ModalShow);
+}
+
+void WiiUMenuApp::closeActivityLog() {
+    if (!m_activityLog || !m_activityLog->isActive()) return;
+    m_activityLog->hide();
+    m_navigator.routeDidClose(switchu::navigation::Route::ActivityLog);
+    m_audio.playSfx(Sfx::ModalHide);
+
+    if (isCurrentFocusableWidget(m_activityLogReturnFocus)) {
+        m_suppressNextNavigateSfx = true;
+        focusManager().setFocus(m_activityLogReturnFocus);
+    } else if (m_grid) {
+        auto* target = m_grid->focusManager().current();
+        if (target && isCurrentFocusableWidget(target)) {
+            m_suppressNextNavigateSfx = true;
+            focusManager().setFocus(target);
+        } else {
+            auto icons = m_grid->allIcons();
+            if (!icons.empty()) {
+                m_suppressNextNavigateSfx = true;
+                focusManager().setFocus(icons[0].get());
+            }
+        }
+    }
+    m_activityLogReturnFocus = nullptr;
+}
+
+void WiiUMenuApp::createWaraWaraPlaza() {
+    if (m_plazaScreen) return;
+
+    m_plazaScreen = std::make_shared<warawara::WaraWaraPlazaScreen>();
+    m_plazaScreen->setFonts(&m_fontNormal, &m_fontSmall);
+    m_plazaScreen->initGpuAssets(app().gpu(), app().renderer());
+    m_plazaScreen->setServices(&m_miiAvatarManager,
+                               &m_plazaDialogueEngine,
+                               &m_animalesePlayer,
+                               &m_activityLogManager);
+    refreshPlazaCommunities();
+
+    m_plazaScreen->onClose([this]() {
+        closeWaraWaraPlaza();
+    });
+
+    m_plazaScreen->onNavigateSfx([this]() {
+        m_audio.playSfx(Sfx::Navigate);
+    });
+    m_plazaScreen->onActivateSfx([this]() {
+        m_audio.playSfx(Sfx::Activate);
+    });
+
+    m_plazaScreen->onLaunchGame([this](std::uint64_t titleId) {
+        if (titleId == 0) return;
+        for (auto& app : m_allApps) {
+            if (app.titleId == titleId) {
+                GlossyIcon* iconSource = nullptr;
+                if (m_grid) {
+                    for (auto& icon : m_grid->allIcons()) {
+                        if (icon && icon->titleId() == titleId) {
+                            iconSource = icon.get();
+                            break;
+                        }
+                    }
+                }
+                closeWaraWaraPlaza();
+                if (iconSource) {
+                    m_grid->focusManager().setFocus(iconSource);
+                    focusManager().setFocus(iconSource);
+                }
+#ifdef SWITCHU_MENU
+                activateApplication(iconSource, &app, app.titleId, app.title);
+#endif
+                break;
+            }
+        }
+    });
+
+    if (m_overlayLayer) {
+        m_overlayLayer->addChild(m_plazaScreen);
+    }
+}
+
+void WiiUMenuApp::refreshPlazaCommunities() {
+    if (!m_plazaScreen) return;
+
+    std::vector<warawara::WaraWaraPlazaScreen::GameCommunityEntry> entries;
+    entries.reserve(10);
+
+    // Plaza holds up to 10 communities. To prevent page-eviction thrashing on
+    // the home grid and endless flickering between images and placeholder tiles,
+    // Plaza loads and retains its own textures directly via AppListLoader::loadIconData,
+    // pumping at most one decode/upload per frame without touching IconStreamer.
+    const auto* gridIcons = m_grid ? &m_grid->allIcons() : nullptr;
+    std::unordered_map<std::uint64_t, int> displayIndexByTitle;
+    displayIndexByTitle.reserve(static_cast<std::size_t>(std::max(0, m_model.count())));
+    for (int i = 0; i < m_model.count(); ++i) {
+        const auto& displayEntry = m_model.at(i);
+        if (displayEntry.isApplication() && displayEntry.titleId != 0)
+            displayIndexByTitle.emplace(displayEntry.titleId, i);
+    }
+
+    const int communityCount = std::min(10, static_cast<int>(m_allApps.size()));
+    for (int offset = 0; offset < communityCount; ++offset) {
+        const int appPos = (m_plazaIconPumpIndex + offset) % communityCount;
+        const auto& candidate = m_allApps[static_cast<std::size_t>(appPos)];
+        if (candidate.titleId == 0 || candidate.isWidget())
+            continue;
+
+        auto& tex = m_plazaCommunityTextures[candidate.titleId];
+        if (!tex.valid()) {
+            std::vector<uint8_t> raw = AppListLoader::loadIconData(candidate.titleId);
+            if (!raw.empty()) {
+                tex.loadFromMemory(this->app().gpu(), this->app().renderer(),
+                                   raw.data(), raw.size(), 256);
+            }
+            m_plazaIconPumpIndex = (appPos + 1) % communityCount;
+            break;
+        }
+    }
+
+    for (const auto& app : m_allApps) {
+        if (entries.size() >= 10) break;
+        if (app.titleId == 0 || app.isWidget()) continue;
+
+        const auto displayFound = displayIndexByTitle.find(app.titleId);
+        const int displayIndex = displayFound == displayIndexByTitle.end()
+            ? -1 : displayFound->second;
+
+        warawara::WaraWaraPlazaScreen::GameCommunityEntry entry;
+        entry.titleId = app.titleId;
+        entry.title = app.title;
+
+        const auto* stats = m_activityLogManager.findTitleStats(app.titleId);
+        std::uint64_t playtimeSec = stats ? stats->totalPlaytimeSeconds : 0;
+        if (playtimeSec > 0) {
+            std::uint32_t hours = static_cast<std::uint32_t>(playtimeSec / 3600);
+            std::uint32_t minutes = static_cast<std::uint32_t>((playtimeSec % 3600) / 60);
+            if (hours > 0) {
+                entry.subtitle = std::to_string(hours) + "h " + std::to_string(minutes) + "m played";
+            } else {
+                entry.subtitle = std::to_string(minutes) + "m played";
+            }
+        } else {
+            entry.subtitle = "Installed Game";
+        }
+
+        auto texIt = m_plazaCommunityTextures.find(app.titleId);
+        if (texIt != m_plazaCommunityTextures.end() && texIt->second.valid()) {
+            entry.iconTexture = &texIt->second;
+        } else if (gridIcons && displayIndex >= 0 &&
+                   displayIndex < static_cast<int>(gridIcons->size())) {
+            const auto& icon = (*gridIcons)[static_cast<std::size_t>(displayIndex)];
+            if (icon && icon->titleId() == app.titleId && icon->texture() && icon->texture()->valid())
+                entry.iconTexture = icon->texture();
+        }
+
+        entries.push_back(std::move(entry));
+    }
+
+    m_plazaScreen->setupCommunities(entries);
+}
+
+void WiiUMenuApp::openWaraWaraPlaza() {
+    if (m_editMode) return;
+    if ((m_dialog && m_dialog->isActive()) ||
+        (m_userSelect && m_userSelect->isActive()) ||
+        (m_settings && m_settings->isActive()) ||
+        (m_themeShop && m_themeShop->isActive()) ||
+        (m_activityLog && m_activityLog->isActive())) {
+        return;
+    }
+
+    if (!m_plazaScreen) {
+        createWaraWaraPlaza();
+    } else {
+        refreshPlazaCommunities();
+    }
+    m_plazaReturnFocus = focusManager().current();
+    if (m_cursor) {
+        m_cursor->setVisible(false);
+    }
+    m_navigator.navigate(switchu::navigation::Route::WaraWaraPlaza);
+    m_plazaIconPumpIndex = 0;
+    m_plazaScreen->open();
+    // focusRoot() also returns the Plaza while active, but dispatchInput() runs
+    // before onUpdate() and must not spend a frame repairing stale HOME focus.
+    // Bind the owner explicitly now so its registered Button A action receives
+    // the very first controller press reliably.
+    focusManager().setFocus(m_plazaScreen.get());
+    if (m_screenSwapButton) {
+        m_screenSwapButton->setPlazaActive(true);
+    }
+    m_audio.playSfx(Sfx::ThemeToggle);
+}
+
+void WiiUMenuApp::closeWaraWaraPlaza() {
+    if (!m_plazaScreen) return;
+    if (!m_plazaScreen->isActive() && m_navigator.route() != switchu::navigation::Route::WaraWaraPlaza) {
+        return;
+    }
+
+    m_plazaScreen->close();
+    m_plazaScreen->setVisible(false);
+    m_plazaCommunityTextures.clear();
+    m_navigator.routeDidClose(switchu::navigation::Route::WaraWaraPlaza);
+    if (m_screenSwapButton) {
+        m_screenSwapButton->setPlazaActive(false);
+    }
+    m_audio.playSfx(Sfx::ModalHide);
+
+    nxui::Widget* target = nullptr;
+    if (isCurrentFocusableWidget(m_plazaReturnFocus)) {
+        target = m_plazaReturnFocus;
+    } else if (m_grid) {
+        target = m_grid->focusManager().current();
+        if (!target || !isCurrentFocusableWidget(target)) {
+            auto icons = m_grid->allIcons();
+            if (!icons.empty() && icons[0]) {
+                target = icons[0].get();
+            }
+        }
+    }
+    m_plazaReturnFocus = nullptr;
+
+    if (target) {
+        m_suppressNextNavigateSfx = true;
+        if (m_grid) {
+            m_grid->focusManager().setFocus(target);
+        }
+        focusManager().setFocus(target);
+        if (m_cursor) {
+            m_cursor->moveTo(target->focusRect().expanded(4.f), 0.f);
+            m_cursor->setVisible(true);
+        }
+    }
+}
+
+void WiiUMenuApp::toggleWaraWaraPlaza() {
+    if (m_plazaScreen && m_plazaScreen->isActive()) {
+        closeWaraWaraPlaza();
+    } else {
+        openWaraWaraPlaza();
+    }
+}
+
 void WiiUMenuApp::createThemeShop() {
     if (m_themeShop) return;
 
@@ -753,8 +1235,10 @@ void WiiUMenuApp::createThemeShop() {
     m_themeShop->setTheme(&m_theme);
     m_themeShop->setThreadPool(&m_threadPool);
     m_themeShop->setRenderContext(&app().gpu(), &app().renderer());
+    m_themeShop->youTubeClient().setBackendUrl(m_config.ytdlBackendUrl);
     m_themeShop->setMusicState(m_audio.isPlaying(), m_audio.volume(), m_audio.sfxVolume());
     m_themeShop->setGridLayoutState(m_config.gridColumns, m_config.gridRows);
+    m_themeShop->setDynamicPagesState(m_config.dynamicPages);
     m_themeShop->setAppearanceState(m_config.glassSharpness,
                                     m_config.backgroundSpeed,
                                     m_config.backgroundBlur);
@@ -803,6 +1287,13 @@ void WiiUMenuApp::createThemeShop() {
         if (m_config.gridRows == rows)
             return;
         m_config.gridRows = rows;
+        reflowHomeGrid();
+    });
+    m_themeShop->onDynamicPagesChange([this](bool enabled) {
+        if (m_config.dynamicPages == enabled)
+            return;
+        m_config.dynamicPages = enabled;
+        m_config.save();
         reflowHomeGrid();
     });
     m_themeShop->onNextTrack([this]() {
@@ -1033,7 +1524,43 @@ void WiiUMenuApp::createThemeShop() {
         m_dialog->show(title, msg, std::move(dlgButtons));
         focusManager().setFocus(m_dialog.get());
     });
+    m_themeShop->onRequestTextEntry([this](const std::string& title,
+                                           const std::string& guide,
+                                           const std::string& initial,
+                                           std::function<void(std::string)> onAccept) {
+        requestTextEntry(title, guide, initial, 64, false, std::move(onAccept), nullptr);
+    });
+    m_themeShop->onProgressShow([this](const std::string& title, const std::string& message, float p) {
+        if (!m_progressDialog) return;
+        raiseOverlay(m_progressDialog);
+        m_progressDialog->setTheme(&m_theme);
+        m_progressDialog->show(title, message, p);
+        focusManager().setFocus(m_progressDialog.get());
+    });
+    m_themeShop->onProgressUpdate([this](const std::string& message, float p) {
+        if (m_progressDialog && m_progressDialog->isActive()) {
+            m_progressDialog->updateState(message, p);
+        }
+    });
+    m_themeShop->onProgressHide([this]() {
+        if (m_progressDialog && m_progressDialog->isActive()) {
+            m_progressDialog->hide();
+        }
+    });
+    m_themeShop->onMusicDownloaded([this]() {
+        DebugLog::log("[themeshop] Music downloaded, reloading BGM tracks...");
+        reloadMusicTracks();
+    });
+    m_themeShop->onPlayMusic([this](const std::string& path, const std::string& title) {
+        DebugLog::log("[themeshop] Playing track: %s (%s)", title.c_str(), path.c_str());
+        m_audio.stop();
+        m_audio.clearTracks();
+        m_audio.loadTrack(path, title);
+        m_audio.play();
+        syncMediaCenterState();
+    });
     m_themeShop->onClosed([this, clearCompletedThemeTransferState]() {
+        m_themeShop->resetMusicTabState();
         m_configSaveFuture = m_threadPool.submit([cfg = m_config]() {
             cfg.save();
         });
@@ -1141,6 +1668,10 @@ void WiiUMenuApp::createGameDetails() {
         if (!m_gameDetails) return;
         showGameMods(m_gameDetails->titleId(), m_gameDetails->title());
     });
+    m_gameDetails->onCheats([this]() {
+        if (!m_gameDetails) return;
+        showGameCheats(m_gameDetails->titleId(), m_gameDetails->title());
+    });
     m_gameDetails->onFolderAction([this]() {
         if (!m_gameDetails) return;
         showFolderAssignment(m_gameDetails->titleId(), m_gameDetails->title());
@@ -1171,6 +1702,78 @@ void WiiUMenuApp::createGameDetails() {
                     m_gameDetails->updateSearchTitle(trimmed);
             });
     });
+    // Only reachable from the dossier once a title is already marked as a
+    // port -- "Mark as game port" is offered instead in the rail when it is
+    // not. Folds edit-search-title and unmark behind one entry rather than
+    // two permanent rail rows, matching the same "roll related settings into
+    // one submenu" shrink applied to Active artwork.
+    m_gameDetails->onPortOptions([this]() {
+        if (!m_gameDetails || !m_dialog) return;
+        raiseOverlay(m_dialog);
+        const std::uint64_t titleId = m_gameDetails->titleId();
+        const std::string title = m_gameDetails->title();
+        auto& i18n = nxui::I18n::instance();
+        auto returnToDetails = [this]() {
+            if (m_gameDetails && m_gameDetails->isActive())
+                focusManager().setFocus(m_gameDetails.get());
+        };
+        m_dialog->show(
+            i18n.tr("dialog.port_options", "Port options"), title,
+            {
+                {i18n.tr("dialog.details_rename", "Rename"),
+                 [this, titleId]() {
+                     auto& editI18n = nxui::I18n::instance();
+                     requestTextEntry(
+                         editI18n.tr("dialog.details_rename", "Rename"),
+                         editI18n.tr("dialog.details_rename_guide",
+                                     "Enter a name. Leave it empty to use the original."),
+                         m_gameDetails ? m_gameDetails->title() : std::string{}, 128, false,
+                         [this, titleId](const std::string& value) {
+                             const std::string original = [&]() {
+                                 for (const auto& app : m_allApps) {
+                                     if (app.titleId != titleId) continue;
+                                     return app.title;
+                                 }
+                                 return std::string{};
+                             }();
+                             const std::string custom = trimWhitespace(value);
+                             m_config.setCustomTitle(titleId, custom);
+                             m_config.save();
+                             switchu::commitSdCard("custom title");
+                             for (auto& app : m_allApps) {
+                                 if (app.titleId != titleId) continue;
+                                 app.title = m_config.customTitle(titleId, original);
+                                 break;
+                             }
+                             if (m_gameDetails && m_gameDetails->titleId() == titleId)
+                                 m_gameDetails->updateTitle(m_config.customTitle(titleId, original));
+                             if (m_grid && m_openFolderId == 0)
+                                 applyDisplayModel(buildRootFolderModel(), titleId, false);
+                         });
+                 }, false},
+                {i18n.tr("dialog.edit_search_title", "Edit search title"),
+                 [this, titleId]() {
+                     auto& editI18n = nxui::I18n::instance();
+                     requestTextEntry(
+                         editI18n.tr("dialog.edit_search_title", "Edit search title"),
+                         editI18n.tr("dialog.edit_search_title_guide", "Search title"),
+                         m_gameDetails ? m_gameDetails->searchTitle() : std::string{}, 128, false,
+                         [this, titleId](const std::string& value) {
+                             const std::string trimmed = trimWhitespace(value);
+                             if (trimmed.empty()) return;
+                             m_config.setGamePortSearchTitle(titleId, trimmed);
+                             m_config.save();
+                             if (m_gameDetails && m_gameDetails->titleId() == titleId)
+                                 m_gameDetails->updateSearchTitle(trimmed);
+                         });
+                 }, false},
+                {i18n.tr("dialog.unmark_port", "Unmark port"),
+                 [this, titleId]() { removeGamePort(titleId); }, false},
+                {i18n.tr("button.cancel", "Cancel"), returnToDetails, true},
+            },
+            0, returnToDetails);
+        focusManager().setFocus(m_dialog.get());
+    });
     m_gameDetails->onRename([this]() {
         if (!m_gameDetails) return;
         const std::uint64_t titleId = m_gameDetails->titleId();
@@ -1181,15 +1784,24 @@ void WiiUMenuApp::createGameDetails() {
                     "Enter a name. Leave it empty to use the original."),
             m_gameDetails->title(), 128, false,
             [this, titleId](const std::string& value) {
-                // An empty field restores whatever the console reports, which
-                // is the only way back from a name that turned out worse.
-                m_config.setCustomTitle(titleId, trimWhitespace(value));
+                // An empty field restores the original title reported by the
+                // catalogue. Preserve it before changing the visible entry so
+                // the restoration does not simply reapply the custom name.
+                const std::string original = [&]() {
+                    for (const auto& app : m_allApps) {
+                        if (app.titleId != titleId) continue;
+                        return app.title;
+                    }
+                    return std::string{};
+                }();
+                const std::string custom = trimWhitespace(value);
+                m_config.setCustomTitle(titleId, custom);
                 m_config.save();
                 switchu::commitSdCard("custom title");
                 for (auto& app : m_allApps) {
                     if (app.titleId != titleId) continue;
                     const std::string previous = app.title;
-                    app.title = m_config.customTitle(titleId, app.title);
+                    app.title = m_config.customTitle(titleId, original);
                     // The same rule composeRootPending() applies at load. Left
                     // out here, a title with no name of its own kept its hex id
                     // as the SteamGridDB search term until the menu restarted,
@@ -1200,8 +1812,7 @@ void WiiUMenuApp::createGameDetails() {
                     break;
                 }
                 if (m_gameDetails && m_gameDetails->titleId() == titleId)
-                    m_gameDetails->updateTitle(m_config.customTitle(titleId,
-                                                                   m_gameDetails->title()));
+                    m_gameDetails->updateTitle(m_config.customTitle(titleId, original));
                 // The entry above is what the grid, the sort and the folders
                 // are built from, so recomposing is enough -- and instant.
                 // Re-reading the catalogue would cost a full control-data pass
@@ -1209,6 +1820,25 @@ void WiiUMenuApp::createGameDetails() {
                 if (m_grid && m_openFolderId == 0)
                     applyDisplayModel(buildRootFolderModel(), titleId, false);
             });
+    });
+    m_gameDetails->onToggleFavorite([this]() {
+        if (!m_gameDetails) return;
+        const std::uint64_t titleId = m_gameDetails->titleId();
+        const bool current = m_config.isFavorite(titleId);
+        m_config.setFavorite(titleId, !current);
+        m_config.save();
+        switchu::commitSdCard("toggle favorite");
+        m_gameDetails->setFavorite(!current);
+        if (!current) {
+            m_audio.playSfx(Sfx::Activate);
+        } else {
+            m_audio.playSfx(Sfx::ToggleOff);
+        }
+        if (m_openFolderId != 0) {
+            applyDisplayModel(buildOpenFolderModel(m_openFolderId), titleId, false);
+        } else {
+            applyDisplayModel(buildRootFolderModel(), titleId, false);
+        }
     });
     m_gameDetails->onDeleteSoftware([this]() {
         if (!m_gameDetails) return;
@@ -1520,17 +2150,8 @@ void WiiUMenuApp::applyThemeMusic(const std::vector<std::string>& tracks) {
         return;
     }
 
-    const bool wasPlaying = m_audio.isPlaying();
-    m_audio.stop();
-    m_audio.clearTracks();
-    for (const auto& track : tracks)
-        m_audio.loadTrack(track);
-    DebugLog::log("[audio] %zu track(s) from the theme", tracks.size());
-
-    // So volta a tocar se ja estava: trocar de tema nao e motivo para ligar
-    // musica em quem a desligou.
-    if (wasPlaying && m_config.musicEnabled)
-        m_audio.play();
+    m_themeMusicTracks = tracks;
+    reloadMusicTracks();
 }
 
 void WiiUMenuApp::applyUiLanguage() {
@@ -1882,6 +2503,8 @@ void WiiUMenuApp::applyTheme() {
         m_gameGallery->setTheme(&m_theme);
     if (m_gameMods)
         m_gameMods->setTheme(&m_theme);
+    if (m_gameCheats)
+        m_gameCheats->setTheme(&m_theme);
     if (m_gameDetails)
         m_gameDetails->setTheme(&m_theme);
     // The 1.2 overlays were left out of the recolor pass and kept the previous

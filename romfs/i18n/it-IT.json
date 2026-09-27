@@ -181,7 +181,9 @@
     "sort_recent": "Recenti",
     "sort_playtime": "Più giocati",
     "options": "Opzioni",
-    "switch_layout": "Cambia visualizzazione"
+    "switch_layout": "Cambia visualizzazione",
+    "sort_favorites": "Preferiti",
+    "favorite": "Preferito"
   },
   "settings": {
     "tabs": {
@@ -328,7 +330,9 @@
       "reload_grid_done": "Rilettura dei titoli installati...",
       "reload_grid_failed": "Impossibile richiedere la ricarica.",
       "ui_wireframe": "Wireframe interfaccia",
-      "ui_wireframe_desc": "Mostra i contorni di tutti i widget Box per il debug del layout."
+      "ui_wireframe_desc": "Mostra i contorni di tutti i widget Box per il debug del layout.",
+      "dynamic_pages": "Pagine dinamiche",
+      "dynamic_pages_desc": "Regola il numero di pagine in base ai software installati invece di mantenere 8 pagine fisse."
     },
     "internet": {
       "wifi_ssid": "Rete WiFi",
@@ -612,7 +616,12 @@
     "size_large": "Grande",
     "items": "elementi",
     "move": "Sposta",
-    "page_added": "Pagina aggiunta"
+    "page_added": "Pagina aggiunta",
+    "page_deleted": "Pagina eliminata",
+    "delete_page": "Elimina pagina",
+    "delete_page_desc": "Rimuovi questa pagina vuota.",
+    "delete_empty_pages": "Elimina pagine vuote",
+    "delete_empty_pages_desc": "Rimuovi le pagine vuote alla fine di questa cartella."
   },
   "add": {
     "title": "Aggiungi"
@@ -706,7 +715,9 @@
     "select": "Seleziona",
     "stop": "Interrompi",
     "test": "Verifica",
-    "uninstall": "Disinstalla"
+    "uninstall": "Disinstalla",
+    "close_hint": "(B) Chiudi",
+    "rescan": "Riscansiona"
   },
   "themeshop": {
     "update_status": "Stato",
@@ -744,7 +755,8 @@
       "animated": "Temi animati",
       "options": "Opzioni",
       "update": "Aggiornamento",
-      "uninstall": "Disinstalla"
+      "uninstall": "Disinstalla",
+      "music": "Musica (YouTube)"
     },
     "accessibility": {
       "fullscreen_preview": "Anteprima a schermo intero",
@@ -930,8 +942,8 @@
     "details_mods_none": "Nessuno rilevato",
     "details_mods_detected": "Rilevati",
     "details_rename": "Rinomina",
-      "details_rename_guide": "Inserisci un nome. Lascia vuoto per usare l'originale.",
-      "details_manage_mods": "Gestisci mod",
+    "details_rename_guide": "Inserisci un nome. Lascia vuoto per usare l'originale.",
+    "details_manage_mods": "Gestisci mod",
     "mods_title": "Mod",
     "mods_hint": "A abilita/disabilita  •  X rimuove  •  B indietro",
     "mods_empty": "Nessuna mod trovata per questo gioco.",
@@ -985,7 +997,29 @@
     "delete_software_done": "Il software è stato eliminato.",
     "delete_software_failed": "Impossibile eliminare il software.",
     "delete_software_files": "Anche queste cartelle sulla scheda SD verranno rimosse:",
-    "non_game_options_body_folder": "Homebrew e port non hanno dettagli, immagini o mod da gestire. Possono essere archiviati in una cartella o rimossi."
+    "non_game_options_body_folder": "Homebrew e port non hanno dettagli, immagini o mod da gestire. Possono essere archiviati in una cartella o rimossi.",
+    "port_options": "Opzioni port",
+    "mark_as_favorite": "Aggiungi ai preferiti",
+    "unmark_favorite": "Rimuovi dai preferiti",
+    "details_cheats": "Trucchi",
+    "cheats_title": "Trucchi",
+    "cheats_hint": "A attiva/disattiva  •  X cambia tutti  •  B indietro",
+    "cheats_hint_build": "A attiva/disattiva  •  X cambia tutti  •  Sinistra/Destra cambia build  •  B indietro",
+    "cheats_hint_empty": "B indietro",
+    "cheats_empty": "Nessun trucco trovato per questo gioco.",
+    "cheats_empty_path": "Inserisci i file dei trucchi Atmosphere in:",
+    "cheats_active": "Attivato",
+    "cheats_disabled": "Disattivato",
+    "cheats_build_id": "Build",
+    "cheats_active_summary": "attivi",
+    "cheats_master": "Codice Master",
+    "cheats_opcodes": "linee",
+    "cheats_toggle_all": "Cambia tutti",
+    "cheats_on": "SÌ",
+    "cheats_off": "NO",
+    "cheats_preview": "Anteprima opcodes",
+    "cheats_enabled_all_toast": "Tutti i trucchi attivati.",
+    "cheats_disabled_all_toast": "Tutti i trucchi disattivati."
   },
   "platform_picker": {
     "title": "Piattaforma originale",
@@ -997,11 +1031,92 @@
   "text_entry": {
     "erase": "Cancella",
     "full": "Lunghezza massima raggiunta",
-    "hint": "A: digita   X: cancella   Y: maiuscole   L/R: simboli   Plus: conferma   B: annulla",
+    "hint": "A: digita   B: cancella   Y: maiuscole   L/R: simboli   Plus: conferma   X: annulla",
     "letters": "ABC",
-    "opened": "Tastiera a schermo. Croce direzionale per scegliere un tasto, A per digitare, X per cancellare, Plus per confermare, B per annullare.",
+    "opened": "Tastiera a schermo. Croce direzionale per scegliere un tasto, A per digitare, B per cancellare, Plus per confermare, X per annullare.",
     "shift": "Maiuscole",
     "space": "Spazio",
     "symbols": "?12#"
+  },
+  "home": {
+    "page_added": "Pagina aggiunta",
+    "page_deleted": "Pagina eliminata"
+  },
+  "media": {
+    "title": "Centro Multimediale",
+    "no_track": "Nessun brano in riproduzione",
+    "status_playing": "In riproduzione • Brano {} di {}",
+    "status_paused": "In pausa",
+    "status_stopped": "Interrotto",
+    "btn_prev": "Precedente",
+    "btn_play": "Riproduci",
+    "btn_pause": "Pausa",
+    "btn_next": "Successivo",
+    "btn_shuffle": "Casuale",
+    "badge_on": "SÌ",
+    "badge_off": "NO",
+    "mode": {
+      "custom_first": "Scheda SD Prima",
+      "custom_first_desc": "Riproduce la musica della scheda SD. Usa la musica del tema se la cartella è vuota.",
+      "theme_first": "Musica del Tema Prima",
+      "theme_first_desc": "La musica del tema ha la priorità. Usa la scheda SD se il tema non ha musica.",
+      "custom_only": "Solo Scheda SD",
+      "custom_only_desc": "Riproduce solo la musica della scheda SD. La musica del tema viene ignorata.",
+      "theme_only": "Solo Tema e Predefinito",
+      "theme_only_desc": "Riproduce solo i suoni del tema o predefiniti. La musica della SD viene ignorata."
+    },
+    "rescan": "Riscansiona Cartella",
+    "tracklist_count": "Elenco Brani ({} brani)",
+    "empty_folder": "Nessun brano audio trovato in sdmc:/config/SwitchU/music/\nAggiungi file .mp3, .ogg o .wav sulla scheda SD.",
+    "playing": "In riproduzione",
+    "play": "Riproduci",
+    "hint_play_pause": "Riproduci/Pausa",
+    "hint_rescan": "Riscansiona"
+  },
+  "quicksettings": {
+    "title": "Impostazioni rapide",
+    "close_hint": "[B] Chiudi",
+    "battery": "BATTERIA",
+    "charging": "⚡ In carica",
+    "discharging": "Scaricamento",
+    "hardware_temp": "TEMPERATURA",
+    "temp_optimal": "Ottimale",
+    "temp_warm": "Caldo",
+    "brightness": "☀ Luminosità",
+    "bgm_volume": "♫ Volume musica",
+    "sfx_volume": "♪ Effetti sonori",
+    "airplane_mode": "✈ Modalità aereo",
+    "wifi": "Wi-Fi",
+    "on": "ON",
+    "off": "OFF",
+    "power_options": "OPZIONI DI ENERGIA",
+    "sleep": "Sospendi",
+    "reboot": "Riavvia",
+    "power_off": "Spegni",
+    "hint_adjust": "Regola",
+    "hint_shortcut": "Impostazioni rapide"
+  },
+  "activity_log": {
+    "title": "Registro attività giornaliero",
+    "tab_daily": "Registro giornaliero",
+    "tab_monthly": "Registro mensile",
+    "tab_titles": "Libreria software",
+    "today": "Oggi",
+    "total_playtime": "Tempo totale di gioco",
+    "titles_played": "Titoli giocati",
+    "empty_day": "Nessuna registrazione di gioco per questo giorno.",
+    "empty_day_sub": "Gioca a un titolo per vederne qui il resoconto giornaliero!",
+    "active_days": "Giorni attivi",
+    "daily_distribution": "Distribuzione giornaliera del tempo di gioco",
+    "empty_month": "Nessuna registrazione di gioco per questo mese.",
+    "empty_titles": "Nessuna cronologia di gioco registrata.",
+    "all_time": "Classifica generale",
+    "times_played": "Volte avviato",
+    "avg_playtime": "Sessione media",
+    "last_played": "Ultimo",
+    "view_activity": "Vedi nel registro attività",
+    "hint_shortcut": "Registro",
+    "hint_step": "Cambia data",
+    "hint_today": "Oggi"
   }
 }

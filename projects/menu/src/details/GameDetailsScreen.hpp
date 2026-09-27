@@ -35,7 +35,8 @@ public:
                      std::vector<std::uint8_t> activeCover,
                       nxui::Texture* liveCover, std::string displayVersion,
                       std::string modSummary, std::string playTime,
-                      std::string metadataPlatform, bool isGamePort);
+                      std::string metadataPlatform, bool isGamePort,
+                      bool isFavorite = false);
     // Resume the dossier after a child full-screen flow (Gallery) closes.
     // It preserves downloaded metadata and the selected artwork instead of
     // requesting the online dossier again.
@@ -51,12 +52,16 @@ public:
     const std::string& title() const { return m_title; }
     const std::string& searchTitle() const { return m_searchTitle; }
     bool isGamePort() const { return m_isGamePort; }
+    bool isFavorite() const { return m_isFavorite; }
+    void setFavorite(bool fav) { m_isFavorite = fav; rebuildCurrentTab(); }
 
     using ActionCb = std::function<void()>;
+    void onToggleFavorite(ActionCb cb) { m_toggleFavoriteCb = std::move(cb); }
     void onOpenGallery(ActionCb cb) { m_openGalleryCb = std::move(cb); }
     void onShowArtwork(ActionCb cb) { m_showArtworkCb = std::move(cb); }
     void onRestoreArtwork(ActionCb cb) { m_restoreArtworkCb = std::move(cb); }
     void onManageMods(ActionCb cb) { m_manageModsCb = std::move(cb); }
+    void onCheats(ActionCb cb) { m_cheatsCb = std::move(cb); }
     void onDeleteSoftware(ActionCb cb) { m_deleteSoftwareCb = std::move(cb); }
     void onFolderAction(ActionCb cb) { m_folderActionCb = std::move(cb); }
     void onRemoveGamePort(ActionCb cb) { m_removeGamePortCb = std::move(cb); }
@@ -70,6 +75,7 @@ public:
     // platform.
     void onEditSearchTitle(ActionCb cb) { m_editSearchTitleCb = std::move(cb); }
     void onRename(ActionCb cb) { m_renameCb = std::move(cb); }
+    void onPortOptions(ActionCb cb) { m_portOptionsCb = std::move(cb); }
     // The name shown in the header, after the owner renames the game.
     void updateTitle(std::string title) { m_title = std::move(title); }
     // Reads "Add to folder" or "Remove from folder" depending on where the
@@ -155,15 +161,19 @@ private:
     bool m_imageExpanded = false;
     bool m_localOnly = false;
     bool m_isGamePort = false;
+    bool m_isFavorite = false;
+    ActionCb m_toggleFavoriteCb;
     ActionCb m_folderActionCb;
     ActionCb m_removeGamePortCb;
     ActionCb m_markAsGamePortCb;
     ActionCb m_editSearchTitleCb;
     ActionCb m_renameCb;
+    ActionCb m_portOptionsCb;
     std::string m_folderActionLabel;
     ActionCb m_openGalleryCb;
     ActionCb m_showArtworkCb;
     ActionCb m_restoreArtworkCb;
     ActionCb m_manageModsCb;
+    ActionCb m_cheatsCb;
     ActionCb m_deleteSoftwareCb;
 };

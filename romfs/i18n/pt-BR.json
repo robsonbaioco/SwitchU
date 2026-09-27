@@ -181,7 +181,9 @@
     "sort_recent": "Recentes",
     "sort_playtime": "Mais jogados",
     "options": "Opções",
-    "switch_layout": "Trocar visualização"
+    "switch_layout": "Trocar visualização",
+    "sort_favorites": "Favoritos",
+    "favorite": "Favorito"
   },
   "settings": {
     "tabs": {
@@ -334,7 +336,9 @@
       "reload_grid_done": "Relendo os títulos instalados...",
       "reload_grid_failed": "Não foi possível pedir a recarga.",
       "ui_wireframe": "Contornos da interface",
-      "ui_wireframe_desc": "Mostra o contorno de todos os widgets Box para depurar o layout."
+      "ui_wireframe_desc": "Mostra o contorno de todos os widgets Box para depurar o layout.",
+      "dynamic_pages": "Páginas dinâmicas",
+      "dynamic_pages_desc": "Ajusta a quantidade de páginas aos jogos instalados em vez de manter 8 páginas fixas."
     },
     "internet": {
       "wifi_ssid": "Rede WiFi",
@@ -373,7 +377,11 @@
       "start_failed": "Não foi possível iniciar a busca de arte.",
       "started": "Busca do SteamGridDB iniciada.",
       "download_title": "Baixando arte",
-      "download_start": "Procurando no SteamGridDB..."
+      "download_start": "Procurando no SteamGridDB...",
+      "new_games_title": "SteamGridDB",
+      "new_game_detected": "Novo jogo detectado: ",
+      "new_game_ask": "Deseja verificar e baixar capas e artes do SteamGridDB?",
+      "new_games_detected": "novos jogos ou atalhos detectados.\n\nDeseja verificar e baixar capas e artes do SteamGridDB?"
     },
     "controllers": {
       "test": "Testar dispositivos de entrada",
@@ -626,7 +634,12 @@
     "size_large": "Grande",
     "items": "itens",
     "move": "Mover",
-    "page_added": "Página adicionada"
+    "page_added": "Página adicionada",
+    "page_deleted": "Página excluída",
+    "delete_page": "Excluir página",
+    "delete_page_desc": "Remover esta página vazia.",
+    "delete_empty_pages": "Excluir páginas vazias",
+    "delete_empty_pages_desc": "Remove páginas vazias no final desta pasta."
   },
   "add": {
     "title": "Adicionar"
@@ -720,7 +733,10 @@
     "select": "Selecionar",
     "stop": "Parar",
     "test": "Testar",
-    "uninstall": "Desinstalar"
+    "uninstall": "Desinstalar",
+    "close_hint": "(B) Fechar",
+    "download": "Baixar",
+    "rescan": "Reescanear"
   },
   "themeshop": {
     "update_status": "Situação",
@@ -758,7 +774,8 @@
       "animated": "Temas Animados",
       "options": "Opções",
       "update": "Atualização",
-      "uninstall": "Desinstalar"
+      "uninstall": "Desinstalar",
+      "music": "Músicas (YouTube)"
     },
     "accessibility": {
       "fullscreen_preview": "Prévia em tela cheia",
@@ -876,6 +893,54 @@
     "animated": {
       "title": "Temas Animados",
       "subtitle": "Fundos em movimento, com som quando o tema traz."
+    },
+    "music": {
+      "title": "Músicas & Trilhas Sonoras",
+      "subtitle": "Pesquise no YouTube e baixe para o cartão SD.",
+      "search_button": "Buscar no YouTube",
+      "search_title": "Buscar Música no YouTube",
+      "search_guide": "Digite o nome da música ou artista...",
+      "searching": "Buscando",
+      "searching_title": "Buscando no YouTube...",
+      "searching_hint": "Conectando ao YouTube e buscando faixas...",
+      "empty_title": "Pesquisar Músicas no YouTube",
+      "empty_hint": "Pressione Buscar (ou X) para procurar músicas ou trilhas sonoras.",
+      "empty_installed_title": "Nenhuma Música Local Encontrada",
+      "empty_installed_hint": "Pressione Buscar (ou X) para encontrar e baixar músicas do YouTube.",
+      "no_results": "Nenhuma música encontrada.",
+      "no_results_hint": "Pressione Buscar (ou X) para tentar outras palavras-chave.",
+      "installed_title": "Biblioteca de Músicas",
+      "installed_subtitle": "Suas músicas locais salvas em sdmc:/config/SwitchU/music/",
+      "results_title": "Resultados da Busca no YouTube",
+      "results_subtitle": "Músicas encontradas para: ",
+      "download": "Baixar",
+      "downloaded": "Baixado",
+      "installed": "Instalado",
+      "downloading": "Baixando...",
+      "redownload": "Baixar Novamente",
+      "play_track": "Tocar Música",
+      "delete_track": "Excluir Música",
+      "playing": "Tocando: ",
+      "deleted": "Música excluída do cartão SD.",
+      "download_action": "Baixar Música (.mp3)",
+      "download_title": "Baixando Música",
+      "download_prep": "Preparando MP3...",
+      "download_started": "Baixando música para o cartão SD...",
+      "download_success": "Música baixada com sucesso!",
+      "download_error": "Falha no download: ",
+      "download_busy": "Outro download já está em andamento.",
+      "finished_title": "Download Concluído!",
+      "finished_msg": "foi baixada para sua biblioteca com sucesso!\n\nDeseja tocar agora?",
+      "play_now": "Tocar Agora",
+      "est_size": "Tamanho Est.: ",
+      "song_one": "música",
+      "song_many": "músicas",
+      "duration": "Duração: ",
+      "size": "Tamanho: ",
+      "video_id": "ID do Vídeo: ",
+      "status_downloaded": "Situação: Salvo em sdmc:/config/SwitchU/music/",
+      "status_ready": "Situação: Pronto para baixar (.mp3)",
+      "status_ready_play": "Situação: Pronto para tocar ou excluir"
     }
   },
   "dialog": {
@@ -1001,7 +1066,29 @@
     "delete_software_files": "Estas pastas do cartão SD também serão removidas:",
     "non_game_options_body_folder": "Homebrew e ports não têm detalhes de jogo, arte ou mods para gerenciar. Podem ser guardados em uma pasta ou removidos.",
     "details_single_player": "Um jogador",
-    "details_multiplayer": "Multijogador"
+    "details_multiplayer": "Multijogador",
+    "port_options": "Opções de port",
+    "mark_as_favorite": "Adicionar aos favoritos",
+    "unmark_favorite": "Remover dos favoritos",
+    "details_cheats": "Trapaças",
+    "cheats_title": "Trapaças",
+    "cheats_hint": "A alternar  •  X alternar todas  •  B voltar",
+    "cheats_hint_build": "A alternar  •  X alternar todas  •  Esq/Dir trocar build  •  B voltar",
+    "cheats_hint_empty": "B voltar",
+    "cheats_empty": "Nenhuma trapaça encontrada para este jogo.",
+    "cheats_empty_path": "Coloque arquivos de trapaça do Atmosphere em:",
+    "cheats_active": "Ativado",
+    "cheats_disabled": "Desativado",
+    "cheats_build_id": "Build",
+    "cheats_active_summary": "ativas",
+    "cheats_master": "Código Mestre",
+    "cheats_opcodes": "linhas",
+    "cheats_toggle_all": "Alternar todas",
+    "cheats_on": "LIG",
+    "cheats_off": "DES",
+    "cheats_preview": "Prévia do Código",
+    "cheats_enabled_all_toast": "Todas as trapaças foram ativadas.",
+    "cheats_disabled_all_toast": "Todas as trapaças foram desativadas."
   },
   "platform_picker": {
     "title": "Plataforma original",
@@ -1013,11 +1100,94 @@
   "text_entry": {
     "erase": "Apagar",
     "full": "Tamanho máximo atingido",
-    "hint": "A: digitar   X: apagar   Y: maiúscula   L/R: símbolos   Mais: confirmar   B: cancelar",
+    "hint": "A: digitar   B: apagar   Y: maiúscula   L/R: símbolos   Mais: confirmar   X: cancelar",
     "letters": "ABC",
-    "opened": "Teclado na tela. Direcional para escolher uma tecla, A para digitar, X para apagar, Mais para confirmar, B para cancelar.",
+    "opened": "Teclado na tela. Direcional para escolher uma tecla, A para digitar, B para apagar, Mais para confirmar, X para cancelar.",
     "shift": "Maiúscula",
     "space": "Espaço",
     "symbols": "?12#"
+  },
+  "home": {
+    "page_added": "Página adicionada",
+    "page_deleted": "Página excluída"
+  },
+  "media": {
+    "title": "Central Multimídia",
+    "no_track": "Nenhuma música em reprodução",
+    "status_playing": "Tocando • Faixa {} de {}",
+    "status_paused": "Pausado",
+    "status_stopped": "Parado",
+    "btn_prev": "Anterior",
+    "btn_play": "Tocar",
+    "btn_pause": "Pausar",
+    "btn_next": "Próxima",
+    "btn_shuffle": "Aleatório",
+    "badge_on": "SIM",
+    "badge_off": "NÃO",
+    "mode": {
+      "custom_first": "SD Card Primeiro",
+      "custom_first_desc": "Toca músicas do cartão SD. Usa música do tema se a pasta estiver vazia.",
+      "theme_first": "Música do Tema Primeiro",
+      "theme_first_desc": "Música do tema tem prioridade. Usa cartão SD se o tema não tiver música.",
+      "custom_only": "Somente Cartão SD",
+      "custom_only_desc": "Toca apenas músicas do cartão SD. Música do tema é ignorada.",
+      "theme_only": "Somente Tema e Padrão",
+      "theme_only_desc": "Toca apenas sons do tema ou padrão. Músicas do SD são ignoradas."
+    },
+    "rescan": "Reescanear Pasta",
+    "tracklist_count": "Lista de Faixas ({} faixas)",
+    "tracklist_hint": "A: Tocar  •  X: Excluir",
+    "empty_folder": "Nenhuma faixa de áudio encontrada em sdmc:/config/SwitchU/music/\nAdicione arquivos .mp3, .ogg ou .wav no cartão SD.",
+    "playing": "Tocando",
+    "play": "Tocar",
+    "hint_play_pause": "Tocar/Pausar",
+    "hint_delete": "Excluir Faixa",
+    "hint_rescan": "Reescanear"
+  },
+  "quicksettings": {
+    "title": "Configurações Rápidas",
+    "close_hint": "[B] Fechar",
+    "battery": "BATERIA",
+    "charging": "⚡ Carregando",
+    "discharging": "Descarregando",
+    "hardware_temp": "TEMPERATURA",
+    "temp_optimal": "Ideal",
+    "temp_warm": "Morno",
+    "brightness": "☀ Brilho da tela",
+    "bgm_volume": "♫ Volume da música",
+    "sfx_volume": "♪ Efeitos sonoros",
+    "airplane_mode": "✈ Modo avião",
+    "wifi": "Wi-Fi",
+    "on": "LIG",
+    "off": "DES",
+    "power_options": "OPÇÕES DE ENERGIA",
+    "sleep": "Suspender",
+    "reboot": "Reiniciar",
+    "power_off": "Desligar",
+    "hint_adjust": "Ajustar",
+    "hint_shortcut": "Config. Rápidas"
+  },
+  "activity_log": {
+    "title": "Registro Diário de Atividades",
+    "tab_daily": "Registro Diário",
+    "tab_monthly": "Registro Mensal",
+    "tab_titles": "Biblioteca de Jogos",
+    "today": "Hoje",
+    "total_playtime": "Tempo Total de Jogo",
+    "titles_played": "Títulos Jogados",
+    "empty_day": "Sem registros de jogo para este dia.",
+    "empty_day_sub": "Jogue um jogo para ver seu registro diário aqui!",
+    "active_days": "Dias Ativos",
+    "daily_distribution": "Distribuição Diária de Tempo de Jogo",
+    "empty_month": "Sem registros de jogo para este mês.",
+    "empty_titles": "Nenhum histórico de jogo gravado ainda.",
+    "all_time": "Classificação Geral",
+    "times_played": "Vezes jogado",
+    "avg_playtime": "Sessão média",
+    "last_played": "Último",
+    "view_activity": "Ver no Registro de Atividades",
+    "hint_shortcut": "Registro Diário",
+    "hint_step": "Alterar data",
+    "hint_today": "Hoje"
   }
 }

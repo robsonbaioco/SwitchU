@@ -181,7 +181,9 @@
     "sort_recent": "Récents",
     "sort_playtime": "Plus joués",
     "options": "Options",
-    "switch_layout": "Changer l'affichage"
+    "switch_layout": "Changer l'affichage",
+    "sort_favorites": "Favoris",
+    "favorite": "Favori"
   },
   "settings": {
     "tabs": {
@@ -328,7 +330,9 @@
       "reload_grid_done": "Relecture des titres installés...",
       "reload_grid_failed": "Impossible de demander le rechargement.",
       "ui_wireframe": "Filaire de l'interface",
-      "ui_wireframe_desc": "Affiche les contours de tous les widgets Box pour déboguer la mise en page."
+      "ui_wireframe_desc": "Affiche les contours de tous les widgets Box pour déboguer la mise en page.",
+      "dynamic_pages": "Pages dynamiques",
+      "dynamic_pages_desc": "Ajuste le nombre de pages aux logiciels installés au lieu de conserver 8 pages fixes."
     },
     "internet": {
       "wifi_ssid": "Réseau WiFi",
@@ -612,7 +616,12 @@
     "size_large": "Grand",
     "items": "éléments",
     "move": "Déplacer",
-    "page_added": "Page ajoutée"
+    "page_added": "Page ajoutée",
+    "page_deleted": "Page supprimée",
+    "delete_page": "Supprimer la page",
+    "delete_page_desc": "Supprimer cette page vide.",
+    "delete_empty_pages": "Supprimer les pages vides",
+    "delete_empty_pages_desc": "Supprimer les pages vides à la fin de ce dossier."
   },
   "add": {
     "title": "Ajouter"
@@ -706,7 +715,9 @@
     "select": "Sélectionner",
     "stop": "Arrêter",
     "test": "Tester",
-    "uninstall": "Désinstaller"
+    "uninstall": "Désinstaller",
+    "close_hint": "(B) Fermer",
+    "rescan": "Réanalyser"
   },
   "themeshop": {
     "update_status": "État",
@@ -744,7 +755,8 @@
       "animated": "Thèmes animés",
       "options": "Options",
       "update": "Mise à jour",
-      "uninstall": "Désinstaller"
+      "uninstall": "Désinstaller",
+      "music": "Musique (YouTube)"
     },
     "accessibility": {
       "fullscreen_preview": "Aperçu plein écran",
@@ -930,8 +942,8 @@
     "details_mods_none": "Aucun détecté",
     "details_mods_detected": "Détectés",
     "details_rename": "Renommer",
-      "details_rename_guide": "Saisis un nom. Laisse vide pour utiliser l'original.",
-      "details_manage_mods": "Gérer les mods",
+    "details_rename_guide": "Saisis un nom. Laisse vide pour utiliser l'original.",
+    "details_manage_mods": "Gérer les mods",
     "mods_title": "Mods",
     "mods_hint": "A active/désactive  •  X supprime  •  B retour",
     "mods_empty": "Aucun mod n'a été trouvé pour ce jeu.",
@@ -985,7 +997,29 @@
     "delete_software_done": "Le logiciel a été supprimé.",
     "delete_software_failed": "Impossible de supprimer le logiciel.",
     "delete_software_files": "Ces dossiers de la carte SD seront aussi supprimés :",
-    "non_game_options_body_folder": "Les homebrews et ports n'ont pas de détails de jeu, d'illustrations ni de mods à gérer. Ils peuvent être classés dans un dossier ou supprimés."
+    "non_game_options_body_folder": "Les homebrews et ports n'ont pas de détails de jeu, d'illustrations ni de mods à gérer. Ils peuvent être classés dans un dossier ou supprimés.",
+    "port_options": "Options de portage",
+    "mark_as_favorite": "Ajouter aux favoris",
+    "unmark_favorite": "Retirer des favoris",
+    "details_cheats": "Codes de triche",
+    "cheats_title": "Codes de triche",
+    "cheats_hint": "A activer/désactiver  •  X tout basculer  •  B retour",
+    "cheats_hint_build": "A activer/désactiver  •  X tout basculer  •  Gauche/Droite changer build  •  B retour",
+    "cheats_hint_empty": "B retour",
+    "cheats_empty": "Aucun code trouvé pour ce jeu.",
+    "cheats_empty_path": "Placez les fichiers de triche Atmosphere dans :",
+    "cheats_active": "Activé",
+    "cheats_disabled": "Désactivé",
+    "cheats_build_id": "Build",
+    "cheats_active_summary": "actifs",
+    "cheats_master": "Code Maître",
+    "cheats_opcodes": "lignes",
+    "cheats_toggle_all": "Tout basculer",
+    "cheats_on": "OUI",
+    "cheats_off": "NON",
+    "cheats_preview": "Aperçu des opcodes",
+    "cheats_enabled_all_toast": "Tous les codes sont activés.",
+    "cheats_disabled_all_toast": "Tous les codes sont désactivés."
   },
   "platform_picker": {
     "title": "Plateforme d'origine",
@@ -997,11 +1031,92 @@
   "text_entry": {
     "erase": "Effacer",
     "full": "Longueur maximale atteinte",
-    "hint": "A : saisir   X : effacer   Y : majuscule   L/R : symboles   Plus : confirmer   B : annuler",
+    "hint": "A : saisir   B : effacer   Y : majuscule   L/R : symboles   Plus : confirmer   X : annuler",
     "letters": "ABC",
-    "opened": "Clavier à l'écran. Croix directionnelle pour choisir une touche, A pour saisir, X pour effacer, Plus pour confirmer, B pour annuler.",
+    "opened": "Clavier à l'écran. Croix directionnelle pour choisir une touche, A pour saisir, B pour effacer, Plus pour confirmer, X pour annuler.",
     "shift": "Majuscule",
     "space": "Espace",
     "symbols": "?12#"
+  },
+  "home": {
+    "page_added": "Page ajoutée",
+    "page_deleted": "Page supprimée"
+  },
+  "media": {
+    "title": "Centre Multimédia",
+    "no_track": "Aucune musique en cours",
+    "status_playing": "Lecture • Piste {} sur {}",
+    "status_paused": "En pause",
+    "status_stopped": "Arrêté",
+    "btn_prev": "Précédent",
+    "btn_play": "Lire",
+    "btn_pause": "Pause",
+    "btn_next": "Suivant",
+    "btn_shuffle": "Aléatoire",
+    "badge_on": "OUI",
+    "badge_off": "NON",
+    "mode": {
+      "custom_first": "Carte SD d'abord",
+      "custom_first_desc": "Joue la musique de la carte SD. Bascule sur le thème si le dossier est vide.",
+      "theme_first": "Musique du thème d'abord",
+      "theme_first_desc": "La musique du thème est prioritaire. Bascule sur la carte SD si aucune.",
+      "custom_only": "Carte SD uniquement",
+      "custom_only_desc": "Joue uniquement la musique de la carte SD. La musique du thème est ignorée.",
+      "theme_only": "Thème et sons par défaut",
+      "theme_only_desc": "Joue uniquement les sons du thème ou par défaut. La musique SD est ignorée."
+    },
+    "rescan": "Réanalyser le dossier",
+    "tracklist_count": "Liste des pistes ({} pistes)",
+    "empty_folder": "Aucune piste audio trouvée dans sdmc:/config/SwitchU/music/\nAjoutez des fichiers .mp3, .ogg ou .wav sur la carte SD.",
+    "playing": "Lecture",
+    "play": "Lire",
+    "hint_play_pause": "Lire/Pause",
+    "hint_rescan": "Réanalyser"
+  },
+  "quicksettings": {
+    "title": "Paramètres rapides",
+    "close_hint": "[B] Fermer",
+    "battery": "BATTERIE",
+    "charging": "⚡ En charge",
+    "discharging": "Sur batterie",
+    "hardware_temp": "TEMPÉRATURE",
+    "temp_optimal": "Optimal",
+    "temp_warm": "Chaud",
+    "brightness": "☀ Luminosité",
+    "bgm_volume": "♫ Volume de la musique",
+    "sfx_volume": "♪ Effets sonores",
+    "airplane_mode": "✈ Mode avion",
+    "wifi": "Wi-Fi",
+    "on": "OUI",
+    "off": "NON",
+    "power_options": "OPTIONS D'ALIMENTATION",
+    "sleep": "Veille",
+    "reboot": "Redémarrer",
+    "power_off": "Éteindre",
+    "hint_adjust": "Ajuster",
+    "hint_shortcut": "Paramètres rapides"
+  },
+  "activity_log": {
+    "title": "Journal d'activité quotidien",
+    "tab_daily": "Journal quotidien",
+    "tab_monthly": "Journal mensuel",
+    "tab_titles": "Bibliothèque de logiciels",
+    "today": "Aujourd'hui",
+    "total_playtime": "Temps total de jeu",
+    "titles_played": "Titres joués",
+    "empty_day": "Aucun enregistrement de jeu pour ce jour.",
+    "empty_day_sub": "Lancez un jeu pour voir son enregistrement quotidien ici !",
+    "active_days": "Jours actifs",
+    "daily_distribution": "Distribution quotidienne du temps de jeu",
+    "empty_month": "Aucun enregistrement de jeu pour ce mois.",
+    "empty_titles": "Aucun historique de jeu enregistré pour le moment.",
+    "all_time": "Classement général",
+    "times_played": "Fois joué",
+    "avg_playtime": "Session moyenne",
+    "last_played": "Dernier",
+    "view_activity": "Voir dans le journal d'activité",
+    "hint_shortcut": "Journal",
+    "hint_step": "Changer date",
+    "hint_today": "Aujourd'hui"
   }
 }

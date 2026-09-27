@@ -181,7 +181,9 @@
     "sort_recent": "Recent",
     "sort_playtime": "Meest gespeeld",
     "options": "Opties",
-    "switch_layout": "Weergave wisselen"
+    "switch_layout": "Weergave wisselen",
+    "sort_favorites": "Favorieten",
+    "favorite": "Favoriet"
   },
   "settings": {
     "tabs": {
@@ -328,7 +330,9 @@
       "reload_grid_done": "Geïnstalleerde titels worden opnieuw gelezen...",
       "reload_grid_failed": "Kon geen herlading aanvragen.",
       "ui_wireframe": "UI-draadframe",
-      "ui_wireframe_desc": "Toon omlijningen van alle Box-widgets voor lay-outdebugging."
+      "ui_wireframe_desc": "Toon omlijningen van alle Box-widgets voor lay-outdebugging.",
+      "dynamic_pages": "Dynamische pagina's",
+      "dynamic_pages_desc": "Past het aantal pagina's aan op geïnstalleerde software in plaats van 8 vaste pagina's te behouden."
     },
     "internet": {
       "wifi_ssid": "WiFi-netwerk",
@@ -612,7 +616,12 @@
     "size_large": "Groot",
     "items": "items",
     "move": "Verplaatsen",
-    "page_added": "Pagina toegevoegd"
+    "page_added": "Pagina toegevoegd",
+    "page_deleted": "Pagina verwijderd",
+    "delete_page": "Pagina verwijderen",
+    "delete_page_desc": "Deze lege pagina verwijderen.",
+    "delete_empty_pages": "Lege pagina's verwijderen",
+    "delete_empty_pages_desc": "Leere pagina's aan het einde van deze map verwijderen."
   },
   "add": {
     "title": "Toevoegen"
@@ -706,7 +715,9 @@
     "select": "Selecteren",
     "stop": "Stoppen",
     "test": "Testen",
-    "uninstall": "Verwijderen"
+    "uninstall": "Verwijderen",
+    "close_hint": "(B) Sluiten",
+    "rescan": "Opnieuw scannen"
   },
   "themeshop": {
     "update_status": "Status",
@@ -744,7 +755,8 @@
       "animated": "Geanimeerde thema’s",
       "options": "Opties",
       "update": "Bijwerken",
-      "uninstall": "Verwijderen"
+      "uninstall": "Verwijderen",
+      "music": "Muziek (YouTube)"
     },
     "accessibility": {
       "fullscreen_preview": "Volledig scherm",
@@ -930,8 +942,8 @@
     "details_mods_none": "Geen gevonden",
     "details_mods_detected": "Gevonden",
     "details_rename": "Hernoemen",
-      "details_rename_guide": "Voer een naam in. Laat leeg voor de originele naam.",
-      "details_manage_mods": "Mods beheren",
+    "details_rename_guide": "Voer een naam in. Laat leeg voor de originele naam.",
+    "details_manage_mods": "Mods beheren",
     "mods_title": "Mods",
     "mods_hint": "A in-/uitschakelen  •  X verwijderen  •  B terug",
     "mods_empty": "Er zijn geen mods gevonden voor deze game.",
@@ -985,7 +997,29 @@
     "delete_software_done": "De software is verwijderd.",
     "delete_software_failed": "De software kon niet worden verwijderd.",
     "delete_software_files": "Deze mappen op de SD-kaart worden ook verwijderd:",
-    "non_game_options_body_folder": "Homebrew en ports hebben geen spelgegevens, artwork of mods om te beheren. Ze kunnen in een map worden opgeslagen of verwijderd."
+    "non_game_options_body_folder": "Homebrew en ports hebben geen spelgegevens, artwork of mods om te beheren. Ze kunnen in een map worden opgeslagen of verwijderd.",
+    "port_options": "Port-opties",
+    "mark_as_favorite": "Aan favorieten toevoegen",
+    "unmark_favorite": "Uit favorieten verwijderen",
+    "details_cheats": "Cheats",
+    "cheats_title": "Cheats",
+    "cheats_hint": "A schakelen  •  X alles schakelen  •  B terug",
+    "cheats_hint_build": "A schakelen  •  X alles schakelen  •  Links/Rechts build wisselen  •  B terug",
+    "cheats_hint_empty": "B terug",
+    "cheats_empty": "Geen cheats gevonden voor dit spel.",
+    "cheats_empty_path": "Plaats Atmosphere cheat-bestanden in:",
+    "cheats_active": "Ingeschakeld",
+    "cheats_disabled": "Uitgeschakeld",
+    "cheats_build_id": "Build",
+    "cheats_active_summary": "actief",
+    "cheats_master": "Mastercode",
+    "cheats_opcodes": "regels",
+    "cheats_toggle_all": "Alles schakelen",
+    "cheats_on": "AAN",
+    "cheats_off": "UIT",
+    "cheats_preview": "Opcode-voorbeeld",
+    "cheats_enabled_all_toast": "Alle cheats ingeschakeld.",
+    "cheats_disabled_all_toast": "Alle cheats uitgeschakeld."
   },
   "platform_picker": {
     "title": "Oorspronkelijk platform",
@@ -997,11 +1031,92 @@
   "text_entry": {
     "erase": "Wissen",
     "full": "Maximale lengte bereikt",
-    "hint": "A: typen   X: wissen   Y: shift   L/R: symbolen   Plus: bevestigen   B: annuleren",
+    "hint": "A: typen   B: wissen   Y: shift   L/R: symbolen   Plus: bevestigen   X: annuleren",
     "letters": "ABC",
-    "opened": "Toetsenbord op scherm. Richtingstoetsen om een toets te kiezen, A om te typen, X om te wissen, Plus om te bevestigen, B om te annuleren.",
+    "opened": "Toetsenbord op scherm. Richtingstoetsen om een toets te kiezen, A om te typen, B om te wissen, Plus om te bevestigen, X om te annuleren.",
     "shift": "Shift",
     "space": "Spatie",
     "symbols": "?12#"
+  },
+  "home": {
+    "page_added": "Pagina toegevoegd",
+    "page_deleted": "Pagina verwijderd"
+  },
+  "media": {
+    "title": "Mediacentrum",
+    "no_track": "Geen muziek wordt afgespeeld",
+    "status_playing": "Speelt af • Nummer {} van {}",
+    "status_paused": "Gepauzeerd",
+    "status_stopped": "Gestopt",
+    "btn_prev": "Vorige",
+    "btn_play": "Afspelen",
+    "btn_pause": "Pauzeren",
+    "btn_next": "Volgende",
+    "btn_shuffle": "Willekeurig",
+    "badge_on": "AAN",
+    "badge_off": "UIT",
+    "mode": {
+      "custom_first": "Eerst SD-kaart",
+      "custom_first_desc": "Speelt muziek van SD-kaart. Gebruikt themamuziek als de map leeg is.",
+      "theme_first": "Eerst themamuziek",
+      "theme_first_desc": "Themamuziek heeft prioriteit. Gebruikt SD-kaart als het thema geen muziek heeft.",
+      "custom_only": "Alleen SD-kaart",
+      "custom_only_desc": "Speelt alleen SD-kaartmuziek. Themamuziek wordt genegeerd.",
+      "theme_only": "Alleen thema & standaard",
+      "theme_only_desc": "Speelt alleen thema- of standaardgeluiden. SD-muziek wordt genegeerd."
+    },
+    "rescan": "Map opnieuw scannen",
+    "tracklist_count": "Nummerlijst ({} nummers)",
+    "empty_folder": "Geen audionummers gevonden in sdmc:/config/SwitchU/music/\nVoeg .mp3-, .ogg- of .wav-bestanden toe aan de SD-kaart.",
+    "playing": "Speelt af",
+    "play": "Afspelen",
+    "hint_play_pause": "Afspelen/Pauzeren",
+    "hint_rescan": "Opnieuw scannen"
+  },
+  "quicksettings": {
+    "title": "Snelle instellingen",
+    "close_hint": "[B] Sluiten",
+    "battery": "BATTERIJ",
+    "charging": "⚡ Opladen",
+    "discharging": "Ontladen",
+    "hardware_temp": "TEMPERATUUR",
+    "temp_optimal": "Optimaal",
+    "temp_warm": "Warm",
+    "brightness": "☀ Helderheid",
+    "bgm_volume": "♫ Muziekvolume",
+    "sfx_volume": "♪ Geluidseffecten",
+    "airplane_mode": "✈ Vliegtuigmodus",
+    "wifi": "Wi-Fi",
+    "on": "AAN",
+    "off": "UIT",
+    "power_options": "ENERGIE-OPTIES",
+    "sleep": "Slaapstand",
+    "reboot": "Opnieuw opstarten",
+    "power_off": "Uitschakelen",
+    "hint_adjust": "Aanpassen",
+    "hint_shortcut": "Snelle instellingen"
+  },
+  "activity_log": {
+    "title": "Dagelijks activiteitenlogboek",
+    "tab_daily": "Dagelijks logboek",
+    "tab_monthly": "Maandelijks logboek",
+    "tab_titles": "Softwarebibliotheek",
+    "today": "Vandaag",
+    "total_playtime": "Totale speeltijd",
+    "titles_played": "Gespeelde titels",
+    "empty_day": "Geen speelgegevens voor deze dag.",
+    "empty_day_sub": "Speel een game om de dagelijkse gegevens hier te zien!",
+    "active_days": "Actieve dagen",
+    "daily_distribution": "Dagelijkse speeltijdverdeling",
+    "empty_month": "Geen speelgegevens voor deze maand.",
+    "empty_titles": "Nog geen speelgeschiedenis geregistreerd.",
+    "all_time": "Algemeen klassement",
+    "times_played": "Keer gespeeld",
+    "avg_playtime": "Gem. sessie",
+    "last_played": "Laatst",
+    "view_activity": "Bekijken in activiteitenlogboek",
+    "hint_shortcut": "Logboek",
+    "hint_step": "Datum wijzigen",
+    "hint_today": "Vandaag"
   }
 }

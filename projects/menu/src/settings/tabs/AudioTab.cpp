@@ -13,7 +13,9 @@ SettingsScreen::Tab settings::tabs::AudioTab::build(SettingsScreen& screen) {
     t.name = i18n.tr("settings.tabs.audio", "Audio");
 
     {
-        SettingItem it; it.label = i18n.tr("settings.audio.speaker_auto_mute", "Speaker Auto-Mute"); it.type = ItemType::Toggle;
+        SettingItem it;
+        it.label = i18n.tr("settings.audio.speaker_auto_mute", "Speaker Auto-Mute");
+        it.type = ItemType::Toggle;
         it.description = i18n.tr("settings.audio.speaker_auto_mute_desc", "Mute speakers automatically when headphones are connected.");
         bool val = false;
         setsysGetSpeakerAutoMuteFlag(&val);
@@ -26,7 +28,9 @@ SettingsScreen::Tab settings::tabs::AudioTab::build(SettingsScreen& screen) {
     }
 
     {
-        SettingItem it; it.label = i18n.tr("settings.audio.headphone_warning", "Headphone Volume Warning"); it.type = ItemType::Info;
+        SettingItem it;
+        it.label = i18n.tr("settings.audio.headphone_warning", "Headphone Volume Warning");
+        it.type = ItemType::Info;
         u32 count = 0;
         setsysGetHeadphoneVolumeWarningCount(&count);
         it.infoText = count > 0 ? i18n.tr("settings.audio.acknowledged", "Acknowledged")
@@ -35,7 +39,9 @@ SettingsScreen::Tab settings::tabs::AudioTab::build(SettingsScreen& screen) {
     }
 
     {
-        SettingItem it; it.label = i18n.tr("settings.audio.tv_audio_output", "TV Audio Output"); it.type = ItemType::Selector;
+        SettingItem it;
+        it.label = i18n.tr("settings.audio.tv_audio_output", "TV Audio Output");
+        it.type = ItemType::Selector;
         it.description = i18n.tr("settings.audio.tv_audio_output_desc", "Select audio format sent to TV over HDMI.");
         it.options = {
             i18n.tr("settings.audio.mono", "Mono"),
@@ -52,8 +58,6 @@ SettingsScreen::Tab settings::tabs::AudioTab::build(SettingsScreen& screen) {
         };
         t.items.push_back(std::move(it));
     }
-
-
 
     return t;
 }

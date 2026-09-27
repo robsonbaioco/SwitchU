@@ -72,14 +72,20 @@ public:
             m_label->setText(m_cachedText);
         }
 
+        float availW = std::max(0.f, rect().width - 36.f);
         float textScale = selected ? 0.91f : 0.87f;
+        if (font && availW > 20.f) {
+            float textW = font->measure(text).x * textScale;
+            if (textW > availW) {
+                textScale *= (availW / textW);
+            }
+        }
         if (std::abs(m_cachedTextScale - textScale) > 0.001f) {
             m_cachedTextScale = textScale;
             m_label->setScale(textScale);
         }
         m_label->setOpacity(opacity());
-        m_label->setRect({rect().x + 22.f, rect().y,
-                          std::max(0.f, rect().width - 44.f), rect().height});
+        m_label->setRect({rect().x + 18.f, rect().y, availW, rect().height});
 
         if (theme) {
             nxui::Color textColor = selected ? theme->textPrimary : theme->textSecondary;
@@ -593,7 +599,9 @@ void TabbedOverlayScreen::onRender(nxui::Renderer& ren) {
         if (m_tabContent) m_tabContent->render(ren);
     }
 
-    m_focusCursor.render(ren);
+    if (m_focusArea == FocusArea::Tabs || !usesCustomContentLayout()) {
+        m_focusCursor.render(ren);
+    }
 
     if (traceRender) {
         const uint64_t traceEnd = armGetSystemTick();
