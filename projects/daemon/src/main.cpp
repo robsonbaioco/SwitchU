@@ -2475,6 +2475,30 @@ static void controlCacheThreadFunc(void* arg) {
                 break;
         }
 
+        // Switch 2 Edition titles can leave the legacy control slot without a
+        // name; theirs sits in ACD slots 1..3, reachable only through
+        // ControlData2 (19.0.0+). From PoloNX/SwitchU#111 by tomvita. The
+        // legacy result stays if no slot has a name either.
+        if (!named && hosversionAtLeast(19, 0, 0)) {
+            for (u8 acdIndex = 1; acdIndex <= 3 && !named; ++acdIndex) {
+                u64 alternateSize = 0;
+                u32 unk = 0;
+                const Result alternateRc = nsGetApplicationControlData2(
+                    NsApplicationControlSource_Storage, titleId, controlData,
+                    sizeof(*controlData), 0, acdIndex, &alternateSize, &unk);
+                if (R_FAILED(alternateRc) || alternateSize < sizeof(NacpStruct))
+                    continue;
+                const auto outcome = switchu::control_cache::writeFromControlData(
+                    titleId, *controlData, static_cast<size_t>(alternateSize));
+                if (outcome == switchu::control_cache::CacheOutcome::Named) {
+                    named = true;
+                    cached = true;
+                    switchu::FileLog::log("[control-cache] 0x%016lX name from acd slot %u",
+                                          titleId, static_cast<unsigned>(acdIndex));
+                }
+            }
+        }
+
         if (cached) {
             // An unnamed entry is kept as it is: the grid falls back to the id
             // for the label, and the title is not asked for again every time the
