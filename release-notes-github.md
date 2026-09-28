@@ -1,55 +1,43 @@
-# SwitchU 2.7.0
+# SwitchU 2.8.0
 
-What PoloNX's own repository gained since his 1.2.0 comes to this fork: coming back from a game is immediate, a suspended game resumes with a short fade, and folders get styles and a cover.
+Animations throughout the menu and a theme that follows the time of day, from PoloNX's repository, plus names for Switch 2 Edition titles and a fresh icon after a reinstall.
 
 ## English
 
-### Back to HOME at once
+### Animations
 
-- When you leave for a game, the menu saves the frame on screen with its page, folder and focus. When HOME brings it back, that frame is shown straight away while the menu rebuilds behind it, and the live menu fades in on the same page, folder and focused game. From PoloNX/SwitchU#104 by bshurikan.
-- Resuming a suspended game plays a short fade to black instead of the full launch animation, and the outline of a suspended game pulses harder so it is easier to spot. From #105, also by bshurikan.
-- The saved frame is half resolution, 0.9 MB, and is left out of the configuration backup.
+- While a game is being moved, every other tile wiggles, and the moving icon glides to its new slot instead of jumping there.
+- Folders zoom out of their tile when they open and fly back into it when they close; the folder name rises out of the panel.
+- Page changes are animated in the Wii U style, and so is the switch into the single-row view. On a grid with a single page, trying to go further gives a small bump.
+- From PoloNX/SwitchU#106 by PtitLegume. The folder name is still a button while a folder is open: A renames it and UP from the top row reaches it.
 
-### Folders
+### Automatic theme
 
-- Six new folder styles next to Classic -- Simple, Minimal, Tab, Ring, Manila and Label -- and a **Show cover** option that puts the folder's first game on the tile. Both are in the folder options and apply to every folder. Classic is still this fork's glass folder, so nothing changes until you pick another style. From #100 by bshurikan.
-- Moving a game into a folder from page 2 onwards no longer freezes the moving icon in the corner (#100).
-- Inside a folder, dropping a game on another swaps the two instead of leaving a blank tile and shifting the rest (#102).
-- A tap outside the icons closes an open folder, as B does (#108).
+- A new **Automatic Theme** entry in the Theme Shop options switches between a day theme and a night theme, either at fixed hours or at sunrise and sunset where you are. For the latter the console asks ip-api.com once for an approximate location from its public IP; nothing is sent unless you choose that mode. The theme is checked again whenever the console wakes. Also from #106.
 
-### Memory
+### Names and icons
 
-- The hero and logo of wide game cards are kept only for the page on screen, and released when you leave it. They used to stay loaded for the whole grid, so their cost grew with every wide card in the library. From PoloNX's #88.
-
-### What was not brought in
-
-- The rest of PoloNX's #88 and #98 change how his daemon's main loop waits; this fork's daemon works differently and does not have the delay #98 fixes. His #110 was already here through ncarvalho99's version.
-- PR #106 (animations, by PtitLegume) is still open and partly in progress. It will be looked at again at the next release.
+- A Switch 2 Edition can keep its name outside the ordinary control data, so it showed its title id on the grid. The daemon now looks in the extra data slots when nothing else names a title (firmware 19.0.0 and later). From #111 by tomvita.
+- Uninstalling a game from SwitchU drops its cached name and icon at once, so reinstalling a version with a different icon shows the new one. From #118 by bshurikan.
 
 ---
 
 ## Português
 
-O que o repositório do próprio PoloNX ganhou depois da 1.2.0 chega a este fork: voltar de um jogo é imediato, um jogo suspenso volta com um fade curto, e as pastas ganham estilos e capa.
+Animações pelo menu inteiro e um tema que acompanha a hora do dia, do repositório do PoloNX, além de nomes para títulos Switch 2 Edition e ícone novo depois de reinstalar.
 
-### De volta ao HOME na hora
+### Animações
 
-- Quando você sai para um jogo, o menu guarda a tela como estava, com a página, a pasta e o foco. Quando o HOME o traz de volta, essa tela aparece na hora enquanto o menu se reconstrói por trás, e o menu de verdade aparece com um fade na mesma página, pasta e jogo focado. Do PoloNX/SwitchU#104, de bshurikan.
-- Retomar um jogo suspenso faz um fade curto para preto em vez da animação completa de abertura, e o contorno do jogo suspenso pulsa mais forte, para ficar fácil de ver. Do #105, também de bshurikan.
-- A tela guardada tem metade da resolução, 0,9 MB, e fica fora do backup da configuração.
+- Enquanto um jogo é movido, os outros ícones tremem, e o ícone movido desliza até o lugar novo em vez de pular.
+- As pastas saem do próprio ícone ao abrir e voltam para ele ao fechar; o nome da pasta sobe de dentro do painel.
+- A troca de página é animada no estilo do Wii U, e a passagem para a linha única também. Numa grade de uma página só, tentar ir além dá um pequeno tranco.
+- Do PoloNX/SwitchU#106, de PtitLegume. O nome da pasta continua sendo um botão com a pasta aberta: o A renomeia e o ↑ a partir da primeira fileira chega nele.
 
-### Pastas
+### Tema automático
 
-- Seis estilos novos de pasta ao lado do Clássico -- Simples, Mínimo, Aba, Anel, Manila e Etiqueta -- e a opção **Mostrar capa**, que coloca o primeiro jogo da pasta no ícone. Os dois ficam nas opções da pasta e valem para todas. O Clássico continua sendo a pasta de vidro deste fork, então nada muda até você escolher outro estilo. Do #100, de bshurikan.
-- Mover um jogo para uma pasta a partir da página 2 não trava mais o ícone em movimento no canto (#100).
-- Dentro de uma pasta, soltar um jogo sobre outro troca os dois de lugar em vez de deixar um espaço vazio e empurrar o resto (#102).
-- Tocar fora dos ícones fecha a pasta aberta, como o B (#108).
+- Uma entrada nova, **Tema automático**, nas opções da loja de temas, alterna entre um tema de dia e um de noite, em horários fixos ou no nascer e pôr do sol onde você está. Para isso o console pergunta uma vez ao ip-api.com uma localização aproximada pelo IP público; nada é enviado se você não escolher esse modo. O tema é conferido de novo sempre que o console acorda. Também do #106.
 
-### Memória
+### Nomes e ícones
 
-- A arte e o logo dos cartões largos de jogo ficam carregados só para a página na tela, e são liberados quando você sai dela. Antes ficavam carregados para a grade inteira, e o custo crescia com cada cartão largo da biblioteca. Do #88 do PoloNX.
-
-### O que não entrou
-
-- O resto do #88 e o #98 do PoloNX mudam o jeito como o laço principal do daemon dele espera; o daemon deste fork funciona de outro jeito e não tem o atraso que o #98 corrige. O #110 dele já estava aqui pela versão do ncarvalho99.
-- O PR #106 (animações, de PtitLegume) continua aberto e com partes em andamento. Ele será olhado de novo na próxima release.
+- Um Switch 2 Edition pode guardar o nome fora dos dados comuns do jogo, e por isso aparecia com o title id na grade. O daemon agora procura nos espaços extras quando nada mais dá nome ao jogo (firmware 19.0.0 em diante). Do #111, de tomvita.
+- Desinstalar um jogo pelo SwitchU apaga na hora o nome e o ícone guardados, então reinstalar uma versão com outro ícone mostra o novo. Do #118, de bshurikan.

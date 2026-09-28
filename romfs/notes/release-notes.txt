@@ -1,12 +1,18 @@
-Back to HOME at once
-- Leaving for a game saves the screen as it was; HOME brings it back straight away while the menu rebuilds, on the same page, folder and focus. A suspended game resumes with a short fade.
+Animations
+- Tiles wiggle while one is being moved, and the moved icon glides into place. Folders zoom out of their tile and back into it, and page changes are animated.
 
-Folders
-- Six new styles next to Classic, and Show cover to put the first game on the tile, in the folder options. Inside a folder, dropping a game on another swaps them, and a tap outside the icons closes it. Moving into a folder from page 2 works again.
+Automatic theme
+- In the Theme Shop options: a day theme and a night theme, switched at fixed hours or at sunrise and sunset.
+
+Names and icons
+- Switch 2 Edition titles get their names, and uninstalling a game clears its cached icon so a reinstall shows the new one.
 --pt-BR--
 
-De volta ao HOME na hora
-- Sair para um jogo guarda a tela como estava; o HOME a traz de volta na hora enquanto o menu se reconstrói, na mesma página, pasta e foco. Um jogo suspenso volta com um fade curto.
+Animações
+- Os ícones tremem enquanto um é movido, e o ícone movido desliza até o lugar. As pastas saem do próprio ícone e voltam para ele, e a troca de página é animada.
 
-Pastas
-- Seis estilos novos ao lado do Clássico, e Mostrar capa para pôr o primeiro jogo no ícone, nas opções da pasta. Dentro de uma pasta, soltar um jogo sobre outro troca os dois, e tocar fora dos ícones fecha a pasta. Mover para uma pasta a partir da página 2 volta a funcionar.
+Tema automático
+- Nas opções da loja de temas: um tema de dia e um de noite, trocados em horários fixos ou no nascer e pôr do sol.
+
+Nomes e ícones
+- Títulos Switch 2 Edition ganham nome, e desinstalar um jogo apaga o ícone guardado, então reinstalar mostra o novo.

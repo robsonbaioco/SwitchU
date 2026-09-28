@@ -40,6 +40,9 @@
 - Coming back from a game is immediate: the menu shows the screen you left
   while it rebuilds behind it, on the same page, folder and focus. A suspended
   game resumes with a short fade rather than the full launch animation.
+- Animated in the Wii U manner: tiles wiggle while one is being moved and the
+  moved icon glides into place, folders zoom out of their tile and back into it,
+  and page changes and the switch to the single-row view are animated.
 - **A single-row view** on **−**: one large icon with its neighbours either
   side, the game's hero art filling the screen behind it and its logo above the
   row. It is a carousel — it wraps in both directions, skips empty slots, and
@@ -115,6 +118,10 @@ Pressing **+** on a game opens its panel:
 
 - Five tabs: **Installed**, **Static Themes**, **Animated Themes**, **Options**
   and **Update**.
+- **Automatic Theme**, in Options, switches between a day theme and a night
+  theme at fixed hours or at sunrise and sunset. The sun times need a rough
+  location, which the console asks ip-api.com for once, from its public IP, and
+  only when that mode is chosen.
 - Animated themes are frame sequences compressed as BC1/BC7 and sampled by the
   GPU without unpacking, read a few frames per rendered frame so the menu opens
   immediately and the rest arrives while it is already in your hands.
@@ -289,7 +296,7 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.7.0. Each one is tracked as an issue with what is known so far and what
+As of 2.8.0. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
 
 - **Parts of Settings are read-only or missing**
@@ -374,6 +381,9 @@ when the console crashed, the files from `atmosphere/fatal_errors` and
   still lists.
 - [bshurikan](https://github.com/bshurikan) for the folder styles, the instant
   return to HOME and the quick resume, brought in from PoloNX's repository.
+- [PtitLegume](https://github.com/PtitLegume) for the animations and the
+  automatic theme, and [tomvita](https://github.com/tomvita) for the Switch 2
+  Edition names, also from PoloNX's repository.
 - Thanks to [Xortroll](https://github.com/Xortroll) for the help and for
   [uLaunch](https://github.com/Xortroll/uLaunch) which inspired this project a lot
 
