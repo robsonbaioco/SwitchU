@@ -9,6 +9,7 @@
 #include <switchu/file_log.hpp>
 #include <switchu/sd_commit.hpp>
 #include "app_manager.hpp"
+#include "config_backup.hpp"
 #include "ecs.hpp"
 #include "library_applet_runner.hpp"
 #include "menu_launcher.hpp"
@@ -2155,6 +2156,10 @@ int main(int argc, char* argv[]) {
         switchu::FileLog::log("[daemon] general channel event unavailable: 0x%X", generalEventRc);
 
     appletLoadAndApplyIdlePolicySettings();
+
+    // Before the menu reads its configuration: a card wiped by a CFW pack's
+    // clean install gets it back here instead of starting at the tutorial.
+    switchu::daemon::config_backup::restoreOrBackUp();
 
     rebuildAppCatalog("boot");
 
