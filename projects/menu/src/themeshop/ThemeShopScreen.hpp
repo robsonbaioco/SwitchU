@@ -84,6 +84,7 @@ public:
     void onGridColumnsChange(IntCb cb)   { m_gridColumnsCb = std::move(cb); }
     void onGridRowsChange(IntCb cb)      { m_gridRowsCb = std::move(cb); }
     void onDynamicPagesChange(BoolCb cb) { m_dynamicPagesCb = std::move(cb); }
+    void onAutoThemeOpen(VoidCb cb) { m_autoThemeOpenCb = std::move(cb); }
     void onNextTrack(VoidCb cb)          { m_nextTrackCb = std::move(cb); }
     void onThemeShopApply(StringCb cb)   { m_themeShopApplyCb = std::move(cb); }
     void onThemeShopDelete(StringCb cb)  { m_themeShopDeleteCb = std::move(cb); }
@@ -112,6 +113,10 @@ public:
     }
     void setDynamicPagesState(bool enabled) {
         m_dynamicPages = enabled;
+    }
+
+    void setAutoThemeSummary(std::string summary) {
+        m_autoThemeSummary = std::move(summary);
     }
 
     void setThreadPool(nxui::ThreadPool* pool);
@@ -318,6 +323,7 @@ private:
     IntCb m_gridColumnsCb;
     IntCb m_gridRowsCb;
     BoolCb m_dynamicPagesCb;
+    VoidCb m_autoThemeOpenCb;
     VoidCb m_nextTrackCb;
     StringCb m_themeShopApplyCb;
     StringCb m_themeShopDeleteCb;
@@ -353,6 +359,7 @@ private:
     int m_gridColumns = 5;
     int m_gridRows = 3;
     bool m_dynamicPages = true;
+    std::string m_autoThemeSummary;
     std::string m_searchQuery;
     std::vector<ThemeShopEntry> m_allThemeShopEntries;
     std::vector<ThemeShopEntry> m_themeShopEntries;
