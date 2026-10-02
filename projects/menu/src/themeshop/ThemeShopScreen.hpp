@@ -19,6 +19,7 @@ class InstalledTab;
 class CommunityTab;
 class AnimatedTab;
 class MusicTab;
+class SteamGridDbTab;
 class OptionsTab;
 class UpdateTab;
 class UninstallTab;
@@ -81,6 +82,24 @@ public:
     void onGlassSharpnessChange(FloatCb cb)  { m_glassSharpnessCb = std::move(cb); }
     void onBackgroundSpeedChange(FloatCb cb) { m_backgroundSpeedCb = std::move(cb); }
     void onBackgroundBlurChange(FloatCb cb)  { m_backgroundBlurCb = std::move(cb); }
+    void onSteamGridDbEnabledChange(BoolCb cb) { m_steamGridDbEnabledCb = std::move(cb); }
+    void onSteamGridDbApiKeyRequest(VoidCb cb) { m_steamGridDbApiKeyCb = std::move(cb); }
+    void onSteamGridDbScrapeRequest(VoidCb cb) { m_steamGridDbScrapeCb = std::move(cb); }
+    void setSteamGridDbState(bool enabled, bool hasApiKey) {
+        m_steamGridDbEnabled = enabled;
+        m_steamGridDbHasApiKey = hasApiKey;
+        refreshState();
+    }
+    void onSteamGridDbOpacityChange(FloatCb cb) { m_steamGridDbOpacityCb = std::move(cb); }
+    // The dossier's RAWG and IGDB keys. They moved here with the SteamGridDB
+    // tab, which is where Settings used to keep them.
+    void onMetadataKeyRequest(IntCb cb) { m_metadataKeyCb = std::move(cb); }
+    void setMetadataKeyState(bool rawg, bool igdbId, bool igdbSecret) {
+        m_metadataHasKey[0] = rawg;
+        m_metadataHasKey[1] = igdbId;
+        m_metadataHasKey[2] = igdbSecret;
+        refreshState();
+    }
     void onGridColumnsChange(IntCb cb)   { m_gridColumnsCb = std::move(cb); }
     void onGridRowsChange(IntCb cb)      { m_gridRowsCb = std::move(cb); }
     void onDynamicPagesChange(BoolCb cb) { m_dynamicPagesCb = std::move(cb); }
@@ -113,6 +132,9 @@ public:
     }
     void setDynamicPagesState(bool enabled) {
         m_dynamicPages = enabled;
+    }
+    void setSteamGridDbOpacity(float v) {
+        m_steamGridDbOpacity = std::clamp(v, 0.f, 1.f);
     }
 
     void setAutoThemeSummary(std::string summary) {
@@ -204,6 +226,7 @@ private:
     friend class themeshop::tabs::OptionsTab;
     friend class themeshop::tabs::UpdateTab;
     friend class themeshop::tabs::UninstallTab;
+    friend class themeshop::tabs::SteamGridDbTab;
 
     enum class PreviewPhase {
         Idle,
@@ -320,6 +343,12 @@ private:
     FloatCb m_glassSharpnessCb;
     FloatCb m_backgroundSpeedCb;
     FloatCb m_backgroundBlurCb;
+    FloatCb m_steamGridDbOpacityCb;
+    BoolCb m_steamGridDbEnabledCb;
+    VoidCb m_steamGridDbApiKeyCb;
+    VoidCb m_steamGridDbScrapeCb;
+    IntCb m_metadataKeyCb;
+    bool m_metadataHasKey[3] = {false, false, false};
     IntCb m_gridColumnsCb;
     IntCb m_gridRowsCb;
     BoolCb m_dynamicPagesCb;
@@ -356,6 +385,9 @@ private:
     float m_glassSharpness = 0.4f;
     float m_backgroundSpeed = 0.5f;
     float m_backgroundBlur = 0.f;
+    float m_steamGridDbOpacity = 0.50f;
+    bool m_steamGridDbEnabled = true;
+    bool m_steamGridDbHasApiKey = false;
     int m_gridColumns = 5;
     int m_gridRows = 3;
     bool m_dynamicPages = true;

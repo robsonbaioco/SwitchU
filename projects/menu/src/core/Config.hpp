@@ -38,6 +38,7 @@ struct AppConfig {
     bool  accessibilitySpeakPosition = true;
     int   accessibilitySpeechRate = 190;
     bool  steamGridDbEnabled = true;
+    float steamGridDbOpacity = 0.50f;
     std::string steamGridDbApiKey;
     // Game details in the dossier. Each player brings their own keys: RAWG
     // for the metascore, a Twitch application for IGDB time-to-beat.

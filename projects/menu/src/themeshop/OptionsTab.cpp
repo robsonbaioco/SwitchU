@@ -102,6 +102,8 @@ ThemeShopScreen::Tab themeshop::tabs::OptionsTab::build(ThemeShopScreen& screen)
         t.items.push_back(std::move(it));
     }
 
+
+
     {
         SettingItem it;
         it.label = i18n.tr("settings.display.grid_columns", "Home Grid Columns");

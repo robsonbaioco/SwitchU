@@ -1360,6 +1360,12 @@ void WiiUMenuApp::createThemeShop() {
                                     m_config.backgroundSpeed,
                                     m_config.backgroundBlur);
     refreshAutoThemeSummary();
+    m_themeShop->setSteamGridDbOpacity(m_config.steamGridDbOpacity);
+    m_themeShop->setSteamGridDbState(m_config.steamGridDbEnabled,
+                                    !m_config.steamGridDbApiKey.empty());
+    m_themeShop->setMetadataKeyState(!m_config.rawgApiKey.empty(),
+                                     !m_config.igdbClientId.empty(),
+                                     !m_config.igdbClientSecret.empty());
     m_themeShop->setAccessibilityVoiceEnabled(m_config.accessibilityEnabled);
     m_themeShop->setAccessibilitySpeechPreferences(m_config.accessibilitySpeakHints,
                                                    m_config.accessibilitySpeakPosition);
@@ -1392,6 +1398,26 @@ void WiiUMenuApp::createThemeShop() {
     m_themeShop->onBackgroundBlurChange([this](float v) {
         m_config.backgroundBlur = v;
         if (m_background) m_background->setBlurStrength(v);
+    });
+    m_themeShop->onSteamGridDbOpacityChange([this](float v) {
+        m_config.steamGridDbOpacity = v;
+        if (m_steamGridDbBackdrop) m_steamGridDbBackdrop->setArtworkOpacityScale(v);
+    });
+    m_themeShop->onSteamGridDbEnabledChange([this](bool enabled) {
+        m_config.steamGridDbEnabled = enabled;
+        if (m_steamGridDbBackdrop) {
+            m_steamGridDbBackdrop->setEnabled(enabled);
+            if (enabled) showFocusedSteamGridDbArtwork(true);
+        }
+    });
+    m_themeShop->onSteamGridDbApiKeyRequest([this]() {
+        editSteamGridDbApiKey();
+    });
+    m_themeShop->onSteamGridDbScrapeRequest([this]() {
+        startSteamGridDbScrape();
+    });
+    m_themeShop->onMetadataKeyRequest([this](int index) {
+        editMetadataKey(index);
     });
     m_themeShop->onGridColumnsChange([this](int cols) {
         cols = std::clamp(cols, 3, 8);
