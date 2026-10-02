@@ -876,6 +876,7 @@ static bool takeForegroundFromRunningApp(const char* source) {
 // — flushIfStale alone puts the log on the card every couple of seconds — while
 // the console is shutting down underneath it.
 static void stopControlCacheWorker();
+static Result startControlCacheWorker();
 
 // Reboot and shutdown go through the Power State Manager rather than the
 // applet path.
@@ -895,21 +896,36 @@ static void stopControlCacheWorker();
 //
 // Falls back to the applet call if spsm cannot be reached, so a failure here
 // leaves the previous behaviour rather than a console that will not turn off.
-static void requestPowerStateChange(const char* source, bool reboot) {
-    Result rc = spsmInitialize();
-    if (R_SUCCEEDED(rc)) {
-        rc = spsmShutdown(reboot);
+//
+// Nothing is logged on the way to a successful request: the caller has already
+// committed the card, and a log line written after that would be the dirty
+// write the commit exists to prevent. Only a failed spsm request, where power
+// is still on, is recorded -- and committed again before the applet is asked.
+// The result is the last path tried, so the caller can tell a console that is
+// going down from one that refused.
+static Result requestPowerStateChange(const char* source, bool reboot) {
+    Result spsmRc = spsmInitialize();
+    if (R_SUCCEEDED(spsmRc)) {
+        spsmRc = spsmShutdown(reboot);
         spsmExit();
-        if (R_SUCCEEDED(rc))
-            return;
+        if (R_SUCCEEDED(spsmRc))
+            return spsmRc;
     }
 
     svcOutputDebugString("[SwitchU-daemon] spsm power path failed, using applet", 52);
-    (void)source;
-    if (reboot)
-        appletStartRebootSequence();
-    else
-        appletStartShutdownSequence();
+    switchu::FileLog::log("[power] spsm failed source=%s action=%s rc=0x%X; trying applet",
+                          source, reboot ? "reboot" : "shutdown", spsmRc);
+    switchu::FileLog::flush();
+    switchu::commitSdCard("power fallback");
+
+    const Result appletRc = reboot ? appletStartRebootSequence()
+                                   : appletStartShutdownSequence();
+    if (R_FAILED(appletRc)) {
+        switchu::FileLog::log("[power] applet failed source=%s action=%s rc=0x%X",
+                              source, reboot ? "reboot" : "shutdown", appletRc);
+        switchu::FileLog::flush();
+    }
+    return appletRc;
 }
 
 // Sleep is not a power-down and must not use the shutdown teardown below.
@@ -981,18 +997,39 @@ static void startPowerSequence(const char* source, smi::SystemMessage action) {
     // back to hekate unable to find nyx with "card committed for power action"
     // sitting in the menu log, because the process that committed was not the
     // process with the dirty writes.
-    switchu::commitSdCard("power sequence");
+    //
+    // The request is logged here, before the commit, so the line is on the card
+    // if the console comes back to a black screen instead of the payload.
+    switchu::FileLog::log("[power] request source=%s action=%s path=spsm",
+                          source,
+                          action == smi::SystemMessage::Reboot ? "reboot" : "shutdown");
+    switchu::FileLog::flush();
+    const bool committed = switchu::commitSdCard("power sequence");
 
+    Result rc = MAKERESULT(Module_Libnx, LibnxError_BadInput);
     switch (action) {
         case smi::SystemMessage::Shutdown:
-            requestPowerStateChange(source, false);
+            rc = requestPowerStateChange(source, false);
             break;
         case smi::SystemMessage::Reboot:
-            requestPowerStateChange(source, true);
+            rc = requestPowerStateChange(source, true);
             break;
         default:
             break;
     }
+
+    if (R_SUCCEEDED(rc))
+        return;
+
+    // Neither path took the request, so the console is still on. Leaving the
+    // main loop parked would make it a daemon that ignores HOME and every menu
+    // command until the power button is held; put back what the teardown above
+    // stopped so the player can try again.
+    switchu::FileLog::log("[power] request refused source=%s rc=0x%X committed=%d; resuming",
+                          source, rc, committed ? 1 : 0);
+    switchu::FileLog::flush();
+    startControlCacheWorker();
+    g_powerSequenceStarted.store(false);
 }
 
 static void openMenuFromHome(const char* source) {
