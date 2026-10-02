@@ -33,7 +33,8 @@
 ### The home menu
 
 - A Wii U-style grid over an animated background, with pages, a configurable
-  layout (3–8 columns, 2–5 rows) and drag-to-reorder edit mode.
+  layout (3–8 columns, 2–5 rows) and drag-to-reorder edit mode, in which an
+  icon can be dropped on any empty slot of any page.
 - Games launch through a daemon that replaces qlaunch, so the menu is a real
   home menu: HOME returns to it, a suspended game resumes, and the console
   sleeps, restarts and shuts down from it.
@@ -109,7 +110,9 @@ Pressing **+** on a game opens its panel:
 ### Artwork
 
 - SteamGridDB heroes and logos behind the menu, scanned for the whole library or
-  chosen title by title.
+  chosen title by title. Their options -- on or off, how opaque the artwork is,
+  the API key and the library scan -- are in the **SteamGridDB** tab of the
+  SwitchU menu.
 - **No API key needed.** Searches, heroes and grids go through the service
   ncarvalho99 runs for the SwitchU forks. A personal key is still accepted and
   additionally unlocks logos.
@@ -296,7 +299,7 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.8.0. Each one is tracked as an issue with what is known so far and what
+As of 2.9.0. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
 
 - **Parts of Settings are read-only or missing**
@@ -339,13 +342,20 @@ it would take to close it.
   gets its details on the console instead: description, publisher, release
   date, genres and screenshots from the nlib title API, with no key; the
   **metascore** (RAWG) and **time to beat** (IGDB) need keys of your own, set
-  in Settings > SteamGridDB > Game details. There is no user score any more.
+  in the SwitchU menu > SteamGridDB > Game details (under Settings before
+  2.9.0). There is no user score any more.
   The dossier's **Gallery** tab, theme packages from his catalogue (they list
   and preview, but downloads are refused) and SteamGridDB **without** a
   personal key still depend on him and do not work. The music shop searches
   and downloads through public YouTube fallbacks, which can break without
   notice; `tools/switchu_ytdl_service.py` can be self-hosted and set as
   `ytdlBackendUrl` in `config/SwitchU/config.json`.
+- **A restart from the power menu ended on a black screen once.** Seen a single
+  time and not reproduced; restarting again worked. ncarvalho99 reports the same
+  on unpatched consoles with AutoRCM and changed how his build restarts; this
+  fork keeps its restart path, the one that stopped the SD card corruption, and
+  from 2.9.0 writes a `[power] request` line to `daemon.log` before powering
+  down. If it happens to you, that log is what to send.
 - **A title with no name of its own shows its title id** only when nothing can
   name it. Some releases -- downgraded builds in particular -- carry no usable
   name; from 2.6.0 such titles are named from a built-in table of well-known

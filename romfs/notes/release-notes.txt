@@ -1,18 +1,18 @@
-Animations
-- Tiles wiggle while one is being moved, and the moved icon glides into place. Folders zoom out of their tile and back into it, and page changes are animated.
+Grid
+- An icon can be dropped on any empty slot of any page while rearranging.
 
-Automatic theme
-- In the Theme Shop options: a day theme and a night theme, switched at fixed hours or at sunrise and sunset.
+SteamGridDB
+- Its options moved from System Settings to a SteamGridDB tab in the SwitchU menu, with a new artwork opacity setting. The RAWG and IGDB keys are there too.
 
-Names and icons
-- Switch 2 Edition titles get their names, and uninstalling a game clears its cached icon so a reinstall shows the new one.
+Touch
+- A tap on a sidebar button or the power icon opens it.
 --pt-BR--
 
-Animações
-- Os ícones tremem enquanto um é movido, e o ícone movido desliza até o lugar. As pastas saem do próprio ícone e voltam para ele, e a troca de página é animada.
+Grade
+- Um ícone pode ser solto em qualquer espaço vazio de qualquer página ao reorganizar.
 
-Tema automático
-- Nas opções da loja de temas: um tema de dia e um de noite, trocados em horários fixos ou no nascer e pôr do sol.
+SteamGridDB
+- As opções saíram das Configurações do Sistema e foram para uma aba SteamGridDB no menu SwitchU, com um ajuste novo de opacidade das artes. As chaves RAWG e IGDB também estão lá.
 
-Nomes e ícones
-- Títulos Switch 2 Edition ganham nome, e desinstalar um jogo apaga o ícone guardado, então reinstalar mostra o novo.
+Toque
+- Tocar num botão da barra lateral ou no ícone de energia abre o que ele faz.

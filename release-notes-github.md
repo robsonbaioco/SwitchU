@@ -1,43 +1,57 @@
-# SwitchU 2.8.0
+# SwitchU 2.9.0
 
-Animations throughout the menu and a theme that follows the time of day, from PoloNX's repository, plus names for Switch 2 Edition titles and a fresh icon after a reinstall.
+The menu half of ncarvalho99's 2.6.5: icons can go to any empty slot, the SteamGridDB options get a tab of their own with an opacity setting, and the sidebar answers to a tap. The daemon also starts logging power requests.
 
 ## English
 
-### Animations
+### Grid
 
-- While a game is being moved, every other tile wiggles, and the moving icon glides to its new slot instead of jumping there.
-- Folders zoom out of their tile when they open and fly back into it when they close; the folder name rises out of the panel.
-- Page changes are animated in the Wii U style, and so is the switch into the single-row view. On a grid with a single page, trying to go further gives a small bump.
-- From PoloNX/SwitchU#106 by PtitLegume. The folder name is still a button while a folder is open: A renames it and UP from the top row reaches it.
+- While rearranging, an icon can be dropped on any empty slot of any page; it no longer has to follow the last one.
+- Folder entries with no title behind them are removed, and the cursor no longer lands on the second half of a wide widget when moving up or down.
 
-### Automatic theme
+### SteamGridDB
 
-- A new **Automatic Theme** entry in the Theme Shop options switches between a day theme and a night theme, either at fixed hours or at sunrise and sunset where you are. For the latter the console asks ip-api.com once for an approximate location from its public IP; nothing is sent unless you choose that mode. The theme is checked again whenever the console wakes. Also from #106.
+- The SteamGridDB options moved out of System Settings into a **SteamGridDB** tab in the SwitchU menu, after Music: show artwork, the API key and the scan for missing artwork.
+- New there: **artwork opacity**, from 0 to 100%, for the hero and logo behind the menu. It starts at 50%, which is a little stronger than before in the grid and a little lighter in the single-row view.
+- The **RAWG** and **IGDB** keys for the dossier's metascore and time to beat moved to the same tab, under Game details.
 
-### Names and icons
+### Touch
 
-- A Switch 2 Edition can keep its name outside the ordinary control data, so it showed its title id on the grid. The daemon now looks in the extra data slots when nothing else names a title (firmware 19.0.0 and later). From #111 by tomvita.
-- Uninstalling a game from SwitchU drops its cached name and icon at once, so reinstalling a version with a different icon shows the new one. From #118 by bshurikan.
+- A tap on a sidebar button or on the power icon now opens it.
+
+### Power
+
+- The daemon writes a `[power] request` line to `daemon.log` before it restarts or shuts the console down, and if the request is refused it goes back to work instead of staying frozen. The restart path itself is unchanged.
+
+### Not taken from 2.6.5
+
+- His change to how the console restarts, and the update bridge to his OmniLauncher repository. This fork keeps updating from its own releases.
 
 ---
 
 ## Português
 
-Animações pelo menu inteiro e um tema que acompanha a hora do dia, do repositório do PoloNX, além de nomes para títulos Switch 2 Edition e ícone novo depois de reinstalar.
+A parte do menu da 2.6.5 do ncarvalho99: os ícones podem ir para qualquer espaço vazio, as opções do SteamGridDB ganham uma aba própria com ajuste de opacidade, e a barra lateral responde ao toque. O daemon também passa a registrar os pedidos de energia.
 
-### Animações
+### Grade
 
-- Enquanto um jogo é movido, os outros ícones tremem, e o ícone movido desliza até o lugar novo em vez de pular.
-- As pastas saem do próprio ícone ao abrir e voltam para ele ao fechar; o nome da pasta sobe de dentro do painel.
-- A troca de página é animada no estilo do Wii U, e a passagem para a linha única também. Numa grade de uma página só, tentar ir além dá um pequeno tranco.
-- Do PoloNX/SwitchU#106, de PtitLegume. O nome da pasta continua sendo um botão com a pasta aberta: o A renomeia e o ↑ a partir da primeira fileira chega nele.
+- Ao reorganizar, um ícone pode ser solto em qualquer espaço vazio de qualquer página; não precisa mais vir logo depois do último.
+- Entradas de pasta sem título por trás são removidas, e o cursor não para mais na segunda metade de um widget largo ao subir ou descer.
 
-### Tema automático
+### SteamGridDB
 
-- Uma entrada nova, **Tema automático**, nas opções da loja de temas, alterna entre um tema de dia e um de noite, em horários fixos ou no nascer e pôr do sol onde você está. Para isso o console pergunta uma vez ao ip-api.com uma localização aproximada pelo IP público; nada é enviado se você não escolher esse modo. O tema é conferido de novo sempre que o console acorda. Também do #106.
+- As opções do SteamGridDB saíram das Configurações do Sistema e foram para uma aba **SteamGridDB** no menu SwitchU, depois de Música: exibir as artes, a chave de API e a busca de artes que faltam.
+- Novo ali: **opacidade das artes**, de 0 a 100%, para a arte de fundo e o logo atrás do menu. Começa em 50%, um pouco mais forte que antes na grade e um pouco mais leve na linha única.
+- As chaves **RAWG** e **IGDB**, da nota e do tempo de jogo no dossiê, foram para a mesma aba, em Detalhes do jogo.
 
-### Nomes e ícones
+### Toque
 
-- Um Switch 2 Edition pode guardar o nome fora dos dados comuns do jogo, e por isso aparecia com o title id na grade. O daemon agora procura nos espaços extras quando nada mais dá nome ao jogo (firmware 19.0.0 em diante). Do #111, de tomvita.
-- Desinstalar um jogo pelo SwitchU apaga na hora o nome e o ícone guardados, então reinstalar uma versão com outro ícone mostra o novo. Do #118, de bshurikan.
+- Tocar num botão da barra lateral ou no ícone de energia agora abre o que ele faz.
+
+### Energia
+
+- O daemon grava uma linha `[power] request` no `daemon.log` antes de reiniciar ou desligar o console, e se o pedido for recusado ele volta a funcionar em vez de ficar travado. O caminho de reinício em si não mudou.
+
+### O que não veio da 2.6.5
+
+- A mudança dele na forma de reiniciar o console e a ponte de atualização para o repositório OmniLauncher dele. Este fork continua atualizando pelas próprias releases.
