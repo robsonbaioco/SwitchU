@@ -299,7 +299,7 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.9.0. Each one is tracked as an issue with what is known so far and what
+As of 2.10.0. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
 
 - **Parts of Settings are read-only or missing**
@@ -356,6 +356,12 @@ it would take to close it.
   fork keeps its restart path, the one that stopped the SD card corruption, and
   from 2.9.0 writes a `[power] request` line to `daemon.log` before powering
   down. If it happens to you, that log is what to send.
+- **The menu came back slow after a long session in an application once.** It
+  drew three times slower and stayed that way until a restart, which is what a
+  CPU boost left on by the application looks like. From 2.10.0 the daemon asks
+  for the normal mode when an application closes and writes `[perf-config]`
+  lines to `daemon.log`. Not confirmed on a console yet: if it happens to you
+  on 2.10.0 or later, send the logs.
 - **A title with no name of its own shows its title id** only when nothing can
   name it. Some releases -- downgraded builds in particular -- carry no usable
   name; from 2.6.0 such titles are named from a built-in table of well-known
@@ -377,7 +383,9 @@ it would take to close it.
 ## Help me
 
 If you want to help, open an issue when you find a bug and open a pull request
-if you have a fix. Reports that come with the logs from `config/SwitchU` and,
+if you have a fix. Reports that come with the logs -- **Send logs to the
+developer** in Settings > System from 2.10.0 on, or the files from
+`config/SwitchU` -- and,
 when the console crashed, the files from `atmosphere/fatal_errors` and
 `atmosphere/crash_reports`, are the ones that get fixed.
 

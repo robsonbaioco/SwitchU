@@ -1,18 +1,18 @@
-Grid
-- An icon can be dropped on any empty slot of any page while rearranging.
+Logs
+- New in Settings > System: Send logs to the developer. It asks first, then sends the SwitchU logs over the internet.
 
-SteamGridDB
-- Its options moved from System Settings to a SteamGridDB tab in the SwitchU menu, with a new artwork opacity setting. The RAWG and IGDB keys are there too.
+Single-row view
+- Profiles no longer overlap the buttons at the top; with six or more accounts the avatars shrink to fit.
 
-Touch
-- A tap on a sidebar button or the power icon opens it.
+Performance
+- The daemon asks for normal performance again when an application closes, for a menu that came back slow.
 --pt-BR--
 
-Grade
-- Um ícone pode ser solto em qualquer espaço vazio de qualquer página ao reorganizar.
+Logs
+- Novo em Configurações > Sistema: Enviar logs para o desenvolvedor. Ele pergunta antes e então envia os logs do SwitchU pela internet.
 
-SteamGridDB
-- As opções saíram das Configurações do Sistema e foram para uma aba SteamGridDB no menu SwitchU, com um ajuste novo de opacidade das artes. As chaves RAWG e IGDB também estão lá.
+Modo linha
+- Os perfis não ficam mais em cima dos botões do topo; com seis contas ou mais os avatares diminuem para caber.
 
-Toque
-- Tocar num botão da barra lateral ou no ícone de energia abre o que ele faz.
+Desempenho
+- O daemon volta a pedir o desempenho normal quando um aplicativo fecha, para o menu que voltava lento.
