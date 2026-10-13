@@ -175,6 +175,16 @@ void SidebarManager::setDynamicLineLayout(bool enabled) {
     }
 }
 
+float SidebarManager::dynamicLineGapLeft() {
+    constexpr float kGroupButtons = 3.f;
+    return kDynamicLeftGroupX + kGroupButtons * kDynamicStripButtonSize +
+           (kGroupButtons - 1.f) * kDynamicStripGap;
+}
+
+float SidebarManager::dynamicLineGapRight() {
+    return kDynamicRightGroupX;
+}
+
 void SidebarManager::setDynamicLineDownAction(std::function<void()> action) {
     auto configure = [&action](std::shared_ptr<AppletButton>& button) {
         button->setCustomNavigation(nxui::FocusDirection::DOWN, nullptr);
