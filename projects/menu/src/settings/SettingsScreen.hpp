@@ -40,6 +40,7 @@ public:
     void onSteamGridDbApiKeyRequest(VoidCb cb) { m_steamGridDbApiKeyCb = std::move(cb); }
     void onConsoleNicknameRequest(VoidCb cb) { m_consoleNicknameCb = std::move(cb); }
     void onRotateLogsRequest(VoidCb cb) { m_rotateLogsCb = std::move(cb); }
+    void onSendLogsRequest(VoidCb cb) { m_sendLogsCb = std::move(cb); }
     void onSteamGridDbScrapeRequest(VoidCb cb) { m_steamGridDbScrapeCb = std::move(cb); }
     // Keys for the dossier sources; see GameMetadataClient. 0 RAWG, 1 IGDB client
     // id, 2 IGDB client secret.
@@ -148,6 +149,7 @@ private:
     VoidCb m_steamGridDbApiKeyCb;
     VoidCb m_consoleNicknameCb;
     VoidCb m_rotateLogsCb;
+    VoidCb m_sendLogsCb;
     VoidCb m_steamGridDbScrapeCb;
     std::function<void(int)> m_metadataKeyCb;
     bool m_metadataHasKey[3] = {false, false, false};

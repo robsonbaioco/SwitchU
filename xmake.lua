@@ -245,6 +245,30 @@ target("SwitchU")
 
     add_defines(version_define)
     add_defines(upstream_define)
+
+    -- "Send logs to the developer" posts to the fork owner's endpoint. The key
+    -- comes from the environment or from an untracked file, never from this
+    -- repository; without one the setting is compiled out, so a build made by
+    -- anyone else does not send its players' logs to this mailbox.
+    on_load(function(target)
+        local key = os.getenv("SWITCHU_LOG_UPLOAD_KEY")
+        local key_file = path.join(os.projectdir(), ".log-upload-key")
+        if (not key or key == "") and os.isfile(key_file) then
+            key = io.readfile(key_file)
+        end
+        key = (key or ""):gsub("%s+", "")
+        if key == "" then
+            return
+        end
+        local url = os.getenv("SWITCHU_LOG_UPLOAD_URL")
+        if not url or url == "" then
+            url = "https://switchu-logs.robson-baioco.workers.dev"
+        end
+        target:add("defines",
+                   string.format('SWITCHU_LOG_UPLOAD_URL="%s"', url),
+                   string.format('SWITCHU_LOG_UPLOAD_KEY="%s"', key))
+    end)
+
     add_deps("espeak-ng")
     add_includedirs("lib/espeak-ng/src/include")
     add_syslinks("m")

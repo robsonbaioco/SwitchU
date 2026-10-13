@@ -1,5 +1,6 @@
 #include "TabBuilders.hpp"
 #include "core/DebugLog.hpp"
+#include "core/LogUpload.hpp"
 #include "smi_commands.hpp"
 #include "services/NtpClient.hpp"
 #include <nxui/core/I18n.hpp>
@@ -448,6 +449,17 @@ SettingsScreen::Tab settings::tabs::SystemTab::build(SettingsScreen& screen) {
                                  "Closes the current logs so they can be copied from config/SwitchU.");
         it.onChange = [&screen](SettingItem& /* self */) {
             if (screen.m_rotateLogsCb) screen.m_rotateLogsCb();
+        };
+        t.items.push_back(std::move(it));
+    }
+
+    if (switchu::log_upload::available()) {
+        SettingItem it; it.label = i18n.tr("settings.system.send_logs", "Send logs to the developer");
+        it.type = ItemType::Action;
+        it.description = i18n.tr("settings.system.send_logs_desc",
+                                 "Sends the SwitchU logs over the internet so a problem can be investigated.");
+        it.onChange = [&screen](SettingItem& /* self */) {
+            if (screen.m_sendLogsCb) screen.m_sendLogsCb();
         };
         t.items.push_back(std::move(it));
     }

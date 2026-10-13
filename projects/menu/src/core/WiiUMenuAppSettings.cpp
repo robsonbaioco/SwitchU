@@ -530,6 +530,9 @@ void WiiUMenuApp::createSettings() {
                 4.5f);
         }
     });
+    m_settings->onSendLogsRequest([this]() {
+        confirmSendLogs();
+    });
     m_settings->onConsoleNicknameRequest([this]() {
         auto& i18n = nxui::I18n::instance();
         SetSysDeviceNickName current{};
@@ -2359,6 +2362,89 @@ void WiiUMenuApp::evaluateAutoTheme(bool force) {
                   static_cast<unsigned>(snapshot.calendar.hour));
     // Auto switching keeps the current sound preset (applyBundledSound=false).
     activateThemePreset(preset, false);
+}
+
+void WiiUMenuApp::confirmSendLogs() {
+    auto& i18n = nxui::I18n::instance();
+    if (m_logUploadFuture.valid()) {
+        if (m_settings)
+            m_settings->requestToast(
+                i18n.tr("settings.system.send_logs_sending", "Sending logs..."), 2.5f);
+        return;
+    }
+    if (!m_dialog) {
+        startLogUpload();
+        return;
+    }
+
+    // The logs name the installed games, how long each was played and the
+    // profile nicknames. That leaves the console only after the player has
+    // been told so and agreed.
+    m_audio.playSfx(Sfx::ModalShow);
+    raiseOverlay(m_dialog);
+    m_dialog->show(
+        i18n.tr("settings.system.send_logs", "Send logs to the developer"),
+        i18n.tr("settings.system.send_logs_confirm",
+                "The logs list your games, play times and user nicknames.\n\n"
+                "Send them over the internet to the SwitchU developer?"),
+        {
+            {i18n.tr("button.cancel", "Cancel"), []() {}, true},
+            {i18n.tr("settings.system.send_logs_button", "Send"), [this]() {
+                m_audio.playSfx(Sfx::ConfirmPositive);
+                startLogUpload();
+            }, true}
+        });
+}
+
+void WiiUMenuApp::startLogUpload() {
+    if (m_logUploadFuture.valid())
+        return;
+
+    // The live logs are held open and cannot be read; rotating leaves closed
+    // copies, which are what gets sent.
+    const Result rc = m_launcher.rotateLogs();
+    switchu::commitSdCard("log rotation");
+    DebugLog::log("[log-upload] requested (daemon rotate rc=0x%X)", rc);
+
+    if (m_settings)
+        m_settings->requestToast(
+            nxui::I18n::instance().tr("settings.system.send_logs_sending", "Sending logs..."),
+            3.0f);
+
+    m_logUploadOutcome = std::make_shared<switchu::log_upload::Outcome>();
+    auto outcome = m_logUploadOutcome;
+    m_logUploadFuture = m_threadPool.submit([outcome]() {
+        *outcome = switchu::log_upload::send();
+    });
+}
+
+void WiiUMenuApp::pollLogUpload() {
+    if (!m_logUploadFuture.valid())
+        return;
+    if (m_logUploadFuture.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+        return;
+
+    m_logUploadFuture.get();
+    const switchu::log_upload::Outcome outcome =
+        m_logUploadOutcome ? *m_logUploadOutcome : switchu::log_upload::Outcome{};
+    m_logUploadOutcome.reset();
+
+    if (!m_settings)
+        return;
+    auto& i18n = nxui::I18n::instance();
+    if (outcome.ok) {
+        m_settings->requestToast(
+            i18n.tr("settings.system.send_logs_done", "Logs sent. Thank you!"), 4.0f);
+    } else if (outcome.empty) {
+        m_settings->requestToast(
+            i18n.tr("settings.system.send_logs_empty", "There are no logs to send."), 4.0f);
+    } else {
+        m_settings->requestToast(
+            i18n.tr("settings.system.send_logs_failed",
+                    "Could not send the logs. Check the internet connection, or use "
+                    "\"Save logs for copying\" instead."),
+            6.0f);
+    }
 }
 
 void WiiUMenuApp::maybeFetchGeoLocation() {

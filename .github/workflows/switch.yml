@@ -111,6 +111,8 @@ jobs:
           fi
 
       - name: Build SwitchU
+        env:
+          SWITCHU_LOG_UPLOAD_KEY: ${{ secrets.SWITCHU_LOG_UPLOAD_KEY }}
         run: xmake -vD --root
 
       - name: Package install layout

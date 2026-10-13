@@ -7351,6 +7351,8 @@ void WiiUMenuApp::onUpdate(float dt) {
     if (m_folderCaptureReady)
         openCapturedFolder();
 
+    pollLogUpload();
+
     // Periodically re-check whether the automatic day/night theme should switch.
     // Cheap: ClockService::refresh() is cached and shared with the clock widget.
     if (m_autoTheme.mode() != switchu::services::AutoThemeMode::Off) {

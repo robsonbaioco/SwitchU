@@ -7,6 +7,7 @@
 #include <nxui/Theme.hpp>
 #include "widgets/IconGrid.hpp"
 #include "core/GridModel.hpp"
+#include "core/LogUpload.hpp"
 #include "widgets/SelectionCursor.hpp"
 #include "widgets/WaraWaraBackground.hpp"
 #include "widgets/GameArtworkBackdrop.hpp"
@@ -470,6 +471,9 @@ private:
     void evaluateAutoTheme(bool force);
     void maybeFetchGeoLocation();
     void pollGeoLocationFetch();
+    void confirmSendLogs();
+    void startLogUpload();
+    void pollLogUpload();
     std::string resolveSoundPresetId(const std::string& preset) const;
     void loadSoundPreset(const std::string& preset);
     void changeSoundPreset(const std::string& preset);
@@ -542,6 +546,9 @@ private:
     std::future<void>        m_geoFetchFuture;
     std::shared_ptr<GeoFetchResult> m_geoFetchResult;
     bool                     m_geoFetchInFlight = false;
+
+    std::future<void>        m_logUploadFuture;
+    std::shared_ptr<switchu::log_upload::Outcome> m_logUploadOutcome;
 
     // Drawn last and outside the widget tree: while it is up focusRoot()
     // hands back nothing, so no widget can be navigated or activated
