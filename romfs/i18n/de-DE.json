@@ -118,12 +118,15 @@
     "navigation": {
       "title": "Navigation",
       "body": "Benutze das Steuerkreuz oder den linken Stick, um den Fokus zu bewegen.",
-      "objective": "Bewege den Fokus zu einem anderen Element."
+      "objective": "Bewege den Fokus zu einem anderen Element.",
+      "left_right": "Links / rechts",
+      "up_down": "Oben / unten"
     },
     "confirm": {
       "title": "Fertig",
       "body": "Du bist startklar.",
-      "objective": "Drücke A, um diesen Schritt zu bestätigen."
+      "objective": "Drücke A, um diesen Schritt zu bestätigen.",
+      "detected": "A-Taste erkannt"
     },
     "themes": {
       "title": "Themes",
@@ -147,7 +150,8 @@
       "skip_step": "Schritt überspringen",
       "skip_all": "Alles überspringen",
       "skip_all_banner": "Drücke  +  um die Einrichtung zu überspringen"
-    }
+    },
+    "test_label": "Test"
   },
   "sidebar": {
     "album": "Album",
@@ -273,7 +277,15 @@
       "minute": "Minute",
       "month": "Monat",
       "time_change_failed": "Die Datums- und Uhrzeiteinstellung konnte nicht geändert werden.",
-      "year": "Jahr"
+      "year": "Jahr",
+      "timezone_button": "Ändern",
+      "timezone_filter_title": "Zeitzonen filtern",
+      "timezone_filter_guide": "Zum Filtern tippen (z. B. Berlin). Leer lassen für alle.",
+      "timezone_filter_option": "Suchen",
+      "timezone_popup_hint": "Links für Suchen. Oben/unten zum Auswählen. A zum Bestätigen.",
+      "timezone_none": "Keine passenden Zeitzonen.",
+      "timezone_failed": "Zeitzone konnte nicht geändert werden.",
+      "timezone_saved": "Zeitzone aktualisiert."
     },
     "accessibility": {
       "voice": "Sprachausgabe",
@@ -381,7 +393,8 @@
       "start_failed": "Der Artwork-Scan konnte nicht gestartet werden.",
       "started": "SteamGridDB-Scan gestartet.",
       "download_title": "Artwork wird heruntergeladen",
-      "download_start": "SteamGridDB wird durchsucht..."
+      "download_start": "SteamGridDB wird durchsucht...",
+      "https_clock_hint": "HTTPS fehlgeschlagen. Falls die Uhr der Konsole falsch ist, korrigiere sie unter Einstellungen > System (Uhr über das Internet synchronisieren oder Datum und Uhrzeit selbst einstellen)."
     },
     "controllers": {
       "test": "Eingabegeräte testen",

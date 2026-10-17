@@ -118,12 +118,15 @@
     "navigation": {
       "title": "Navigation",
       "body": "You can navigate with the directional pad, left stick, or right stick. Try one horizontal direction and one vertical direction.",
-      "objective": "Try left or right, then up or down."
+      "objective": "Try left or right, then up or down.",
+      "left_right": "Left / right",
+      "up_down": "Up / down"
     },
     "confirm": {
       "title": "Confirm",
       "body": "The A button confirms an action, launches a game, or opens the selected item.",
-      "objective": "Press A to validate this step."
+      "objective": "Press A to validate this step.",
+      "detected": "A button detected"
     },
     "themes": {
       "title": "Themes",
@@ -147,7 +150,8 @@
       "skip_step": "Skip step",
       "skip_all": "Skip all",
       "skip_all_banner": "Press  +  to skip the setup"
-    }
+    },
+    "test_label": "Test"
   },
   "sidebar": {
     "album": "Album",
@@ -279,7 +283,15 @@
       "ntp_sync_success": "Clock synchronized via Internet.",
       "ntp_syncing": "Synchronizing clock via Internet...",
       "time_change_failed": "The date and time setting could not be changed.",
-      "year": "Year"
+      "year": "Year",
+      "timezone_button": "Change",
+      "timezone_filter_title": "Filter timezones",
+      "timezone_filter_guide": "Type to filter (e.g. Sao_Paulo). Leave empty for all.",
+      "timezone_filter_option": "Search",
+      "timezone_popup_hint": "Left for Search. Up/down to choose. A to confirm.",
+      "timezone_none": "No matching timezones.",
+      "timezone_failed": "Could not change timezone.",
+      "timezone_saved": "Timezone updated."
     },
     "accessibility": {
       "voice": "Voice Guidance",
@@ -391,7 +403,8 @@
       "new_games_title": "SteamGridDB",
       "new_game_detected": "New game detected: ",
       "new_game_ask": "Would you like to check and download covers and artwork from SteamGridDB?",
-      "new_games_detected": "new games or shortcuts detected.\n\nWould you like to check and download covers and artwork from SteamGridDB?"
+      "new_games_detected": "new games or shortcuts detected.\n\nWould you like to check and download covers and artwork from SteamGridDB?",
+      "https_clock_hint": "HTTPS failed. If the console clock is wrong, fix it in Settings > System (Synchronize Clock via Internet, or set the date and time yourself)."
     },
     "controllers": {
       "test": "Test Input Devices",

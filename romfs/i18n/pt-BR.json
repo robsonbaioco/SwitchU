@@ -118,12 +118,15 @@
     "navigation": {
       "title": "Navegação",
       "body": "Use o direcional ou o analógico esquerdo para mover o foco.",
-      "objective": "Mova o foco para outro item."
+      "objective": "Mova o foco para outro item.",
+      "left_right": "Esquerda / direita",
+      "up_down": "Cima / baixo"
     },
     "confirm": {
       "title": "Pronto",
       "body": "Você já pode começar.",
-      "objective": "Pressione A para confirmar esta etapa."
+      "objective": "Pressione A para confirmar esta etapa.",
+      "detected": "Botão A detectado"
     },
     "themes": {
       "title": "Temas",
@@ -147,7 +150,8 @@
       "skip_step": "Pular etapa",
       "skip_all": "Pular tudo",
       "skip_all_banner": "Aperte  +  para pular a configuração"
-    }
+    },
+    "test_label": "Teste"
   },
   "sidebar": {
     "album": "Álbum",
@@ -279,7 +283,15 @@
       "ntp_sync_success": "Relógio sincronizado pela Internet.",
       "ntp_syncing": "Sincronizando relógio pela Internet...",
       "time_change_failed": "Não foi possível alterar a data e a hora.",
-      "year": "Ano"
+      "year": "Ano",
+      "timezone_button": "Alterar",
+      "timezone_filter_title": "Filtrar fusos horários",
+      "timezone_filter_guide": "Digite para filtrar (ex.: Sao_Paulo). Deixe vazio para ver todos.",
+      "timezone_filter_option": "Buscar",
+      "timezone_popup_hint": "Esquerda para Buscar. Cima/baixo para escolher. A para confirmar.",
+      "timezone_none": "Nenhum fuso horário encontrado.",
+      "timezone_failed": "Não foi possível alterar o fuso horário.",
+      "timezone_saved": "Fuso horário atualizado."
     },
     "accessibility": {
       "voice": "Leitura por voz",
@@ -391,7 +403,8 @@
       "new_games_title": "SteamGridDB",
       "new_game_detected": "Novo jogo detectado: ",
       "new_game_ask": "Deseja verificar e baixar capas e artes do SteamGridDB?",
-      "new_games_detected": "novos jogos ou atalhos detectados.\n\nDeseja verificar e baixar capas e artes do SteamGridDB?"
+      "new_games_detected": "novos jogos ou atalhos detectados.\n\nDeseja verificar e baixar capas e artes do SteamGridDB?",
+      "https_clock_hint": "Falha no HTTPS. Se o relógio do console estiver errado, corrija em Configurações > Sistema (sincronizar o relógio pela internet ou ajustar a data e a hora manualmente)."
     },
     "controllers": {
       "test": "Testar dispositivos de entrada",

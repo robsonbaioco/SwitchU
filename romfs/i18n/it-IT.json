@@ -118,12 +118,15 @@
     "navigation": {
       "title": "Navigazione",
       "body": "Usa la croce direzionale o lo stick sinistro per spostare il focus.",
-      "objective": "Sposta il focus su un altro elemento."
+      "objective": "Sposta il focus su un altro elemento.",
+      "left_right": "Sinistra / destra",
+      "up_down": "Su / giù"
     },
     "confirm": {
       "title": "Fatto",
       "body": "Sei pronto.",
-      "objective": "Premi A per confermare questo passo."
+      "objective": "Premi A per confermare questo passo.",
+      "detected": "Pulsante A rilevato"
     },
     "themes": {
       "title": "Temi",
@@ -147,7 +150,8 @@
       "skip_step": "Salta passo",
       "skip_all": "Salta tutto",
       "skip_all_banner": "Premi  +  per saltare la configurazione"
-    }
+    },
+    "test_label": "Prova"
   },
   "sidebar": {
     "album": "Album",
@@ -273,7 +277,15 @@
       "minute": "Minuto",
       "month": "Mese",
       "time_change_failed": "Impossibile modificare l'impostazione di data e ora.",
-      "year": "Anno"
+      "year": "Anno",
+      "timezone_button": "Cambia",
+      "timezone_filter_title": "Filtra fusi orari",
+      "timezone_filter_guide": "Scrivi per filtrare (es. Rome). Lascia vuoto per vederli tutti.",
+      "timezone_filter_option": "Cerca",
+      "timezone_popup_hint": "Sinistra per Cerca. Su/giù per scegliere. A per confermare.",
+      "timezone_none": "Nessun fuso orario corrispondente.",
+      "timezone_failed": "Impossibile cambiare il fuso orario.",
+      "timezone_saved": "Fuso orario aggiornato."
     },
     "accessibility": {
       "voice": "Lettura vocale",
@@ -381,7 +393,8 @@
       "start_failed": "Impossibile avviare la scansione delle immagini.",
       "started": "Scansione SteamGridDB avviata.",
       "download_title": "Download immagini",
-      "download_start": "Ricerca su SteamGridDB in corso..."
+      "download_start": "Ricerca su SteamGridDB in corso...",
+      "https_clock_hint": "HTTPS non riuscito. Se l’orologio della console è sbagliato, correggilo in Impostazioni > Sistema (sincronizza l’orologio via Internet o imposta data e ora manualmente)."
     },
     "controllers": {
       "test": "Verifica dispositivi di input",

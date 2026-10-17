@@ -118,12 +118,15 @@
     "navigation": {
       "title": "Navigation",
       "body": "Tu peux naviguer avec la croix directionnelle, le stick gauche ou le stick droit. Essaie une direction horizontale et une direction verticale.",
-      "objective": "Teste une direction gauche ou droite puis haut ou bas."
+      "objective": "Teste une direction gauche ou droite puis haut ou bas.",
+      "left_right": "Gauche / droite",
+      "up_down": "Haut / bas"
     },
     "confirm": {
       "title": "Valider",
       "body": "Le bouton A confirme une action, lance un jeu ou ouvre l'élément sélectionné.",
-      "objective": "Appuie sur A pour valider cette étape."
+      "objective": "Appuie sur A pour valider cette étape.",
+      "detected": "Bouton A détecté"
     },
     "themes": {
       "title": "Thèmes",
@@ -147,7 +150,8 @@
       "skip_step": "Passer étape",
       "skip_all": "Tout passer",
       "skip_all_banner": "Appuyez sur  +  pour passer la configuration"
-    }
+    },
+    "test_label": "Test"
   },
   "sidebar": {
     "album": "Album",
@@ -273,7 +277,15 @@
       "minute": "Minute",
       "month": "Mois",
       "time_change_failed": "Impossible de modifier la date et l'heure.",
-      "year": "Année"
+      "year": "Année",
+      "timezone_button": "Modifier",
+      "timezone_filter_title": "Filtrer les fuseaux horaires",
+      "timezone_filter_guide": "Tapez pour filtrer (ex. Paris). Laissez vide pour tout afficher.",
+      "timezone_filter_option": "Rechercher",
+      "timezone_popup_hint": "Gauche pour Rechercher. Haut/bas pour choisir. A pour valider.",
+      "timezone_none": "Aucun fuseau horaire ne correspond.",
+      "timezone_failed": "Impossible de changer le fuseau horaire.",
+      "timezone_saved": "Fuseau horaire mis à jour."
     },
     "accessibility": {
       "voice": "Lecture vocale",
@@ -381,7 +393,8 @@
       "start_failed": "La recherche des visuels n'a pas pu démarrer.",
       "started": "Recherche SteamGridDB démarrée.",
       "download_title": "Téléchargement des visuels",
-      "download_start": "Recherche sur SteamGridDB..."
+      "download_start": "Recherche sur SteamGridDB...",
+      "https_clock_hint": "Échec HTTPS. Si l’horloge de la console est fausse, corrigez-la dans Paramètres > Système (synchroniser l’horloge via Internet ou régler la date et l’heure vous-même)."
     },
     "controllers": {
       "test": "Tester les périphériques",

@@ -118,12 +118,15 @@
     "navigation": {
       "title": "Navigatie",
       "body": "Gebruik de richtingsknoppen of linkerstick om de focus te verplaatsen.",
-      "objective": "Verplaats de focus naar een ander item."
+      "objective": "Verplaats de focus naar een ander item.",
+      "left_right": "Links / rechts",
+      "up_down": "Omhoog / omlaag"
     },
     "confirm": {
       "title": "Klaar",
       "body": "Je kunt beginnen.",
-      "objective": "Druk op A om deze stap te bevestigen."
+      "objective": "Druk op A om deze stap te bevestigen.",
+      "detected": "A-knop gedetecteerd"
     },
     "themes": {
       "title": "Thema’s",
@@ -147,7 +150,8 @@
       "skip_step": "Stap overslaan",
       "skip_all": "Alles overslaan",
       "skip_all_banner": "Druk op  +  om de installatie over te slaan"
-    }
+    },
+    "test_label": "Test"
   },
   "sidebar": {
     "album": "Album",
@@ -273,7 +277,15 @@
       "minute": "Minuut",
       "month": "Maand",
       "time_change_failed": "De datum- en tijdinstelling kon niet worden gewijzigd.",
-      "year": "Jaar"
+      "year": "Jaar",
+      "timezone_button": "Wijzigen",
+      "timezone_filter_title": "Tijdzones filteren",
+      "timezone_filter_guide": "Typ om te filteren (bijv. Amsterdam). Laat leeg voor alle.",
+      "timezone_filter_option": "Zoeken",
+      "timezone_popup_hint": "Links voor Zoeken. Omhoog/omlaag om te kiezen. A om te bevestigen.",
+      "timezone_none": "Geen overeenkomende tijdzones.",
+      "timezone_failed": "Tijdzone kon niet worden gewijzigd.",
+      "timezone_saved": "Tijdzone bijgewerkt."
     },
     "accessibility": {
       "voice": "Spraak",
@@ -381,7 +393,8 @@
       "start_failed": "De artworkscan kon niet worden gestart.",
       "started": "SteamGridDB-scan gestart.",
       "download_title": "Artwork downloaden",
-      "download_start": "SteamGridDB doorzoeken..."
+      "download_start": "SteamGridDB doorzoeken...",
+      "https_clock_hint": "HTTPS mislukt. Als de klok van de console verkeerd staat, corrigeer die in Instellingen > Systeem (klok via internet synchroniseren of datum en tijd zelf instellen)."
     },
     "controllers": {
       "test": "Invoerapparaten testen",
