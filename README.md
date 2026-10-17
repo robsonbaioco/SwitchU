@@ -307,20 +307,24 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.11.0. Each one is tracked as an issue with what is known so far and what
+As of 2.12.0. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
 
-- **Nothing in 2.11.0 has been tested on a console yet.** The nine launcher
-  views, the full-screen image when docked, safe mode, the update rollback and
-  the PoloNX fixes all compile and follow the sources they were ported from,
-  but none of them has run on hardware. The Grid view is always one Minus
-  press away if a view misbehaves, and safe mode itself is the recovery if the
-  menu stops starting.
-- **Parts of Settings are read-only or missing**
-  ([#1](https://github.com/robsonbaioco/SwitchU/issues/1)). The console
-  language can be seen but not changed, and the TV audio format is saved
-  without being applied until the next boot. The timezone is editable from
-  2.11.0. Users, parental controls, data
+- **Nothing from 2.11.0 or 2.12.0 has been tested on a console yet.** The nine
+  launcher views, the full-screen image when docked, safe mode, the update
+  rollback, the new Settings (timezone, console language, live audio,
+  underscan), the theme cleanup and the memory work all compile and follow the
+  sources they were ported from, but none of it has run on hardware. The Grid
+  view is always one Minus press away if a view misbehaves, and safe mode
+  itself is the recovery if the menu stops starting. Wi-Fi, auto-sleep and the
+  old-theme case log everything they need
+  ([#1](https://github.com/robsonbaioco/SwitchU/issues/1),
+  [#3](https://github.com/robsonbaioco/SwitchU/issues/3)): after testing, send
+  the logs from Settings > System.
+- **Parts of Settings are still missing**
+  ([#1](https://github.com/robsonbaioco/SwitchU/issues/1)). The timezone is
+  editable from 2.11.0, and the console language, the live TV audio format and
+  the TV screen size (underscan) from 2.12.0. Users, parental controls, data
   management, system update and the connection test are not there at all. There
   is no shortcut for them either: on a retail console the stock System Settings
   live inside the HOME menu that SwitchU replaces, so each one has to be built

@@ -1,121 +1,65 @@
-# SwitchU 2.11.0
+# SwitchU 2.12.0
 
-Nine home views instead of two — Flow, Shelf and Deck in 3D, a fullscreen Cover pager, an XMB bar, a Niagara-style list and Metro live tiles join the grid and the dynamic line. The menu now fills the whole TV when docked, protects itself against a theme that crashes it at start-up, verifies and can roll back its own updates, and picks up a pile of fixes from the open PoloNX pull requests.
+The Settings backlog closes: the console language, the TV audio format and the TV screen size are editable and apply on the spot, a confirmed action cleans up leftover theme folders, and the menu and daemon get leaner — the wallpaper's frames share big GPU blocks instead of one each, the five overlay render targets only exist once an overlay opens, and sounds decode when first played. The three remaining open questions now write their whole answer into the logs.
 
 ## English
 
-### Nine launcher views
-
-- **Minus** cycles the view on the HOME screen; the full selector lives in SwitchU Menu > Options > **Launcher View**. Grid stays first in the cycle, so it is always one press away if a view misbehaves.
-- **Flow (3D)**: a coverflow of game cases, with box art on the front when a vertical cover exists and the game icon otherwise.
-- **Shelf (3D)**: an Xbox 360-style library row with reflections.
-- **Deck (3D)**: a card ribbon with the hero artwork behind it.
-- **Cover**: one fullscreen cover at a time, paged with a slide.
-- **XMB**: a PSP/PS3 cross-media bar — applets in the columns, games in their own column.
-- **List (Niagara)**: a vertical list with a details card — publisher, version, storage, play stats and a synopsis (fetched from the public nlib API, no key needed).
-- **Metro (Live Tiles)**: a tile wall in the sLaunch/Windows Phone manner. **Y** cycles a tile between 1x1, 2x1 and 2x2; the sizes are remembered per game.
-- The 3D views and Cover use vertical covers (600x900) from SteamGridDB when your API key is set: the scraper now also fetches box covers, and the game's artwork menu gains a **Cover** slot.
-- Folders render their icon grid in every view; opening one always lands on its first title.
-- All of this comes from ncarvalho99's OmniLaunch (GPL-3), adapted back to SwitchU: same views, without his rename, update feed, client-key services or video wallpapers. Nothing here has been tested on a console yet.
-
-### Fills the TV when docked
-
-- Docked, the menu drew a 720p image in the middle of the 1080p output with black borders all around. The display layer is now sized to 1920x1080 and the image scaled to it, like the stock HOME menu (PoloNX #154). `menu.log` writes a `[menu] layer ... size 1920x1080 rc=0x0` line.
-
-### Safe mode
-
-- A menu that dies repeatedly while starting (a broken theme, a bad asset) used to leave the console looping. After three start-up crashes the menu now comes up in **safe mode**: built-in theme, built-in sounds, no music, nothing third-party parsed — in memory only, your config.json is not rewritten. A dialog explains it and offers to leave safe mode (restart).
-- If safe mode itself keeps dying, the daemon renames the qlaunch override away (reversible) and reboots into the stock HOME menu rather than leaving a dead console.
-- The guard state survives power loss; powering off normally within seconds of a menu start does not count as a crash.
-
-### Updates verify themselves and can roll back
-
-- The in-app updater refuses a release whose ZIP carries no SHA-256 digest on GitHub, and verifies the downloaded archive against the digest before anything is staged.
-- Applying an update now keeps the files it replaces in `config/SwitchU/update/rollback` behind a journal. A power cut mid-apply is repaired or rolled back at the next boot, and if the updated menu crash-loops, the previous version is restored before any stock fallback. The backup is dropped the first time the new menu proves healthy.
-
 ### Settings
 
-- **Timezone** in Settings > System is now a Change button: the console's own timezone list in a searchable picker, written back to the system.
-- es-419, pt-PT, fr-CA and en-GB consoles no longer fall back to English: each reads the closest language that ships. Spanish is complete (every key en-US has), and the Manager gains a Spanish translation.
-- SteamGridDB searches that die in TLS now say that a wrong console clock breaks HTTPS and point at Settings > System, instead of showing a blank error.
+- **Console Language** has a Change button: the console's own language list in the searchable picker, with a confirmation, written with `setsysSetLanguageCode`. It applies at the next restart, and the dialog says so.
+- **Speaker Auto-Mute** also applies immediately on firmware 13+ (audctl command 30 — libnx has no wrapper, so it is a one-byte raw call). The saved flag still covers the next boot.
+- **TV Audio Output** applies immediately too (`audctlSetAudioOutputMode` on the TV target), besides being saved.
+- **TV Screen Size (underscan)** is a live slider now; it had been written and commented out since 2.5.0. Only a TV can show the effect.
 
-### Fixes from the open PoloNX pull requests
+### Clean up theme files
 
-- Plus+Minus (voice guidance) no longer demands both buttons on the same frame (#139).
-- Right on a selector or action row in Options no longer acts like A (#157).
-- The battery widget no longer shows 0 % with no charge icon right after boot (#149).
-- The tutorial body text survives the font cache filling up (#143).
-- Bluetooth connect/disconnect/unpair run off the UI thread — an out-of-range headset no longer freezes the menu (#138).
-- A second HOME press with nothing left to dismiss resumes the suspended game, like the stock menu (#150).
-- The analog stick steps between icons more calmly than the D-pad; circling it no longer skips across the grid (#158).
-- A-Z, Recent and the other sorted views place larger tiles first-fit instead of shrinking them to 1x1 (#151).
-- Moving a title into a folder no longer insert-shifts everything after it; music no longer skips when something calls play twice (#133).
-- HOME over a forwarder closes it instead of freezing the console on its last frame; retail games still suspend (#161).
-- After a fast return the visible page's icons upload in a burst instead of one per frame (#152).
+- New in Settings > Storage (issue #3): scans `config/SwitchU/themes` when pressed, offers **only** folders holding no readable `theme.json`, shows their names and total size, and deletes after a confirmation, committing the card. Valid themes, the active theme, the built-ins and `theme_presets.ini` cannot be touched by construction.
 
-### Under the hood
+### Memory (issue #2 plan)
 
-- The daemon only rewrites its app catalog when the content actually changed (fingerprint), the widget-store save and the activity-log prefetch left the start-up path, and the SteamGridDB backdrop re-resolves only when the focused title changed.
-- Every start that is not the cold boot now takes the fast-return path, suspended title or not.
+- The menu's heap ladder tops at **384 MB** instead of 416 — the ~32 MB stay in the applet pool for the system.
+- The animated wallpaper's frames now live in an **8 MB-chunk arena** instead of one GPU memory block per frame: a 300-frame sequence drops from 300 driver blocks to ~25, and the whole arena is freed at once when the theme changes. (600 individual blocks once crashed the console mid-load; this takes the class of problem away.)
+- The five full-resolution offscreen targets (dialog and settings backdrops, the sharp blur pair, the frozen scene) are created **on the first overlay use** instead of at boot: ~18 MB back in any session that never opens one.
+- The daemon slims down: main-thread stack 1 MB → 512 KB and the stratosphere heap 2 MB → 1 MB. Its 8 MB main heap waits for the high-water log (`heap=…KB peak=…KB`, written since 2.5.6) before shrinking.
+- Sound effects decode on first play instead of all at preset load, and `menu.json` now declares the applet memory pool it actually lives in.
+
+### The three open questions log their own answers
+
+- **Wi-Fi**: the toggle writes a `[settings-wifi]` line with the live NIFM radio state before and after the saved flag, plus the connection status — one look says whether the radio drops immediately or only at the next boot.
+- **Auto-sleep**: every change writes a `[settings-sleep]` transaction, and the daemon logs the plans it applies at boot — against the timestamped sleep requests, one test says whether a new delay counts immediately.
+- **Old themes**: the installed-themes scan logs its result whenever it changes, orphan folders marked; a theme "deleted" before fork.11 coming back shows up by name, and deleting it again was already logged.
+- After testing on a console, **Settings > System > Send logs to the developer** carries all of it.
 
 ---
 
 ## Português
 
-Nove modos de exibição em vez de dois — Flow, Shelf e Deck em 3D, capas em tela cheia, uma barra XMB, uma lista estilo Niagara e os blocos dinâmicos do Metro se juntam à grade e à linha dinâmica. O menu agora preenche a TV inteira na dock, se protege de um tema que derruba a inicialização, verifica e consegue desfazer as próprias atualizações, e traz uma pilha de correções dos pull requests abertos do PoloNX.
-
-### Nove modos de exibição
-
-- **Minus** troca o modo na tela HOME; o seletor completo fica em Menu SwitchU > Opções > **Modo de exibição**. A Grade é sempre a primeira do ciclo, a um toque de distância se algum modo se comportar mal.
-- **Flow (3D)**: um coverflow de caixinhas de jogo, com a capa na frente quando existe capa vertical e o ícone do jogo quando não.
-- **Shelf (3D)**: a estante estilo Xbox 360, com reflexos.
-- **Deck (3D)**: uma fita de cartões com a arte de fundo do jogo atrás.
-- **Capa**: uma capa em tela cheia por vez, com paginação deslizante.
-- **XMB**: a barra do PSP/PS3 — applets nas colunas, jogos numa coluna própria.
-- **Lista (Niagara)**: lista vertical com um cartão de detalhes — publicadora, versão, armazenamento, estatísticas de jogo e uma sinopse (da API pública nlib, sem chave).
-- **Metro (Blocos Dinâmicos)**: uma parede de blocos ao estilo sLaunch/Windows Phone. **Y** alterna o bloco entre 1x1, 2x1 e 2x2; os tamanhos ficam gravados por jogo.
-- Os modos 3D e a Capa usam capas verticais (600x900) do SteamGridDB quando a sua chave de API está configurada: o scraper agora também baixa capas, e o menu de arte do jogo ganha um espaço **Capa**.
-- As pastas desenham sua grade de ícones em todos os modos; abrir uma sempre foca o primeiro título.
-- Tudo isso vem do OmniLaunch do ncarvalho99 (GPL-3), adaptado de volta ao SwitchU: os mesmos modos, sem a troca de nome, o feed de atualização, os serviços com chave dele ou os papéis de parede em vídeo. Nada disso foi testado num console ainda.
-
-### Preenche a TV na dock
-
-- Na dock, o menu desenhava uma imagem 720p no meio da saída 1080p, com bordas pretas em volta. A camada de vídeo agora é dimensionada para 1920x1080 e a imagem é escalada, como no menu HOME original (PoloNX #154). O `menu.log` registra uma linha `[menu] layer ... size 1920x1080 rc=0x0`.
-
-### Modo seguro
-
-- Um menu que morre repetidamente ao iniciar (um tema quebrado, um recurso ruim) deixava o console em loop. Depois de três quedas na inicialização, o menu agora sobe em **modo seguro**: tema padrão, sons padrão, sem música, nada de terceiros é lido — só em memória, o seu config.json não é reescrito. Um aviso explica e oferece sair do modo seguro (reinicia).
-- Se o próprio modo seguro continuar morrendo, o daemon renomeia o override do qlaunch (reversível) e reinicia no menu HOME original, em vez de deixar um console morto.
-- O estado da proteção sobrevive a quedas de energia; desligar normalmente logo depois de o menu abrir não conta como queda.
-
-### Atualizações verificadas e com rollback
-
-- O atualizador do menu recusa uma release cujo ZIP não tem o SHA-256 publicado no GitHub, e confere o arquivo baixado contra ele antes de preparar qualquer coisa.
-- Aplicar uma atualização agora guarda os arquivos substituídos em `config/SwitchU/update/rollback`, com um diário. Uma queda de energia no meio é reparada ou desfeita no boot seguinte, e se o menu atualizado entrar em loop de queda, a versão anterior volta antes de qualquer retorno ao menu original. A cópia é descartada na primeira vez que o menu novo se prova saudável.
+A fila de Configurações fecha: o idioma do console, o formato de áudio da TV e o tamanho da tela são editáveis e valem na hora, uma ação confirmada limpa pastas de tema órfãs, e o menu e o daemon ficam mais magros — os quadros do papel de parede dividem blocos grandes de GPU em vez de um cada, os cinco alvos de overlay só existem depois que um overlay abre, e os sons decodificam no primeiro uso. As três perguntas abertas que restavam agora escrevem a resposta inteira nos logs.
 
 ### Configurações
 
-- O **Fuso horário** em Configurações > Sistema agora tem um botão Alterar: a lista de fusos do próprio console num seletor com busca, gravada de volta no sistema.
-- Consoles em es-419, pt-PT, fr-CA e en-GB não caem mais para o inglês: cada um lê o idioma mais próximo que existe. O espanhol está completo (todas as chaves do en-US), e o Manager ganhou tradução para espanhol.
-- Buscas do SteamGridDB que morrem no TLS agora dizem que um relógio errado quebra o HTTPS e apontam para Configurações > Sistema, em vez de um erro em branco.
+- **Idioma do console** ganhou um botão Alterar: a lista de idiomas do próprio console no seletor com busca, com confirmação, gravada com `setsysSetLanguageCode`. Vale a partir do próximo reinício, e o diálogo avisa.
+- **Auto-mute do alto-falante** também aplica na hora no firmware 13+ (comando 30 do audctl — a libnx não tem wrapper, então é uma chamada bruta de um byte). O flag salvo continua valendo para o próximo boot.
+- **Saída de áudio da TV** também aplica na hora (`audctlSetAudioOutputMode` no alvo da TV), além de salvar.
+- **Tamanho da tela (underscan)** virou um slider de verdade; estava escrito e comentado desde a 2.5.0. Só uma TV mostra o efeito.
 
-### Correções dos pull requests abertos do PoloNX
+### Limpar arquivos de tema
 
-- Plus+Minus (leitura de voz) não exige mais os dois botões no mesmo frame (#139).
-- Direita numa lista ou ação das Opções não age mais como o A (#157).
-- A bateria não aparece mais com 0 % e sem ícone de carga logo depois do boot (#149).
-- O texto do tutorial sobrevive ao cache de fontes encher (#143).
-- Conectar/desconectar/desparear Bluetooth roda fora da thread da interface — um fone fora de alcance não congela mais o menu (#138).
-- Um segundo HOME sem nada para fechar volta ao jogo suspenso, como no menu original (#150).
-- O analógico anda entre os ícones com mais calma que o D-pad; girar ele não pula mais pela grade (#158).
-- A-Z, Recentes e os outros modos ordenados encaixam os blocos maiores inteiros em vez de encolher para 1x1 (#151).
-- Mover um título para dentro de uma pasta não empurra mais tudo que vem depois; a música não dá mais um pulo quando algo chama play duas vezes (#133).
-- HOME por cima de um forwarder fecha o forwarder em vez de congelar o console no último frame; jogos de verdade continuam suspendendo (#161).
-- Depois de uma volta rápida, os ícones da página visível sobem em rajada em vez de um por frame (#152).
+- Novo em Configurações > Armazenamento (issue #3): varre `config/SwitchU/themes` ao tocar, oferece **só** pastas sem um `theme.json` legível, mostra os nomes e o tamanho total, e apaga depois da confirmação, com commit do cartão. Temas válidos, o tema ativo, os embutidos e o `theme_presets.ini` são intocáveis por construção.
 
-### Por baixo do capô
+### Memória (plano da issue #2)
 
-- O daemon só reescreve o catálogo de apps quando o conteúdo mudou de fato (impressão digital), a gravação dos widgets e a pré-carga do registro de atividades saíram do caminho de inicialização, e o fundo do SteamGridDB só se recalcula quando o título focado mudou.
-- Toda inicialização que não é o boot frio agora usa o caminho de volta rápida, com ou sem título suspenso.
+- A escada de heap do menu agora para em **384 MB** em vez de 416 — os ~32 MB ficam no pool de applets para o sistema.
+- Os quadros do papel de parede animado agora vivem numa **arena de blocos de 8 MB** em vez de um bloco de GPU por quadro: uma sequência de 300 quadros cai de 300 blocos no driver para ~25, e a arena inteira é liberada de uma vez na troca de tema. (600 blocos individuais já derrubaram o console no meio do carregamento; isso elimina a classe do problema.)
+- Os cinco alvos offscreen de resolução cheia (fundos de diálogo e configurações, o par de desfoque, a cena congelada) nascem **no primeiro uso de um overlay** em vez de no boot: ~18 MB de volta em qualquer sessão que não abre nenhum.
+- O daemon emagrece: stack da thread principal 1 MB → 512 KB e heap do stratosphere 2 MB → 1 MB. O heap principal de 8 MB espera o log de marca-d'água (`heap=…KB peak=…KB`, gravado desde a 2.5.6) antes de encolher.
+- Os efeitos sonoros decodificam no primeiro uso em vez de todos na carga do preset, e o `menu.json` passa a declarar o pool de memória de applet em que ele realmente vive.
+
+### As três perguntas abertas escrevem a própria resposta
+
+- **Wi-Fi**: o interruptor grava uma linha `[settings-wifi]` com o estado vivo do rádio (NIFM) antes e depois do flag salvo, mais o status de conexão — uma olhada diz se o rádio cai na hora ou só no próximo boot.
+- **Suspensão automática**: cada mudança grava uma transação `[settings-sleep]`, e o daemon registra no boot os planos que aplicou — contra os pedidos de sleep com carimbo de hora, um teste diz se o atraso novo vale na hora.
+- **Temas antigos**: a varredura de Instalados registra o resultado sempre que ele muda, com as pastas órfãs marcadas; um tema "apagado" antes da fork.11 que volta aparece pelo nome, e apagá-lo de novo já era registrado.
+- Depois de testar no console, **Configurações > Sistema > Enviar logs** carrega tudo isso.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

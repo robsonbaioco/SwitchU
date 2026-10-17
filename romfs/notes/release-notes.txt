@@ -1,46 +1,28 @@
-Nine launcher views
-- Minus cycles the view on the HOME screen; the full selector is in SwitchU Menu > Options > Launcher View. Grid is always one press away.
-- Flow, Shelf and Deck are 3D rows; Cover shows one fullscreen cover at a time; XMB is the PSP/PS3 bar; List (Niagara) adds a details card with a synopsis; Metro is a tile wall and Y cycles a tile between 1x1, 2x1 and 2x2.
-- With a SteamGridDB API key the scraper now also fetches vertical covers (600x900) for the cases, and the artwork menu gains a Cover slot.
-- Ported from OmniLaunch (ncarvalho99), without the rename, his key-locked services or video wallpapers. Not yet tested on a console.
-
-Fills the TV when docked
-- Docked, the menu drew 720p in the middle of the screen with black borders. The layer is now 1920x1080 and the image is scaled, like the stock HOME menu.
-
-Safe mode
-- Three start-up crashes in a row start the menu with the built-in theme, no music and nothing third-party, in memory only. A dialog explains it and offers to leave. If safe mode itself keeps dying, the console goes back to the stock HOME menu instead of looping.
-
-Updates
-- The updater refuses a release without a published SHA-256 and verifies the download. Applying keeps a rollback copy: a power cut mid-update is repaired at the next boot, and a bad update rolls back by itself.
-
 Settings
-- Timezone has a Change button with a searchable list.
-- es-419, pt-PT, fr-CA and en-GB consoles read the closest shipped language; Spanish is complete.
-- SteamGridDB failures caused by a wrong clock now say so.
+- Console Language has a Change button: the console's own list in the searchable picker, confirmed before writing; applies at the next restart.
+- Speaker Auto-Mute and the TV Audio Output now also apply immediately (audctl), besides being saved.
+- TV Screen Size (underscan) is a live slider.
 
-Fixes (from the open PoloNX pull requests)
-- Plus+Minus voice toggle works without a same-frame press; Right in Options no longer acts like A; the battery no longer shows 0 % right after boot; the tutorial text no longer disappears; Bluetooth no longer freezes the menu; a second HOME resumes the suspended game; the stick navigates more calmly; sorted views keep large tiles whole; folder drops no longer shift everything; HOME over a forwarder closes it instead of freezing; icons fill in a burst after a fast return.
+Clean up theme files
+- New in Settings > Storage: offers only folders with no readable theme.json, shows names and total size, deletes after a confirmation. Valid themes, the active one and the built-ins cannot be touched.
+
+Memory
+- The wallpaper's frames share 8 MB GPU blocks instead of one block each; the five overlay render targets only exist after an overlay opens (~18 MB); the menu asks for at most 384 MB of heap; the daemon's stack and service heap shrank; sounds decode when first played.
+
+Logs for the open questions
+- Wi-Fi, auto-sleep and the old-theme case now write everything they need into the logs. After testing, use Settings > System > Send logs to the developer.
 --pt-BR--
 
-Nove modos de exibição
-- Minus troca o modo na tela HOME; o seletor completo fica em Menu SwitchU > Opções > Modo de exibição. A Grade está sempre a um toque.
-- Flow, Shelf e Deck são fileiras 3D; Capa mostra uma capa em tela cheia por vez; XMB é a barra do PSP/PS3; Lista (Niagara) tem um cartão de detalhes com sinopse; Metro é uma parede de blocos e Y alterna o bloco entre 1x1, 2x1 e 2x2.
-- Com uma chave do SteamGridDB o scraper agora também baixa capas verticais (600x900) para as caixinhas, e o menu de arte ganha um espaço Capa.
-- Portado do OmniLaunch (ncarvalho99), sem a troca de nome, os serviços com chave dele ou papéis de parede em vídeo. Ainda não testado num console.
-
-Preenche a TV na dock
-- Na dock, o menu desenhava 720p no meio da tela com bordas pretas. A camada agora é 1920x1080 e a imagem é escalada, como no menu HOME original.
-
-Modo seguro
-- Três quedas seguidas na inicialização sobem o menu com o tema padrão, sem música e sem nada de terceiros, só em memória. Um aviso explica e oferece sair. Se o modo seguro também morrer, o console volta ao menu HOME original em vez de ficar em loop.
-
-Atualizações
-- O atualizador recusa release sem SHA-256 publicado e confere o download. Aplicar guarda uma cópia de reversão: queda de energia no meio é reparada no boot seguinte, e uma atualização ruim volta sozinha.
-
 Configurações
-- O fuso horário tem um botão Alterar com lista e busca.
-- Consoles em es-419, pt-PT, fr-CA e en-GB leem o idioma mais próximo; o espanhol está completo.
-- Falhas do SteamGridDB por relógio errado agora dizem isso.
+- O idioma do console ganhou um botão Alterar: a lista do próprio console no seletor com busca, com confirmação; vale após o próximo reinício.
+- O auto-mute do alto-falante e a saída de áudio da TV agora também aplicam na hora (audctl), além de salvar.
+- O tamanho da tela (underscan) virou um slider de verdade.
 
-Correções (dos pull requests abertos do PoloNX)
-- Plus+Minus da voz funciona sem apertar no mesmo frame; Direita nas Opções não age como A; a bateria não mostra 0 % depois do boot; o texto do tutorial não some; o Bluetooth não congela o menu; um segundo HOME volta ao jogo suspenso; o analógico anda com mais calma; os modos ordenados mantêm os blocos grandes inteiros; mover para pasta não empurra tudo; HOME sobre forwarder fecha em vez de congelar; os ícones enchem em rajada na volta rápida.
+Limpar arquivos de tema
+- Novo em Configurações > Armazenamento: oferece só pastas sem um theme.json legível, mostra nomes e tamanho total, apaga depois de confirmar. Temas válidos, o ativo e os embutidos são intocáveis.
+
+Memória
+- Os quadros do papel de parede dividem blocos de GPU de 8 MB em vez de um bloco cada; os cinco alvos de overlay só existem depois que um overlay abre (~18 MB); o menu pede no máximo 384 MB de heap; o stack e o heap de serviço do daemon encolheram; os sons decodificam no primeiro uso.
+
+Logs para as perguntas abertas
+- Wi-Fi, suspensão automática e o caso do tema antigo agora escrevem tudo o que precisam nos logs. Depois de testar, use Configurações > Sistema > Enviar logs para o desenvolvedor.
