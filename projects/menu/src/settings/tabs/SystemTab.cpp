@@ -195,7 +195,132 @@ bool setManualDateTime(
     return false;
 }
 
+std::string toLowerCopy(std::string s) {
+    for (char& c : s)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
+bool containsInsensitive(const std::string& haystack, const std::string& needle) {
+    if (needle.empty())
+        return true;
+    return toLowerCopy(haystack).find(toLowerCopy(needle)) != std::string::npos;
+}
+
+std::vector<std::string> loadAllTimezoneNames() {
+    std::vector<std::string> out;
+    s32 total = 0;
+    if (R_FAILED(timeGetTotalLocationNameCount(&total)) || total <= 0)
+        return out;
+
+    out.reserve(static_cast<size_t>(total));
+    constexpr s32 kChunk = 64;
+    TimeLocationName buf[kChunk];
+    for (s32 index = 0; index < total; ) {
+        s32 got = 0;
+        if (R_FAILED(timeLoadLocationNameList(index, buf, kChunk, &got)) || got <= 0)
+            break;
+        for (s32 i = 0; i < got; ++i) {
+            if (buf[i].name[0] != '\0')
+                out.emplace_back(buf[i].name);
+        }
+        index += got;
+    }
+    return out;
+}
+
+std::string timezoneLabel() {
+    return nxui::I18n::instance().tr("settings.system.timezone", "Timezone");
+}
+
 } // namespace
+
+namespace settings::tabs {
+
+// Timezone picker (PoloNX #131): the console's own location list, filtered by
+// a search the owner types, written with timeSetDeviceLocationName.
+void SystemTab::refreshTimezoneRowDescription(SettingsScreen& screen, const std::string& zoneName) {
+    if (screen.m_tabIndex < 0 || screen.m_tabIndex >= (int)screen.m_tabs.size())
+        return;
+    auto& items = screen.m_tabs[screen.m_tabIndex].items;
+    for (auto& item : items) {
+        if (item.label != timezoneLabel())
+            continue;
+        item.description = zoneName.empty()
+            ? nxui::I18n::instance().tr("common.na", "N/A")
+            : zoneName;
+        break;
+    }
+}
+
+void SystemTab::beginTimezoneChange(SettingsScreen& screen, const std::string& filter) {
+    auto& i18n = nxui::I18n::instance();
+    TimeLocationName current{};
+    std::string currentName;
+    if (R_SUCCEEDED(timeGetDeviceLocationName(&current)))
+        currentName = current.name;
+
+    std::vector<std::string> zones;
+    {
+        auto all = loadAllTimezoneNames();
+        zones.reserve(all.size());
+        for (const auto& zone : all) {
+            if (containsInsensitive(zone, filter))
+                zones.push_back(zone);
+        }
+    }
+    if (zones.empty()) {
+        screen.requestToast(i18n.tr(
+            "settings.system.timezone_none",
+            "No matching timezones."));
+        return;
+    }
+
+    int selected = 0;
+    for (int i = 0; i < (int)zones.size(); ++i) {
+        if (zones[i] == currentName) {
+            selected = i;
+            break;
+        }
+    }
+
+    screen.requestTimezonePicker(
+        zones,
+        selected,
+        [&screen](const std::string& chosen) {
+            auto& i18nInner = nxui::I18n::instance();
+            TimeLocationName name{};
+            std::snprintf(name.name, sizeof(name.name), "%s", chosen.c_str());
+            const Result rc = timeSetDeviceLocationName(&name);
+            DebugLog::log("[settings-time] set timezone '%s' rc=0x%X",
+                          chosen.c_str(), rc);
+            if (R_FAILED(rc)) {
+                screen.requestToast(i18nInner.tr(
+                    "settings.system.timezone_failed",
+                    "Could not change timezone."));
+                return;
+            }
+            SystemTab::refreshTimezoneRowDescription(screen, chosen);
+            screen.requestToast(i18nInner.tr(
+                "settings.system.timezone_saved",
+                "Timezone updated."));
+        },
+        [&screen]() {
+            auto& i18nInner = nxui::I18n::instance();
+            screen.requestTextEntry(
+                i18nInner.tr("settings.system.timezone_filter_title", "Filter timezones"),
+                i18nInner.tr(
+                    "settings.system.timezone_filter_guide",
+                    "Type to filter (e.g. Sao_Paulo). Leave empty for all."),
+                std::string(),
+                36,
+                [&screen](const std::string& nextFilter) {
+                    SystemTab::beginTimezoneChange(screen, nextFilter);
+                });
+        });
+}
+
+} // namespace settings::tabs
 
 SettingsScreen::Tab settings::tabs::SystemTab::build(SettingsScreen& screen) {
     using Tab = SettingsScreen::Tab;
@@ -301,11 +426,17 @@ SettingsScreen::Tab settings::tabs::SystemTab::build(SettingsScreen& screen) {
 
     {
         TimeLocationName tz{};
-        SettingItem it; it.label = i18n.tr("settings.system.timezone", "Timezone"); it.type = ItemType::Info;
+        SettingItem it;
+        it.label = timezoneLabel();
+        it.type = ItemType::Action;
+        it.buttonLabel = i18n.tr("settings.system.timezone_button", "Change");
         if (R_SUCCEEDED(timeGetDeviceLocationName(&tz)))
-            it.infoText = tz.name;
+            it.description = tz.name;
         else
-            it.infoText = i18n.tr("common.na", "N/A");
+            it.description = i18n.tr("common.na", "N/A");
+        it.onChange = [&screen](SettingItem&) {
+            SystemTab::beginTimezoneChange(screen);
+        };
         t.items.push_back(std::move(it));
     }
 
