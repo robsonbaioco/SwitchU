@@ -1814,6 +1814,22 @@ void WiiUMenuApp::handleTouch() {
 #if 1 // Upstream 1.2 HOME refreshes folder/widget activity state.
 void WiiUMenuApp::handleSystemAction(SysAction a) {
     switch (a) {
+        case SysAction::HomeDismiss: {
+            // Like the stock HOME menu: with nothing left to dismiss, HOME goes
+            // back to the suspended game instead of doing nothing (PoloNX #150).
+            // A first HOME still closes folders and overlays below.
+            const std::uint64_t suspendedId = m_launcher.suspendedTitleId();
+            if (suspendedId != 0 && m_openFolderId == 0 && !m_editMode &&
+                m_navigator.route() == switchu::navigation::Route::Home &&
+                focusRoot() == &rootBox()) {
+                const AppEntry* suspended = m_model.findByTitleId(suspendedId);
+                DebugLog::log("[pump] HomeDismiss -> resume suspended title 0x%016lX",
+                              static_cast<unsigned long>(suspendedId));
+                resumeSuspendedApplication(suspendedId, suspended ? suspended->title : std::string());
+                break;
+            }
+            [[fallthrough]];
+        }
         case SysAction::HomeButton: {
             // HOME is delivered by the daemon. While locked it is a system
             // unlock request, not ordinary HOME navigation.

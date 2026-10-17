@@ -707,6 +707,8 @@ bool WiiUMenuApp::onCreate() {
         applyMenuLayoutToPending(apps);
     });
     m_appLoader.setPrefetchIcons(!fastReturn);
+    if (fastReturn)
+        m_iconStreamer.startBurst(1.5f);
     // Catalog I/O is independent of font/GPU setup. Start it now so SD reads
     // and metadata parsing overlap with i18n, audio, and resource creation.
     m_appLoader.startAsync(m_threadPool);
@@ -2878,17 +2880,42 @@ GridModel WiiUMenuApp::buildRootFolderModel() {
             return labelA.size() < labelB.size();
         });
 
-        std::size_t next = 0;
-        for (std::size_t index = 0; index < projected.size() && next < apps.size();
-             ++index) {
-            if (reserved[index])
-                continue;
-            projected[index] = apps[next++];
+        // First fit: each application takes the first spot where its whole tile
+        // fits inside one page (PoloNX #151). Filling cells in sequence dropped a
+        // larger tile where its other cells were taken or ran off the page, and
+        // the fit check below then shrank it to 1x1. Pages are appended when the
+        // saved layout is shorter than the catalogue, rather than apps vanishing.
+        const int gridRows = std::clamp(m_config.gridRows, 2, 5);
+        auto fitsAt = [&](std::size_t index, int spanColumns, int spanRows) {
+            const int local = static_cast<int>(index % static_cast<std::size_t>(perPage));
+            if (local % columns + spanColumns > columns ||
+                local / columns + spanRows > gridRows)
+                return false;
+            for (int dy = 0; dy < spanRows; ++dy)
+                for (int dx = 0; dx < spanColumns; ++dx) {
+                    const std::size_t cell =
+                        index + static_cast<std::size_t>(dy * columns + dx);
+                    if (cell >= reserved.size() || reserved[cell]) return false;
+                }
+            return true;
+        };
+        for (const std::uint64_t id : apps) {
+            const auto& entry = entries.at(id);
+            const int spanColumns = std::clamp(entry.widgetColumns, 1, columns);
+            const int spanRows = std::clamp(entry.widgetRows, 1, gridRows);
+            for (std::size_t index = 0;; ++index) {
+                if (index >= projected.size()) {
+                    projected.resize(projected.size() + static_cast<std::size_t>(perPage), 0);
+                    reserved.resize(projected.size(), false);
+                }
+                if (!fitsAt(index, spanColumns, spanRows)) continue;
+                projected[index] = id;
+                for (int dy = 0; dy < spanRows; ++dy)
+                    for (int dx = 0; dx < spanColumns; ++dx)
+                        reserved[index + static_cast<std::size_t>(dy * columns + dx)] = true;
+                break;
+            }
         }
-        // More applications than free cells only happens if the saved layout is
-        // shorter than the catalogue; they go on the end rather than vanish.
-        for (; next < apps.size(); ++next)
-            projected.push_back(apps[next]);
         DebugLog::log("[grid] sort=%d projected=%zu apps=%zu", mode,
                       projected.size(), apps.size());
     }
@@ -4871,7 +4898,19 @@ void WiiUMenuApp::openCapturedFolder() {
         appear.fromTile  = true;
         appear.origin    = m_folderZoomOriginRect;
     }
-    applyDisplayModel(buildOpenFolderModel(m_openFolderId), m_folderOpenFocusTitleId,
+    // FocusManager::setGrid preserves the previous row/col, so opening a folder
+    // without an explicit title would land on whatever cell matched the folder
+    // tile's home placement. Default to the first title (PoloNX #133).
+    std::uint64_t openFocus = m_folderOpenFocusTitleId;
+    if (openFocus == 0) {
+        for (std::uint64_t titleId : folder->titleIds) {
+            if (titleId != 0) {
+                openFocus = titleId;
+                break;
+            }
+        }
+    }
+    applyDisplayModel(buildOpenFolderModel(m_openFolderId), openFocus,
                       zoom, appear);
     m_folderOpenFocusTitleId = 0;
     // The panel is sized from the laid-out folder grid, so place it afterwards.
@@ -7757,7 +7796,7 @@ void WiiUMenuApp::onUpdate(float dt) {
 
             switch (notif.msg) {
             case switchu::smi::MenuMessage::HomeRequest:
-                m_sysMsg.pushAction(SysAction::HomeButton);
+                m_sysMsg.pushAction(SysAction::HomeDismiss);
                 break;
             case switchu::smi::MenuMessage::ApplicationExited:
                 m_launcher.setAppRunning(false);
@@ -7924,7 +7963,7 @@ void WiiUMenuApp::onUpdate(float dt) {
         checkNewGameSteamGridDbPrompt();
     }
 
-    if (!app().input().isDown(nxui::Button::Plus) || !app().input().isDown(nxui::Button::Minus))
+    if (!app().input().isHeld(nxui::Button::Plus) || !app().input().isHeld(nxui::Button::Minus))
         m_accessibilityToggleComboHeld = false;
 
 #ifdef SWITCHU_MENU

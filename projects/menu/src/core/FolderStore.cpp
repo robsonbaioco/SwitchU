@@ -330,10 +330,14 @@ bool FolderStore::placeTitle(std::uint32_t folderId, std::uint64_t titleId,
         return true;
     }
 
-    const auto existingHole = std::find(target->titleIds.begin(),
-                                        target->titleIds.end(), 0ULL);
+    // Inbound drops (HOME or another folder) must not insert-shift like the
+    // old same-folder path: that pushed every later tile and felt like a blank
+    // was created. Place at the target index; if occupied, relocate the
+    // displaced title into the first hole or append.
     const bool targetOccupied = index < target->titleIds.size() &&
                                 target->titleIds[index] != 0;
+    const auto existingHole = std::find(target->titleIds.begin(),
+                                        target->titleIds.end(), 0ULL);
     if (targetOccupied && existingHole == target->titleIds.end() &&
         target->titleIds.size() >= maximum)
         return false;
@@ -355,25 +359,21 @@ bool FolderStore::placeTitle(std::uint32_t folderId, std::uint64_t titleId,
 
     if (index >= target->titleIds.size())
         target->titleIds.resize(index + 1, 0);
-    if (target->titleIds[index] == 0) {
-        target->titleIds[index] = titleId;
-    } else if (existingHole == target->titleIds.end()) {
-        target->titleIds.insert(target->titleIds.begin() + static_cast<std::ptrdiff_t>(index),
-                                titleId);
-    } else {
-        const std::size_t holeIndex = static_cast<std::size_t>(
-            existingHole - target->titleIds.begin());
-        if (holeIndex > index) {
-            std::move_backward(target->titleIds.begin() + static_cast<std::ptrdiff_t>(index),
-                               target->titleIds.begin() + static_cast<std::ptrdiff_t>(holeIndex),
-                               target->titleIds.begin() + static_cast<std::ptrdiff_t>(holeIndex + 1));
+
+    const std::uint64_t displaced = target->titleIds[index];
+    target->titleIds[index] = titleId;
+    if (displaced != 0) {
+        auto hole = std::find(target->titleIds.begin(), target->titleIds.end(), 0ULL);
+        if (hole != target->titleIds.end()) {
+            *hole = displaced;
+        } else if (target->titleIds.size() < maximum) {
+            target->titleIds.push_back(displaced);
         } else {
-            std::move(target->titleIds.begin() + static_cast<std::ptrdiff_t>(holeIndex + 1),
-                      target->titleIds.begin() + static_cast<std::ptrdiff_t>(index + 1),
-                      target->titleIds.begin() + static_cast<std::ptrdiff_t>(holeIndex));
+            target->titleIds[index] = displaced;
+            return false;
         }
-        target->titleIds[index] = titleId;
     }
+    trimTrailingHoles(target->titleIds);
     return true;
 }
 
