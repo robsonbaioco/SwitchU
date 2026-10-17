@@ -18,7 +18,7 @@ add_rules("mode.debug", "mode.release")
 --
 -- What it is built from has its own line on the About screen, fed by
 -- upstream_version below, which is where that belongs.
-local version = "2.10.0"
+local version = "2.11.0"
 -- The PoloNX release this fork descends from. Shown as "Based on", never as
 -- our own version.
 local upstream_version = "1.2.0"
@@ -101,11 +101,13 @@ target("nxui")
         add_defines("NXUI_BACKEND_SDL2", {public = true})
         add_files("lib/nxui/src/core/GpuDevice_sdl2.cpp")
         add_files("lib/nxui/src/core/Renderer_sdl2.cpp")
+        add_files("lib/nxui/src/core/Renderer_quad3d.cpp")
         add_files("lib/nxui/src/core/Texture_sdl2.cpp")
     else
         add_defines("NXUI_BACKEND_DEKO3D", {public = true})
         add_files("lib/nxui/src/core/GpuDevice.cpp")
         add_files("lib/nxui/src/core/Renderer.cpp")
+        add_files("lib/nxui/src/core/Renderer_quad3d.cpp")
         add_files("lib/nxui/src/core/Texture.cpp")
     end
 

@@ -44,10 +44,18 @@
 - Animated in the Wii U manner: tiles wiggle while one is being moved and the
   moved icon glides into place, folders zoom out of their tile and back into it,
   and page changes and the switch to the single-row view are animated.
-- **A single-row view** on **−**: one large icon with its neighbours either
+- **Nine views** cycled on **−** (full selector in SwitchU Menu > Options):
+  the grid; a **single-row view** — one large icon with its neighbours either
   side, the game's hero art filling the screen behind it and its logo above the
-  row. It is a carousel — it wraps in both directions, skips empty slots, and
-  repeats while ZL, ZR or the d-pad is held.
+  row, a carousel that wraps in both directions, skips empty slots, and repeats
+  while ZL, ZR or the d-pad is held; **Flow**, **Shelf** and **Deck**, three 3D
+  rows of game cases that wear SteamGridDB vertical covers when a personal API
+  key is set; **Cover**, one fullscreen cover at a time; **XMB**, the PSP/PS3
+  cross-media bar; **List (Niagara)**, a vertical list with a details card and
+  a synopsis from the nlib API; and **Metro**, a live-tile wall where **Y**
+  cycles a tile between 1×1, 2×1 and 2×2. Ported from
+  [OmniLaunch](https://github.com/ncarvalho99/omnilaunch), untested on a
+  console as of 2.11.0.
 - Sorting on **R**: your own arrangement, A–Z, recently played,
   **favorites** first, and **most played**, ordered by the play time the
   console itself records. In the most
@@ -299,13 +307,20 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.10.0. Each one is tracked as an issue with what is known so far and what
+As of 2.11.0. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
 
+- **Nothing in 2.11.0 has been tested on a console yet.** The nine launcher
+  views, the full-screen image when docked, safe mode, the update rollback and
+  the PoloNX fixes all compile and follow the sources they were ported from,
+  but none of them has run on hardware. The Grid view is always one Minus
+  press away if a view misbehaves, and safe mode itself is the recovery if the
+  menu stops starting.
 - **Parts of Settings are read-only or missing**
-  ([#1](https://github.com/robsonbaioco/SwitchU/issues/1)). The timezone and the
-  console language can be seen but not changed, and the TV audio format is saved
-  without being applied until the next boot. Users, parental controls, data
+  ([#1](https://github.com/robsonbaioco/SwitchU/issues/1)). The console
+  language can be seen but not changed, and the TV audio format is saved
+  without being applied until the next boot. The timezone is editable from
+  2.11.0. Users, parental controls, data
   management, system update and the connection test are not there at all. There
   is no shortcut for them either: on a retail console the stock System Settings
   live inside the HOME menu that SwitchU replaces, so each one has to be built

@@ -1,18 +1,46 @@
-Logs
-- New in Settings > System: Send logs to the developer. It asks first, then sends the SwitchU logs over the internet.
+Nine launcher views
+- Minus cycles the view on the HOME screen; the full selector is in SwitchU Menu > Options > Launcher View. Grid is always one press away.
+- Flow, Shelf and Deck are 3D rows; Cover shows one fullscreen cover at a time; XMB is the PSP/PS3 bar; List (Niagara) adds a details card with a synopsis; Metro is a tile wall and Y cycles a tile between 1x1, 2x1 and 2x2.
+- With a SteamGridDB API key the scraper now also fetches vertical covers (600x900) for the cases, and the artwork menu gains a Cover slot.
+- Ported from OmniLaunch (ncarvalho99), without the rename, his key-locked services or video wallpapers. Not yet tested on a console.
 
-Single-row view
-- Profiles no longer overlap the buttons at the top; with six or more accounts the avatars shrink to fit.
+Fills the TV when docked
+- Docked, the menu drew 720p in the middle of the screen with black borders. The layer is now 1920x1080 and the image is scaled, like the stock HOME menu.
 
-Performance
-- The daemon asks for normal performance again when an application closes, for a menu that came back slow.
+Safe mode
+- Three start-up crashes in a row start the menu with the built-in theme, no music and nothing third-party, in memory only. A dialog explains it and offers to leave. If safe mode itself keeps dying, the console goes back to the stock HOME menu instead of looping.
+
+Updates
+- The updater refuses a release without a published SHA-256 and verifies the download. Applying keeps a rollback copy: a power cut mid-update is repaired at the next boot, and a bad update rolls back by itself.
+
+Settings
+- Timezone has a Change button with a searchable list.
+- es-419, pt-PT, fr-CA and en-GB consoles read the closest shipped language; Spanish is complete.
+- SteamGridDB failures caused by a wrong clock now say so.
+
+Fixes (from the open PoloNX pull requests)
+- Plus+Minus voice toggle works without a same-frame press; Right in Options no longer acts like A; the battery no longer shows 0 % right after boot; the tutorial text no longer disappears; Bluetooth no longer freezes the menu; a second HOME resumes the suspended game; the stick navigates more calmly; sorted views keep large tiles whole; folder drops no longer shift everything; HOME over a forwarder closes it instead of freezing; icons fill in a burst after a fast return.
 --pt-BR--
 
-Logs
-- Novo em Configurações > Sistema: Enviar logs para o desenvolvedor. Ele pergunta antes e então envia os logs do SwitchU pela internet.
+Nove modos de exibição
+- Minus troca o modo na tela HOME; o seletor completo fica em Menu SwitchU > Opções > Modo de exibição. A Grade está sempre a um toque.
+- Flow, Shelf e Deck são fileiras 3D; Capa mostra uma capa em tela cheia por vez; XMB é a barra do PSP/PS3; Lista (Niagara) tem um cartão de detalhes com sinopse; Metro é uma parede de blocos e Y alterna o bloco entre 1x1, 2x1 e 2x2.
+- Com uma chave do SteamGridDB o scraper agora também baixa capas verticais (600x900) para as caixinhas, e o menu de arte ganha um espaço Capa.
+- Portado do OmniLaunch (ncarvalho99), sem a troca de nome, os serviços com chave dele ou papéis de parede em vídeo. Ainda não testado num console.
 
-Modo linha
-- Os perfis não ficam mais em cima dos botões do topo; com seis contas ou mais os avatares diminuem para caber.
+Preenche a TV na dock
+- Na dock, o menu desenhava 720p no meio da tela com bordas pretas. A camada agora é 1920x1080 e a imagem é escalada, como no menu HOME original.
 
-Desempenho
-- O daemon volta a pedir o desempenho normal quando um aplicativo fecha, para o menu que voltava lento.
+Modo seguro
+- Três quedas seguidas na inicialização sobem o menu com o tema padrão, sem música e sem nada de terceiros, só em memória. Um aviso explica e oferece sair. Se o modo seguro também morrer, o console volta ao menu HOME original em vez de ficar em loop.
+
+Atualizações
+- O atualizador recusa release sem SHA-256 publicado e confere o download. Aplicar guarda uma cópia de reversão: queda de energia no meio é reparada no boot seguinte, e uma atualização ruim volta sozinha.
+
+Configurações
+- O fuso horário tem um botão Alterar com lista e busca.
+- Consoles em es-419, pt-PT, fr-CA e en-GB leem o idioma mais próximo; o espanhol está completo.
+- Falhas do SteamGridDB por relógio errado agora dizem isso.
+
+Correções (dos pull requests abertos do PoloNX)
+- Plus+Minus da voz funciona sem apertar no mesmo frame; Direita nas Opções não age como A; a bateria não mostra 0 % depois do boot; o texto do tutorial não some; o Bluetooth não congela o menu; um segundo HOME volta ao jogo suspenso; o analógico anda com mais calma; os modos ordenados mantêm os blocos grandes inteiros; mover para pasta não empurra tudo; HOME sobre forwarder fecha em vez de congelar; os ícones enchem em rajada na volta rápida.
