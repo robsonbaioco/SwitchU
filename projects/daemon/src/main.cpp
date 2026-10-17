@@ -1104,6 +1104,23 @@ static void openMenuFromHome(const char* source) {
             switchu::FileLog::log("[%s] HOME aborted: foreground request failed", source);
             return;
         }
+        // A forwarder (homebrew wrapped as an application, title id outside the
+        // retail 0x01... range) left suspended can keep the menu applet from
+        // coming up, freezing the console on its last frame (PoloNX #161). Close
+        // it instead of suspending it; forwarders often ignore RequestExit, so the
+        // graceful wait is short. The cold menu comes up from the exit path.
+        const uint64_t runningId = daemon::app::suspendedTitleId();
+        const uint8_t idClass = static_cast<uint8_t>(runningId >> 56);
+        if (runningId != 0 && idClass != 0x01 && idClass != 0x04) {
+            switchu::FileLog::log("[%s] HOME over forwarder 0x%016lX: closing it instead of suspending",
+                                  source, runningId);
+            const Result closeRc = daemon::app::beginTerminateWithin(2'000'000'000ULL);
+            switchu::FileLog::log("[%s] forwarder close rc=0x%X", source, closeRc);
+            if (R_SUCCEEDED(closeRc)) {
+                logHomeState(source, "after");
+                return;
+            }
+        }
         const auto status = buildSystemStatus(smi::MenuTransitionReason::HomeRequest,
                                               homeTick);
         switchu::FileLog::log("[%s] HOME launching MainMenu status.running=%d suspended=0x%016lX",
@@ -2303,7 +2320,10 @@ static void mainLoop() {
                              (uint32_t)g_eventGcMountRc.load());
         }
     }
-    if (g_batteryRefreshPending.exchange(false)) {
+    // Keep the request until a menu is actually there to receive it: consuming
+    // it earlier left a freshly started menu showing 0 % with no charge icon.
+    if (g_batteryRefreshPending.load() && daemon::menu_la::isActive()) {
+        g_batteryRefreshPending.store(false);
         pushBatteryStatusNotification(true);
         g_batteryPollCountdown = 50;
     } else if (daemon::menu_la::isActive()) {
