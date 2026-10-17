@@ -1142,5 +1142,11 @@
     "hint_shortcut": "Registro",
     "hint_step": "Cambia data",
     "hint_today": "Oggi"
+  },
+  "safemode": {
+    "title": "Modalità provvisoria",
+    "body": "Il menu si è chiuso in modo imprevisto più volte all’avvio, quindi è in esecuzione con il tema integrato, senza sfondo video e senza musica. Il tuo tema e le tue impostazioni non sono stati modificati. Rimuovi o sostituisci il tema che ha causato il problema, poi esci dalla modalità provvisoria.",
+    "stay": "Resta in modalità provvisoria",
+    "leave": "Esci dalla modalità provvisoria (riavvia)"
   }
 }

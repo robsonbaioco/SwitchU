@@ -2033,6 +2033,16 @@ void WiiUMenuApp::createGameDetails() {
 
 void WiiUMenuApp::reloadThemePresets() {
     m_allPresets = ThemePreset::builtInPresets();
+    if (m_config.safeMode()) {
+        // Boot-guard safe mode: only the two shipped defaults. A user or package
+        // theme (and any video or audio it names) is exactly what may have been
+        // crashing the menu, so it is not even parsed. Nothing on the card changes.
+        m_allPresets.erase(std::remove_if(m_allPresets.begin(), m_allPresets.end(),
+            [](const ThemePreset& p) { return p.name != "Default Dark" && p.name != "Default Light"; }),
+            m_allPresets.end());
+        DebugLog::log("[safe-mode] presets limited to the built-in defaults (%zu)", m_allPresets.size());
+        return;
+    }
     auto userPresets = ThemePreset::loadUserPresets();
     auto installedPackages = ThemePreset::loadInstalledPackages();
     m_allPresets.insert(m_allPresets.end(), userPresets.begin(), userPresets.end());
@@ -2620,7 +2630,7 @@ void WiiUMenuApp::applyThemeResources(const ThemePreset& preset) {
     // musica ao preset, e isso tem de estar resolvido antes de changeSoundPreset
     // ser disparado, porque ele carrega em outra thread e le este valor.
     m_themeMusicTracks.clear();
-    if (!preset.music.empty()) {
+    if (!preset.music.empty() && !m_config.safeMode()) {
         for (const auto& track : preset.music) {
             std::string path = resolveThemeAssetPath(preset, track);
             std::error_code ec;

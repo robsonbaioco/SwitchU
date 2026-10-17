@@ -1260,5 +1260,11 @@
       "off": "Desligado"
     },
     "title": "Tema automático"
+  },
+  "safemode": {
+    "title": "Modo seguro",
+    "body": "O menu parou de forma inesperada várias vezes ao iniciar, então está rodando com o tema padrão, sem papel de parede em vídeo e sem música. Seu tema e suas configurações não foram alterados. Remova ou troque o tema que causou isso e depois saia do modo seguro.",
+    "stay": "Continuar no modo seguro",
+    "leave": "Sair do modo seguro (reiniciar)"
   }
 }

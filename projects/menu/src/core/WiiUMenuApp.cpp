@@ -398,6 +398,8 @@ void WiiUMenuApp::setStartupConfig(const AppConfig& config) {
 void WiiUMenuApp::setStartupStatus(const switchu::smi::SystemStatus& status) {
     m_launcher.setStartupStatus(status.suspended_app_id, status.app_running);
     m_transitionOriginTick = status.transition_origin_tick;
+    m_safeModeRequested = (status.boot_flags & switchu::smi::kStatusFlagSafeMode) != 0;
+    m_safeModeNotice = (status.boot_flags & switchu::smi::kStatusFlagSafeModeNotice) != 0;
 }
 
 void WiiUMenuApp::setMenuMainTrace(uint64_t tick, uint32_t core) {
@@ -671,6 +673,15 @@ bool WiiUMenuApp::onCreate() {
     m_iconStreamer.setThreadPool(&m_threadPool);
     if (!m_startupConfigProvided)
         m_config.load();
+#ifdef SWITCHU_MENU
+    if (m_safeModeRequested) {
+        // Repeated start-up crashes: run this session on the built-in theme with
+        // no video wallpaper, no music and no third-party assets. In memory only;
+        // config.json keeps the player's choices (AppConfig::save restores them).
+        m_config.enterSafeMode();
+        DebugLog::log("[safe-mode] active: built-in theme, no music, no video wallpaper");
+    }
+#endif
     // Before the catalogue starts: composeRootPending() reads it.
     m_titleNames.load();
     const bool fastReturn = m_launcher.suspendedTitleId() != 0;
@@ -700,8 +711,12 @@ bool WiiUMenuApp::onCreate() {
     normalizeWidgetPlacements();
     if (m_widgetStore.recentActivity().titleId != 0) {
         refreshRecentActivityDuration();
-        if (!m_widgetStore.save())
-            DebugLog::log("[widgets] recent activity duration could not be saved");
+        // Saving synchronously sat on the start-up path (OmniLaunch 4eeaafe).
+        auto storeCopy = m_widgetStore;
+        m_threadPool.submit([storeCopy = std::move(storeCopy)]() {
+            if (!storeCopy.save())
+                DebugLog::log("[widgets] recent activity duration could not be saved");
+        });
     }
     m_appLoader.setPendingTransform([this](std::vector<PendingApp>& apps) {
         applyMenuLayoutToPending(apps);
@@ -5832,6 +5847,7 @@ void WiiUMenuApp::buildGrid() {
     }
 
     std::vector<std::shared_ptr<GlossyIcon>> icons;
+    icons.reserve(static_cast<size_t>(m_model.count()));
     for (int i = 0; i < m_model.count(); ++i)
         icons.push_back(makeIcon(m_model.at(i)));
 
@@ -6121,7 +6137,10 @@ void WiiUMenuApp::buildGrid() {
                                resolveThemeAssetPath(m_effectivePreset, m_effectivePreset.icons.basePath));
     }
 
-    // Prefetch activity log data in background so opening it is instantaneous
+    // Prefetch activity log data in background so opening it is instantaneous.
+    // On fast return, skip it: pdm queries contend with the daemon catalog sync
+    // (OmniLaunch 4eeaafe); the log refreshes when it is opened.
+    if (!m_fastReturnRequested)
     m_threadPool.submit([this]() {
         std::vector<std::pair<std::uint64_t, std::string>> installed;
         if (!m_allApps.empty()) {
@@ -6591,6 +6610,8 @@ void WiiUMenuApp::loadSoundPreset(const std::string& preset) {
 constexpr const char* kCustomMusicDir = "sdmc:/config/SwitchU/music";
 
 std::vector<TrackInfo> WiiUMenuApp::scanCustomBgmTracks() {
+    if (m_config.safeMode())   // boot-guard safe mode: no third-party audio
+        return {};
     std::vector<TrackInfo> tracks;
     std::error_code ec;
     std::filesystem::create_directories(kCustomMusicDir, ec);
@@ -7710,6 +7731,32 @@ void WiiUMenuApp::onUpdate(float dt) {
     syncThemePackageTransfer();
     syncGameArtworkSave();
 
+#ifdef SWITCHU_MENU
+    // Safe mode explains itself once per boot, after the first frames so it
+    // never competes with start-up. The player can stay, or leave: leaving
+    // restarts into a normal start with their saved theme.
+    if (m_safeModeNotice && m_dialog && !m_dialog->isActive() && !m_lockScreen.isLocked()) {
+        if (++m_safeModeNoticeFrames >= 90) {
+            m_safeModeNotice = false;
+            auto& i18n = nxui::I18n::instance();
+            m_dialogReturnFocus = focusManager().current();
+            m_dialog->show(
+                i18n.tr("safemode.title", "Safe mode"),
+                i18n.tr("safemode.body",
+                        "The menu stopped unexpectedly several times while starting, so it is running "
+                        "with the built-in theme, no video wallpaper and no music. Your theme and settings "
+                        "were not changed. Remove or replace the theme that caused this, then leave safe mode."),
+                {
+                    {i18n.tr("safemode.stay", "Stay in safe mode"), {}, true},
+                    {i18n.tr("safemode.leave", "Leave safe mode (restart)"), [this]() {
+                        const Result rc = m_launcher.leaveSafeMode();
+                        DebugLog::log("[safe-mode] leave request rc=0x%X", rc);
+                    }, true},
+                });
+            focusManager().setFocus(m_dialog.get());
+        }
+    }
+#endif
     if (m_deferredInitialAssetFrames > 0) {
         --m_deferredInitialAssetFrames;
         if (m_deferredInitialAssetFrames == 0) {

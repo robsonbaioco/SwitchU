@@ -1142,5 +1142,11 @@
     "hint_shortcut": "Aktivitätslog",
     "hint_step": "Datum ändern",
     "hint_today": "Heute"
+  },
+  "safemode": {
+    "title": "Abgesicherter Modus",
+    "body": "Das Menü wurde beim Start mehrmals unerwartet beendet und läuft deshalb mit dem integrierten Design, ohne Video-Hintergrund und ohne Musik. Dein Design und deine Einstellungen wurden nicht verändert. Entferne oder ersetze das verursachende Design und verlasse dann den abgesicherten Modus.",
+    "stay": "Im abgesicherten Modus bleiben",
+    "leave": "Abgesicherten Modus verlassen (Neustart)"
   }
 }

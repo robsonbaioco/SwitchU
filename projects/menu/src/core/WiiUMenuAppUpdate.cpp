@@ -10,6 +10,10 @@
 #include "themeshop/ThemeHttp.hpp"
 #include "themeshop/ZipReader.hpp"
 #include <switchu/sd_commit.hpp>
+#include <switchu/install_txn.hpp>
+#ifdef __SWITCH__
+#include <switch.h>
+#endif
 #include "core/DebugLog.hpp"
 
 #include <nxui/core/I18n.hpp>
@@ -27,6 +31,38 @@
 #endif
 
 namespace {
+
+// SHA-256 of a file, read in chunks. Empty when the file cannot be read (and on
+// hosts without libnx, where updates are not applied anyway).
+std::string fileSha256Hex(const char* path) {
+#ifdef __SWITCH__
+    std::FILE* f = std::fopen(path, "rb");
+    if (!f)
+        return {};
+    Sha256Context ctx;
+    sha256ContextCreate(&ctx);
+    static unsigned char buf[64 * 1024];
+    std::size_t n;
+    while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0)
+        sha256ContextUpdate(&ctx, buf, n);
+    const bool readOk = std::ferror(f) == 0;
+    std::fclose(f);
+    if (!readOk)
+        return {};
+    std::uint8_t digest[SHA256_HASH_SIZE];
+    sha256ContextGetHash(&ctx, digest);
+    static const char hex[] = "0123456789abcdef";
+    std::string out;
+    for (std::uint8_t b : digest) {
+        out.push_back(hex[b >> 4]);
+        out.push_back(hex[b & 0x0f]);
+    }
+    return out;
+#else
+    (void)path;
+    return {};
+#endif
+}
 
 constexpr const char* kUpdateDir = "sdmc:/config/SwitchU/update";
 constexpr const char* kUpdateArchive = "sdmc:/config/SwitchU/update/update.zip";
@@ -311,6 +347,20 @@ void WiiUMenuApp::startUpdateDownload(const update::UpdateClient::Release& relea
             if (shared->release.sizeBytes && written != shared->release.sizeBytes)
                 throw std::runtime_error("download size did not match the release");
 
+            // Verify the whole archive before creating the ready marker or
+            // replacing the daemon. Missing or malformed release digests are
+            // refused when the release is parsed. A digest from the same HTTPS
+            // API response protects against a corrupt/swapped download, not a
+            // compromised publisher or release metadata.
+            if (shared->release.sha256.empty())
+                throw std::runtime_error("release has no published SHA-256 checksum");
+            const std::string actual = fileSha256Hex(kUpdateArchive);
+            if (actual != shared->release.sha256) {
+                DebugLog::log("[update] SHA-256 mismatch");
+                throw std::runtime_error("download did not match the published checksum");
+            }
+            DebugLog::log("[update] SHA-256 verified");
+
             {
                 std::lock_guard<std::mutex> lock(shared->mutex);
                 shared->extracting = true;
@@ -362,10 +412,35 @@ void WiiUMenuApp::startUpdateDownload(const update::UpdateClient::Release& relea
             // it. If any of this fails the marker is simply not written, and
             // the daemon falls back to applying everything and restarting once
             // more by itself.
+            switchu::install_txn::Txn daemonTxn(switchu::install_txn::kUpdateBackupRoot, kCardRoot);
             themeshop::ZipExtractPolicy daemonOnly = policy;
             daemonOnly.onlyRoots = {"atmosphere/"};
-            const auto daemonApply = themeshop::extractZipFile(
-                kUpdateArchive, kCardRoot, {}, daemonOnly);
+            themeshop::ZipExtractResult daemonApply;
+            // An earlier pass or rollback that was cut short is the daemon's to
+            // resolve at boot; this thread never undoes or builds on it. A held
+            // backup of a finished update is simply extended by a new pass.
+            const bool blocked =
+                switchu::install_txn::interrupted(switchu::install_txn::kUpdateBackupRoot);
+            const bool journalOk = !blocked && daemonTxn.begin();
+            if (!journalOk) {
+                // No journal means no way to undo: replace nothing from here. The boot
+                // that applies the rest does it, under its own journal.
+                daemonApply.success = false;
+                daemonApply.error = blocked ? "an earlier update pass is waiting for recovery"
+                                            : "could not open the rollback journal";
+            } else {
+                daemonOnly.txn = &daemonTxn;
+                daemonApply = themeshop::extractZipFile(kUpdateArchive, kCardRoot, {}, daemonOnly);
+                if (daemonApply.success && !daemonTxn.completePass())
+                    daemonApply.success = false;
+            }
+            if (journalOk && !daemonApply.success) {
+                std::string failed;
+                const bool restored = switchu::install_txn::rollback(
+                    switchu::install_txn::kUpdateBackupRoot, kCardRoot, &failed);
+                DebugLog::log("[update] daemon half failed (%s); rolled back (%s)",
+                              daemonApply.error.c_str(), restored ? "ok" : failed.c_str());
+            }
             if (daemonApply.success) {
                 switchu::commitSdCard("update daemon in place");
                 if (std::FILE* marker = std::fopen(kDaemonMarker, "wb")) {

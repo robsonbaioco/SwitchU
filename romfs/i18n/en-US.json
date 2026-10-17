@@ -1224,5 +1224,11 @@
     "hint_shortcut": "Daily Log",
     "hint_step": "Change Date",
     "hint_today": "Today"
+  },
+  "safemode": {
+    "title": "Safe mode",
+    "body": "The menu stopped unexpectedly several times while starting, so it is running with the built-in theme, no video wallpaper and no music. Your theme and settings were not changed. Remove or replace the theme that caused this, then leave safe mode.",
+    "stay": "Stay in safe mode",
+    "leave": "Leave safe mode (restart)"
   }
 }

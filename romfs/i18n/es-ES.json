@@ -1191,5 +1191,11 @@
       "off": "Desactivado"
     },
     "title": "Tema automático"
+  },
+  "safemode": {
+    "title": "Modo seguro",
+    "body": "El menú se cerró de forma inesperada varias veces al iniciar, así que se está ejecutando con el tema integrado, sin fondo de vídeo y sin música. Tu tema y tus ajustes no se han cambiado. Quita o sustituye el tema que lo causó y luego sal del modo seguro.",
+    "stay": "Seguir en modo seguro",
+    "leave": "Salir del modo seguro (reiniciar)"
   }
 }

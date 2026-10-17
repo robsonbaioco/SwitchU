@@ -1142,5 +1142,11 @@
     "hint_shortcut": "Logboek",
     "hint_step": "Datum wijzigen",
     "hint_today": "Vandaag"
+  },
+  "safemode": {
+    "title": "Veilige modus",
+    "body": "Het menu stopte bij het opstarten meerdere keren onverwacht en draait daarom met het ingebouwde thema, zonder videoachtergrond en zonder muziek. Je thema en instellingen zijn niet gewijzigd. Verwijder of vervang het thema dat dit veroorzaakte en verlaat daarna de veilige modus.",
+    "stay": "In veilige modus blijven",
+    "leave": "Veilige modus verlaten (herstarten)"
   }
 }

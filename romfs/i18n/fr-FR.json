@@ -1142,5 +1142,11 @@
     "hint_shortcut": "Journal",
     "hint_step": "Changer date",
     "hint_today": "Aujourd'hui"
+  },
+  "safemode": {
+    "title": "Mode sans échec",
+    "body": "Le menu s’est arrêté de façon inattendue plusieurs fois au démarrage ; il tourne donc avec le thème intégré, sans fond d’écran vidéo ni musique. Votre thème et vos réglages n’ont pas été modifiés. Retirez ou remplacez le thème en cause, puis quittez le mode sans échec.",
+    "stay": "Rester en mode sans échec",
+    "leave": "Quitter le mode sans échec (redémarrer)"
   }
 }
