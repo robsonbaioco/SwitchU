@@ -299,7 +299,11 @@
       "timezone_popup_hint": "Links voor Zoeken. Omhoog/omlaag om te kiezen. A om te bevestigen.",
       "timezone_none": "Geen overeenkomende tijdzones.",
       "timezone_failed": "Tijdzone kon niet worden gewijzigd.",
-      "timezone_saved": "Tijdzone bijgewerkt."
+      "timezone_saved": "Tijdzone bijgewerkt.",
+      "language_confirm_title": "Consoletaal wijzigen?",
+      "language_restart": "De consoletaal verandert na de volgende herstart.",
+      "language_failed": "De consoletaal kon niet worden gewijzigd.",
+      "language_saved": "Opgeslagen. Herstart de console om het toe te passen."
     },
     "accessibility": {
       "voice": "Spraak",
@@ -537,7 +541,15 @@
       "delete": "Verwijderen",
       "manage_title": "Software beheren",
       "title_id": "Titel-ID",
-      "homebrew_library_unavailable": "Beheer van geïnstalleerde software is niet beschikbaar in homebrew-modus."
+      "homebrew_library_unavailable": "Beheer van geïnstalleerde software is niet beschikbaar in homebrew-modus.",
+      "theme_cleanup": "Themabestanden opruimen",
+      "theme_cleanup_desc": "Verwijdert themamappen die geen leesbaar thema meer bevatten. Vraagt eerst.",
+      "theme_cleanup_button": "Scannen",
+      "theme_cleanup_none": "Geen achtergebleven themabestanden gevonden.",
+      "theme_cleanup_confirm_title": "Themabestanden opruimen?",
+      "theme_cleanup_confirm": "Deze mappen bevatten geen leesbaar thema. Verwijderen?",
+      "theme_cleanup_done": "Achtergebleven themabestanden verwijderd.",
+      "theme_cleanup_failed": "Sommige bestanden konden niet worden verwijderd."
     },
     "about": {
       "version": "Versie",

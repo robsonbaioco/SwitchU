@@ -299,7 +299,11 @@
       "timezone_popup_hint": "Влево — поиск. Вверх/вниз — выбор. A — подтвердить.",
       "timezone_none": "Подходящих часовых поясов нет.",
       "timezone_failed": "Не удалось изменить часовой пояс.",
-      "timezone_saved": "Часовой пояс обновлён."
+      "timezone_saved": "Часовой пояс обновлён.",
+      "language_confirm_title": "Сменить язык консоли?",
+      "language_restart": "Язык консоли изменится после следующей перезагрузки.",
+      "language_failed": "Не удалось сменить язык консоли.",
+      "language_saved": "Сохранено. Перезапустите консоль, чтобы применить."
     },
     "accessibility": {
       "voice": "Озвучивание",
@@ -537,7 +541,15 @@
       "delete": "Удалить",
       "manage_title": "Управление ПО",
       "title_id": "ID игры",
-      "homebrew_library_unavailable": "Управление установленным ПО недоступно в режиме homebrew."
+      "homebrew_library_unavailable": "Управление установленным ПО недоступно в режиме homebrew.",
+      "theme_cleanup": "Очистить файлы тем",
+      "theme_cleanup_desc": "Удаляет папки тем, в которых больше нет читаемой темы. Сначала спрашивает.",
+      "theme_cleanup_button": "Проверить",
+      "theme_cleanup_none": "Остатков тем не найдено.",
+      "theme_cleanup_confirm_title": "Очистить файлы тем?",
+      "theme_cleanup_confirm": "В этих папках нет читаемой темы. Удалить их?",
+      "theme_cleanup_done": "Остатки тем удалены.",
+      "theme_cleanup_failed": "Некоторые файлы удалить не удалось."
     },
     "about": {
       "version": "Версия",

@@ -299,7 +299,11 @@
       "timezone_popup_hint": "Gauche pour Rechercher. Haut/bas pour choisir. A pour valider.",
       "timezone_none": "Aucun fuseau horaire ne correspond.",
       "timezone_failed": "Impossible de changer le fuseau horaire.",
-      "timezone_saved": "Fuseau horaire mis à jour."
+      "timezone_saved": "Fuseau horaire mis à jour.",
+      "language_confirm_title": "Changer la langue de la console ?",
+      "language_restart": "La langue de la console change après le prochain redémarrage.",
+      "language_failed": "Impossible de changer la langue de la console.",
+      "language_saved": "Enregistré. Redémarrez la console pour l’appliquer."
     },
     "accessibility": {
       "voice": "Lecture vocale",
@@ -537,7 +541,15 @@
       "delete": "Supprimer",
       "manage_title": "Gérer les logiciels",
       "title_id": "ID du titre",
-      "homebrew_library_unavailable": "La gestion des logiciels installés est indisponible en mode homebrew."
+      "homebrew_library_unavailable": "La gestion des logiciels installés est indisponible en mode homebrew.",
+      "theme_cleanup": "Nettoyer les fichiers de thèmes",
+      "theme_cleanup_desc": "Supprime les dossiers de thèmes qui ne contiennent plus de thème lisible. Demande d’abord.",
+      "theme_cleanup_button": "Analyser",
+      "theme_cleanup_none": "Aucun reste de thème trouvé.",
+      "theme_cleanup_confirm_title": "Nettoyer les fichiers de thèmes ?",
+      "theme_cleanup_confirm": "Ces dossiers ne contiennent aucun thème lisible. Les supprimer ?",
+      "theme_cleanup_done": "Restes de thèmes supprimés.",
+      "theme_cleanup_failed": "Certains fichiers n’ont pas pu être supprimés."
     },
     "about": {
       "version": "Version",

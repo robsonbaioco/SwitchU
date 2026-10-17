@@ -299,7 +299,11 @@
       "timezone_popup_hint": "Sinistra per Cerca. Su/giù per scegliere. A per confermare.",
       "timezone_none": "Nessun fuso orario corrispondente.",
       "timezone_failed": "Impossibile cambiare il fuso orario.",
-      "timezone_saved": "Fuso orario aggiornato."
+      "timezone_saved": "Fuso orario aggiornato.",
+      "language_confirm_title": "Cambiare la lingua della console?",
+      "language_restart": "La lingua della console cambia dopo il prossimo riavvio.",
+      "language_failed": "Impossibile cambiare la lingua della console.",
+      "language_saved": "Salvato. Riavvia la console per applicarla."
     },
     "accessibility": {
       "voice": "Lettura vocale",
@@ -537,7 +541,15 @@
       "delete": "Elimina",
       "manage_title": "Gestisci software",
       "title_id": "ID del titolo",
-      "homebrew_library_unavailable": "La gestione del software installato non è disponibile in modalità homebrew."
+      "homebrew_library_unavailable": "La gestione del software installato non è disponibile in modalità homebrew.",
+      "theme_cleanup": "Pulisci i file dei temi",
+      "theme_cleanup_desc": "Rimuove le cartelle dei temi che non contengono più un tema leggibile. Chiede prima.",
+      "theme_cleanup_button": "Analizza",
+      "theme_cleanup_none": "Nessun residuo di tema trovato.",
+      "theme_cleanup_confirm_title": "Pulire i file dei temi?",
+      "theme_cleanup_confirm": "Queste cartelle non contengono un tema leggibile. Eliminarle?",
+      "theme_cleanup_done": "Residui dei temi rimossi.",
+      "theme_cleanup_failed": "Alcuni file non sono stati rimossi."
     },
     "about": {
       "version": "Versione",

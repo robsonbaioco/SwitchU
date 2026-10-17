@@ -72,9 +72,11 @@ namespace {
 // primeira tentativa -- ou seja, ela parava de pedir antes de o sistema recusar.
 // Nao ha custo em tentar: svcSetHeapSize devolve erro e o degrau seguinte entra.
 // Quanto o sistema concede de fato aparece no log como "heap concedido".
+// O topo caiu de 416 para 384 (issue #2 item 2, mesmo corte do OmniLaunch):
+// os ~32 MB que o menu deixava de pegar ficam no pool de applets para o
+// sistema, e nenhum tema medido chegou perto do orcamento de imagem no teto
+// antigo. O log "heap concedido" continua dizendo o que o console deu.
 constexpr size_t kHeapLadder[] = {
-    416u * 1024u * 1024u,
-    400u * 1024u * 1024u,
     384u * 1024u * 1024u,
     368u * 1024u * 1024u,
     352u * 1024u * 1024u,

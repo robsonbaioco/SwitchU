@@ -305,7 +305,11 @@
       "timezone_popup_hint": "Left for Search. Up/down to choose. A to confirm.",
       "timezone_none": "No matching timezones.",
       "timezone_failed": "Could not change timezone.",
-      "timezone_saved": "Timezone updated."
+      "timezone_saved": "Timezone updated.",
+      "language_confirm_title": "Change console language?",
+      "language_restart": "The console language changes after the next restart.",
+      "language_failed": "Could not change the console language.",
+      "language_saved": "Saved. Restart the console to apply it."
     },
     "accessibility": {
       "voice": "Voice Guidance",
@@ -547,7 +551,15 @@
       "delete": "Delete",
       "manage_title": "Manage Software",
       "title_id": "Title ID",
-      "homebrew_library_unavailable": "Installed software management is unavailable in homebrew mode."
+      "homebrew_library_unavailable": "Installed software management is unavailable in homebrew mode.",
+      "theme_cleanup": "Clean up theme files",
+      "theme_cleanup_desc": "Remove theme folders that no longer hold a readable theme. Asks first.",
+      "theme_cleanup_button": "Scan",
+      "theme_cleanup_none": "No leftover theme files found.",
+      "theme_cleanup_confirm_title": "Clean up theme files?",
+      "theme_cleanup_confirm": "These folders hold no readable theme. Delete them?",
+      "theme_cleanup_done": "Leftover theme files removed.",
+      "theme_cleanup_failed": "Some files could not be removed."
     },
     "about": {
       "version": "Version",

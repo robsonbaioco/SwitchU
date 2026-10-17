@@ -511,6 +511,10 @@ void Renderer::captureToOffscreenSharp() {
     // No-op, as above. The menu calls this directly, so it has to link.
 }
 
+void Renderer::ensureOverlayTargets() {
+    // No-op: SDL2 backend has no offscreen render targets.
+}
+
 bool Renderer::downloadFramebufferRgba(std::vector<uint8_t>& outRgba,
                                        int& outW, int& outH,
                                        bool halfRes) {

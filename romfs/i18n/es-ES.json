@@ -300,7 +300,11 @@
       "timezone_popup_hint": "Izquierda para Buscar. Arriba/abajo para elegir. A para confirmar.",
       "timezone_none": "No hay zonas horarias que coincidan.",
       "timezone_failed": "No se pudo cambiar la zona horaria.",
-      "timezone_saved": "Zona horaria actualizada."
+      "timezone_saved": "Zona horaria actualizada.",
+      "language_confirm_title": "¿Cambiar el idioma de la consola?",
+      "language_restart": "El idioma de la consola cambia después del próximo reinicio.",
+      "language_failed": "No se pudo cambiar el idioma de la consola.",
+      "language_saved": "Guardado. Reinicia la consola para aplicarlo."
     },
     "accessibility": {
       "voice": "Lectura de voz",
@@ -538,7 +542,15 @@
       "delete": "Eliminar",
       "manage_title": "Gestionar software",
       "title_id": "ID del título",
-      "homebrew_library_unavailable": "La gestión de software instalado no está disponible en modo homebrew."
+      "homebrew_library_unavailable": "La gestión de software instalado no está disponible en modo homebrew.",
+      "theme_cleanup": "Limpiar archivos de temas",
+      "theme_cleanup_desc": "Quita carpetas de temas que ya no contienen un tema legible. Pregunta antes.",
+      "theme_cleanup_button": "Buscar",
+      "theme_cleanup_none": "No se encontraron restos de temas.",
+      "theme_cleanup_confirm_title": "¿Limpiar archivos de temas?",
+      "theme_cleanup_confirm": "Estas carpetas no contienen un tema legible. ¿Eliminarlas?",
+      "theme_cleanup_done": "Restos de temas eliminados.",
+      "theme_cleanup_failed": "Algunos archivos no se pudieron eliminar."
     },
     "about": {
       "version": "Versión",

@@ -299,7 +299,11 @@
       "timezone_popup_hint": "Links für Suchen. Oben/unten zum Auswählen. A zum Bestätigen.",
       "timezone_none": "Keine passenden Zeitzonen.",
       "timezone_failed": "Zeitzone konnte nicht geändert werden.",
-      "timezone_saved": "Zeitzone aktualisiert."
+      "timezone_saved": "Zeitzone aktualisiert.",
+      "language_confirm_title": "Konsolensprache ändern?",
+      "language_restart": "Die Konsolensprache ändert sich nach dem nächsten Neustart.",
+      "language_failed": "Die Konsolensprache konnte nicht geändert werden.",
+      "language_saved": "Gespeichert. Starte die Konsole neu, um es anzuwenden."
     },
     "accessibility": {
       "voice": "Sprachausgabe",
@@ -537,7 +541,15 @@
       "delete": "Löschen",
       "manage_title": "Software verwalten",
       "title_id": "Titel-ID",
-      "homebrew_library_unavailable": "Die Verwaltung installierter Software ist im Homebrew-Modus nicht verfügbar."
+      "homebrew_library_unavailable": "Die Verwaltung installierter Software ist im Homebrew-Modus nicht verfügbar.",
+      "theme_cleanup": "Design-Dateien aufräumen",
+      "theme_cleanup_desc": "Entfernt Design-Ordner, die kein lesbares Design mehr enthalten. Fragt zuerst.",
+      "theme_cleanup_button": "Prüfen",
+      "theme_cleanup_none": "Keine Design-Überreste gefunden.",
+      "theme_cleanup_confirm_title": "Design-Dateien aufräumen?",
+      "theme_cleanup_confirm": "Diese Ordner enthalten kein lesbares Design. Löschen?",
+      "theme_cleanup_done": "Design-Überreste entfernt.",
+      "theme_cleanup_failed": "Einige Dateien konnten nicht entfernt werden."
     },
     "about": {
       "version": "Version",
