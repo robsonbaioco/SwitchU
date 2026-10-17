@@ -2940,7 +2940,18 @@ int main(int argc, char* argv[]) {
     if (R_FAILED(generalEventRc))
         switchu::FileLog::log("[daemon] general channel event unavailable: 0x%X", generalEventRc);
 
+    // Issue #1 (Suspensao): this is the one moment the idle policy is read and
+    // applied. If sleep-setting changes only bite after a reboot, this line is
+    // why; the fix would be re-running it (or an SMI command) on change.
     appletLoadAndApplyIdlePolicySettings();
+    {
+        SetSysSleepSettings sleepNow{};
+        const Result sleepRc = setsysGetSleepSettings(&sleepNow);
+        switchu::FileLog::log("[sleep] idle policy applied at boot; settings rc=0x%X flags=0x%X handheld=%d docked=%d",
+                              sleepRc, sleepNow.flags,
+                              (int)sleepNow.handheld_sleep_plan,
+                              (int)sleepNow.console_sleep_plan);
+    }
 
     // Repair a launcher update that was interrupted by a power cut before any
     // other disk work runs. If the previous files could not be restored

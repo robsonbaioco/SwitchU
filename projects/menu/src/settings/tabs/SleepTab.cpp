@@ -1,7 +1,31 @@
 #include "TabBuilders.hpp"
+#include "core/DebugLog.hpp"
 #include <nxui/core/I18n.hpp>
 #include <switch.h>
 #include <algorithm>
+
+namespace {
+// Issue #1, open question: does setsysSetSleepSettings take effect right away
+// or only after a reboot? Log the whole transaction — what was read, what was
+// written, the write's rc and what reads back — so one change on a console plus
+// the daemon's [sleep] lines answer it: if the console sleeps at the OLD delay
+// until a reboot, the setting is boot-read; if at the new one, it is live.
+template <typename Mutate>
+void applySleepSettingsLogged(const char* what, Mutate&& mutate) {
+    SetSysSleepSettings before{};
+    setsysGetSleepSettings(&before);
+    SetSysSleepSettings s = before;
+    mutate(s);
+    const Result rc = setsysSetSleepSettings(&s);
+    SetSysSleepSettings after{};
+    setsysGetSleepSettings(&after);
+    DebugLog::log("[settings-sleep] %s rc=0x%X flags 0x%X->0x%X handheld %d->%d docked %d->%d",
+                  what, rc,
+                  before.flags, after.flags,
+                  (int)before.handheld_sleep_plan, (int)after.handheld_sleep_plan,
+                  (int)before.console_sleep_plan, (int)after.console_sleep_plan);
+}
+} // namespace
 
 SettingsScreen::Tab settings::tabs::SleepTab::build(SettingsScreen& screen) {
     using Tab = SettingsScreen::Tab;
@@ -103,10 +127,9 @@ SettingsScreen::Tab settings::tabs::SleepTab::build(SettingsScreen& screen) {
         it.options = handLabels;
         it.intVal = std::clamp((int)sleep.handheld_sleep_plan, 0, 5);
         it.onChange = [](SettingItem& self) {
-            SetSysSleepSettings s{};
-            setsysGetSleepSettings(&s);
-            s.handheld_sleep_plan = std::clamp(self.intVal, 0, 5);
-            setsysSetSleepSettings(&s);
+            applySleepSettingsLogged("handheld-plan", [&self](SetSysSleepSettings& s) {
+                s.handheld_sleep_plan = std::clamp(self.intVal, 0, 5);
+            });
         };
         t.items.push_back(std::move(it));
     }
@@ -117,10 +140,9 @@ SettingsScreen::Tab settings::tabs::SleepTab::build(SettingsScreen& screen) {
         it.options = dockLabels;
         it.intVal = std::clamp((int)sleep.console_sleep_plan, 0, 5);
         it.onChange = [](SettingItem& self) {
-            SetSysSleepSettings s{};
-            setsysGetSleepSettings(&s);
-            s.console_sleep_plan = std::clamp(self.intVal, 0, 5);
-            setsysSetSleepSettings(&s);
+            applySleepSettingsLogged("docked-plan", [&self](SetSysSleepSettings& s) {
+                s.console_sleep_plan = std::clamp(self.intVal, 0, 5);
+            });
         };
         t.items.push_back(std::move(it));
     }
@@ -132,13 +154,12 @@ SettingsScreen::Tab settings::tabs::SleepTab::build(SettingsScreen& screen) {
         it.boolVal = val;
         it.anim01 = val ? 1.f : 0.f;
         it.onChange = [](SettingItem& self) {
-            SetSysSleepSettings s{};
-            setsysGetSleepSettings(&s);
-            if (self.boolVal)
-                s.flags |= (1u << 0);
-            else
-                s.flags &= ~(1u << 0);
-            setsysSetSleepSettings(&s);
+            applySleepSettingsLogged("media-sleep", [&self](SetSysSleepSettings& s) {
+                if (self.boolVal)
+                    s.flags |= (1u << 0);
+                else
+                    s.flags &= ~(1u << 0);
+            });
         };
         t.items.push_back(std::move(it));
     }
@@ -150,13 +171,12 @@ SettingsScreen::Tab settings::tabs::SleepTab::build(SettingsScreen& screen) {
         it.boolVal = val;
         it.anim01 = val ? 1.f : 0.f;
         it.onChange = [](SettingItem& self) {
-            SetSysSleepSettings s{};
-            setsysGetSleepSettings(&s);
-            if (self.boolVal)
-                s.flags |= (1u << 1);
-            else
-                s.flags &= ~(1u << 1);
-            setsysSetSleepSettings(&s);
+            applySleepSettingsLogged("wake-on-power", [&self](SetSysSleepSettings& s) {
+                if (self.boolVal)
+                    s.flags |= (1u << 1);
+                else
+                    s.flags &= ~(1u << 1);
+            });
         };
         t.items.push_back(std::move(it));
     }

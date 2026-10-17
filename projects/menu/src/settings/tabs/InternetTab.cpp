@@ -159,8 +159,46 @@ SettingsScreen::Tab settings::tabs::InternetTab::build(SettingsScreen& screen) {
                 DebugLog::log("[internet] WiFi enable refused while airplane mode is on");
                 return;
             }
+            // Issue #1, open question: does the saved flag drop the radio at
+            // once, or only at the next boot? Record everything the console
+            // will say about it: the live NIFM state before the write, the
+            // write itself, and the live state right after. If "after" still
+            // shows the old state, the flag alone is not enough and the fix is
+            // the nifm request path.
+            bool liveBefore = false;
+            s32 connBefore = -1;
+            {
+                if (R_SUCCEEDED(nifmInitialize(NifmServiceType_User))) {
+                    nifmIsWirelessCommunicationEnabled(&liveBefore);
+                    NifmInternetConnectionType type{};
+                    u32 strength = 0;
+                    NifmInternetConnectionStatus status{};
+                    if (R_SUCCEEDED(nifmGetInternetConnectionStatus(&type, &strength, &status)))
+                        connBefore = (s32)status;
+                    nifmExit();
+                }
+            }
             if (R_SUCCEEDED(rc))
                 rc = setsysSetWirelessLanEnableFlag(self.boolVal);
+            bool savedAfter = !self.boolVal;
+            setsysGetWirelessLanEnableFlag(&savedAfter);
+            bool liveAfter = liveBefore;
+            s32 connAfter = -1;
+            {
+                if (R_SUCCEEDED(nifmInitialize(NifmServiceType_User))) {
+                    nifmIsWirelessCommunicationEnabled(&liveAfter);
+                    NifmInternetConnectionType type{};
+                    u32 strength = 0;
+                    NifmInternetConnectionStatus status{};
+                    if (R_SUCCEEDED(nifmGetInternetConnectionStatus(&type, &strength, &status)))
+                        connAfter = (s32)status;
+                    nifmExit();
+                }
+            }
+            DebugLog::log("[settings-wifi] toggle=%d rc=0x%X saved=%d live(nifm) %d->%d conn %d->%d",
+                          self.boolVal ? 1 : 0, rc, savedAfter ? 1 : 0,
+                          liveBefore ? 1 : 0, liveAfter ? 1 : 0,
+                          connBefore, connAfter);
             if (R_FAILED(rc)) {
                 self.boolVal = !self.boolVal;
                 DebugLog::log("[internet] WiFi change failed: 0x%X", rc);

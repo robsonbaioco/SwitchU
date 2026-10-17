@@ -821,6 +821,9 @@ std::vector<ThemePreset> ThemePreset::loadUserPresets() {
 
 std::vector<ThemePreset> ThemePreset::loadInstalledPackages() {
     std::vector<ThemePreset> result;
+    int scanValid = 0;
+    int scanOrphans = 0;
+    std::string scanLine;
 
     std::error_code ec;
     for (const auto& entry : std::filesystem::directory_iterator(kInstalledThemesDir, ec)) {
@@ -849,9 +852,32 @@ std::vector<ThemePreset> ThemePreset::loadInstalledPackages() {
                                          nxui::ThemeMode::Dark,
                                          installDir,
                                          preset)) {
+            std::error_code manifestEc;
+            const bool manifestExists = std::filesystem::exists(manifestPath, manifestEc);
+            scanLine += " !" + dirName + (manifestExists ? "(bad-json)" : "(no-json)");
+            ++scanOrphans;
             continue;
         }
+        ++scanValid;
         result.push_back(std::move(preset));
+    }
+
+    // Issue #3 item 1: a theme "deleted" before fork.11 kept its whole folder,
+    // theme.json included, so it must come back here as a VALID entry — this
+    // line is the proof. One line per change, not per scan: the menu rebuilds
+    // on every HOME and the usual scan result never moves.
+    {
+        char summary[96];
+        std::snprintf(summary, sizeof(summary), " valid=%d orphans=%d", scanValid, scanOrphans);
+        std::string line = std::string("[themes] installed scan:") + summary + scanLine;
+        static std::string s_lastScanLine;
+        if (line != s_lastScanLine) {
+            s_lastScanLine = line;
+            DebugLog::log("%s", line.c_str());
+            for (const auto& preset : result)
+                DebugLog::log("[themes]   installed: '%s' id=%s",
+                              preset.name.c_str(), preset.id.c_str());
+        }
     }
 
     std::sort(result.begin(), result.end(), [](const ThemePreset& lhs, const ThemePreset& rhs) {
