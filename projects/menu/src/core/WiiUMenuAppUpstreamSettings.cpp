@@ -652,6 +652,8 @@ void WiiUMenuApp::openSteamGridDbPicker(GameOptionsScreen::ArtworkKind kind,
         managerKind = SteamGridDbManager::ArtworkKind::Logo;
     else if (kind == GameOptionsScreen::ArtworkKind::Icon)
         managerKind = SteamGridDbManager::ArtworkKind::Icon;
+    else if (kind == GameOptionsScreen::ArtworkKind::Cover)
+        managerKind = SteamGridDbManager::ArtworkKind::Cover;
 
     std::string title;
     std::string defaultQuery;
@@ -859,6 +861,9 @@ void WiiUMenuApp::syncSteamGridDb() {
                                            m_grid->iconsPerPage(), app().gpu(),
                                            app().renderer(), m_grid->allIcons());
                 applyFolderCoversToIcons();
+            } else if (result.kind == SteamGridDbManager::ArtworkKind::Cover && m_grid) {
+                // The 3D views cache decoded covers; a fresh cover replaces them.
+                m_grid->clearFlowCovers();
             } else {
                 showFocusedSteamGridDbArtwork(true);
             }
@@ -894,6 +899,8 @@ void WiiUMenuApp::syncSteamGridDb() {
         if (state.lastCompletedTitleId != 0
             && state.lastCompletedTitleId != m_steamGridDbLastCompletedTitleId) {
             m_steamGridDbLastCompletedTitleId = state.lastCompletedTitleId;
+            ensureGameArtwork(state.lastCompletedTitleId);
+            syncGameArtworkTextures(state.lastCompletedTitleId);
             if (m_grid && m_grid->focusManager().current()) {
                 auto* focused = m_grid->focusManager().current();
                 if (focused->tag() == "glossy_icon"
@@ -923,11 +930,8 @@ void WiiUMenuApp::syncSteamGridDb() {
                 // forceReload releases the pool texture used by the panel header;
                 // detach it first so the overlay never renders a stale pointer.
                 if (m_gameOptions) m_gameOptions->setGameIcon(nullptr);
-                const bool line = m_appLayoutMode == AppLayoutMode::DynamicLine;
-                const int page = line ? std::max(0, m_grid->focusedGlobalIndex())
-                                      : m_grid->currentPage();
-                const int perPage = line ? 1 : m_grid->iconsPerPage();
-                m_iconStreamer.forceReload(page, perPage,
+                const StreamPump pump = gridStreamPump();
+                m_iconStreamer.forceReload(pump.page, pump.perPage,
                                            app().gpu(), app().renderer(),
                                            m_grid->allIcons());
             }
@@ -1205,6 +1209,11 @@ void WiiUMenuApp::createThemeShop() {
         m_config.dynamicPages = enabled;
         m_config.save();
         reflowHomeGrid();
+    });
+    m_themeShop->setLayoutModeState(m_appLayoutMode);
+    m_themeShop->onLayoutModeChange([this](AppLayoutMode mode) {
+        setAppLayoutMode(mode);
+    });
     });
     m_themeShop->onActionHintStyleChange([this](int style) {
         m_config.actionHintStyle = style == 0 ? "panel" : "capsules";

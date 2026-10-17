@@ -89,7 +89,7 @@ void SidebarManager::build(nxui::GpuDevice& gpu, nxui::Renderer& ren,
         ctrl->setRect({rightX, startY + 0.f * (btnSize + gap), btnSize, btnSize});
         m_rightButtons.push_back(std::move(ctrl));
 
-        auto sleep = makeBtn(&m_icons[3], "sidebar.sleep", "Sleep", actions.onSleep);
+        auto sleep = makeBtn(&m_icons[3], "sidebar.power", "Power Options", actions.onSleep);
         sleep->setRect({rightX, startY + 1.f * (btnSize + gap), btnSize, btnSize});
         m_rightButtons.push_back(std::move(sleep));
 
@@ -99,13 +99,19 @@ void SidebarManager::build(nxui::GpuDevice& gpu, nxui::Renderer& ren,
         m_rightButtons.push_back(std::move(themeShop));
     }
 
-    if (!m_leftButtons.empty()) {
-        m_leftButtons.front()->setCustomNavigation(nxui::FocusDirection::UP, m_leftButtons.front().get());
-        m_leftButtons.back()->setCustomNavigation(nxui::FocusDirection::DOWN, m_leftButtons.back().get());
+    for (std::size_t i = 0; i < m_leftButtons.size(); ++i) {
+        auto* btn = m_leftButtons[i].get();
+        btn->setCustomNavigation(nxui::FocusDirection::UP,
+                                 i > 0 ? m_leftButtons[i - 1].get() : btn);
+        btn->setCustomNavigation(nxui::FocusDirection::DOWN,
+                                 i + 1 < m_leftButtons.size() ? m_leftButtons[i + 1].get() : btn);
     }
-    if (!m_rightButtons.empty()) {
-        m_rightButtons.front()->setCustomNavigation(nxui::FocusDirection::UP, m_rightButtons.front().get());
-        m_rightButtons.back()->setCustomNavigation(nxui::FocusDirection::DOWN, m_rightButtons.back().get());
+    for (std::size_t i = 0; i < m_rightButtons.size(); ++i) {
+        auto* btn = m_rightButtons[i].get();
+        btn->setCustomNavigation(nxui::FocusDirection::UP,
+                                 i > 0 ? m_rightButtons[i - 1].get() : btn);
+        btn->setCustomNavigation(nxui::FocusDirection::DOWN,
+                                 i + 1 < m_rightButtons.size() ? m_rightButtons[i + 1].get() : btn);
     }
 
     (void)gpu;
@@ -114,20 +120,20 @@ void SidebarManager::build(nxui::GpuDevice& gpu, nxui::Renderer& ren,
 }
 
 void SidebarManager::setDynamicLineLayout(bool enabled) {
-    std::vector<AppletButton*> ordered;
-    ordered.reserve(m_leftButtons.size() + m_rightButtons.size());
-    for (auto& button : m_leftButtons) ordered.push_back(button.get());
-    for (auto& button : m_rightButtons) ordered.push_back(button.get());
-    if (ordered.empty()) return;
-
-    for (auto* button : ordered) {
-        button->setCustomNavigation(nxui::FocusDirection::LEFT, nullptr);
-        button->setCustomNavigation(nxui::FocusDirection::RIGHT, nullptr);
-        button->setCustomNavigation(nxui::FocusDirection::UP, nullptr);
-        button->setCustomNavigation(nxui::FocusDirection::DOWN, nullptr);
-    }
-
     if (enabled) {
+        std::vector<AppletButton*> ordered;
+        ordered.reserve(m_leftButtons.size() + m_rightButtons.size());
+        for (auto& button : m_leftButtons) ordered.push_back(button.get());
+        for (auto& button : m_rightButtons) ordered.push_back(button.get());
+        if (ordered.empty()) return;
+
+        for (auto* button : ordered) {
+            button->setCustomNavigation(nxui::FocusDirection::LEFT, nullptr);
+            button->setCustomNavigation(nxui::FocusDirection::RIGHT, nullptr);
+            button->setCustomNavigation(nxui::FocusDirection::UP, nullptr);
+            button->setCustomNavigation(nxui::FocusDirection::DOWN, nullptr);
+        }
+
         for (std::size_t i = 0; i < ordered.size(); ++i) {
             auto* button = ordered[i];
             const bool rightGroup = i >= m_leftButtons.size();
@@ -161,17 +167,23 @@ void SidebarManager::setDynamicLineLayout(bool enabled) {
                                         (kSidebarButtonSize + kSidebarColumnGap),
                                     kSidebarButtonSize, kSidebarButtonSize});
     }
-    if (!m_leftButtons.empty()) {
-        m_leftButtons.front()->setCustomNavigation(nxui::FocusDirection::UP,
-                                                   m_leftButtons.front().get());
-        m_leftButtons.back()->setCustomNavigation(nxui::FocusDirection::DOWN,
-                                                  m_leftButtons.back().get());
+    for (std::size_t i = 0; i < m_leftButtons.size(); ++i) {
+        auto* btn = m_leftButtons[i].get();
+        btn->setCustomNavigation(nxui::FocusDirection::UP,
+                                 i > 0 ? m_leftButtons[i - 1].get() : btn);
+        btn->setCustomNavigation(nxui::FocusDirection::DOWN,
+                                 i + 1 < m_leftButtons.size() ? m_leftButtons[i + 1].get() : btn);
+        btn->setCustomNavigation(nxui::FocusDirection::LEFT, nullptr);
+        btn->setCustomNavigation(nxui::FocusDirection::RIGHT, nullptr);
     }
-    if (!m_rightButtons.empty()) {
-        m_rightButtons.front()->setCustomNavigation(nxui::FocusDirection::UP,
-                                                    m_rightButtons.front().get());
-        m_rightButtons.back()->setCustomNavigation(nxui::FocusDirection::DOWN,
-                                                   m_rightButtons.back().get());
+    for (std::size_t i = 0; i < m_rightButtons.size(); ++i) {
+        auto* btn = m_rightButtons[i].get();
+        btn->setCustomNavigation(nxui::FocusDirection::UP,
+                                 i > 0 ? m_rightButtons[i - 1].get() : btn);
+        btn->setCustomNavigation(nxui::FocusDirection::DOWN,
+                                 i + 1 < m_rightButtons.size() ? m_rightButtons[i + 1].get() : btn);
+        btn->setCustomNavigation(nxui::FocusDirection::LEFT, nullptr);
+        btn->setCustomNavigation(nxui::FocusDirection::RIGHT, nullptr);
     }
 }
 
@@ -187,12 +199,13 @@ float SidebarManager::dynamicLineGapRight() {
 
 void SidebarManager::setDynamicLineDownAction(std::function<void()> action) {
     auto configure = [&action](std::shared_ptr<AppletButton>& button) {
-        button->setCustomNavigation(nxui::FocusDirection::DOWN, nullptr);
         button->removeAction(static_cast<uint64_t>(nxui::Button::DDown));
         button->removeAction(static_cast<uint64_t>(nxui::Button::LStickD));
         button->removeAction(static_cast<uint64_t>(nxui::Button::RStickD));
-        if (action)
+        if (action) {
+            button->setCustomNavigation(nxui::FocusDirection::DOWN, nullptr);
             button->addDirectionAction(nxui::FocusDirection::DOWN, action);
+        }
     };
     for (auto& button : m_leftButtons) configure(button);
     for (auto& button : m_rightButtons) configure(button);

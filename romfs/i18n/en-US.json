@@ -27,7 +27,14 @@
       "right_sidebar": "Right sidebar",
       "user_profiles": "User profiles",
       "dynamic_line": "Center line",
-      "menu": "Context menu"
+      "menu": "Context menu",
+      "flow": "Cover flow",
+      "shelf": "Shelf",
+      "deck": "Deck",
+      "cover": "Cover",
+      "xmb": "XMB",
+      "list": "List",
+      "metro": "Live tiles"
     },
     "roles": {
       "button": "button",
@@ -93,7 +100,14 @@
     "user_profile": "User profile",
     "layout": {
       "dynamic_line": "Dynamic line mode",
-      "grid": "Grid mode"
+      "grid": "Grid mode",
+      "flow": "Flow mode",
+      "shelf": "Shelf mode",
+      "deck": "Deck mode",
+      "cover": "Cover mode",
+      "xmb": "XMB mode",
+      "list": "List mode",
+      "metro": "Metro live tiles mode"
     }
   },
   "tutorial": {
@@ -360,7 +374,9 @@
       "ui_wireframe": "UI Wireframe",
       "ui_wireframe_desc": "Show outlines of all Box widgets for layout debugging.",
       "dynamic_pages": "Dynamic Pages",
-      "dynamic_pages_desc": "Adjust page count to fit installed software instead of keeping 8 fixed pages."
+      "dynamic_pages_desc": "Adjust page count to fit installed software instead of keeping 8 fixed pages.",
+      "launcher_view": "Launcher View",
+      "launcher_view_desc": "Choose between standard Grid, Dynamic Line carousel, or 3D Flow coverflow."
     },
     "internet": {
       "wifi_ssid": "WiFi Network",
@@ -558,6 +574,17 @@
       "igdb_id": "IGDB Client ID",
       "igdb_secret": "IGDB Client Secret",
       "igdb_hint": "Optional. Adds time to beat. Create an application at dev.twitch.tv."
+    },
+    "layout": {
+      "grid": "Grid",
+      "dynamic_line": "Dynamic Line",
+      "flow": "Flow (3D)",
+      "shelf": "Shelf (3D)",
+      "deck": "Deck (3D)",
+      "cover": "Cover",
+      "xmb": "XMB",
+      "list": "List (Niagara)",
+      "metro": "Metro (Live Tiles)"
     }
   },
   "userselect": {
@@ -600,7 +627,9 @@
       "logo": "Logo",
       "logo_desc": "Open the logo gallery and choose the image to use.",
       "icon": "Replacement icon",
-      "icon_desc": "Open the icon gallery and choose an override for this game."
+      "icon_desc": "Open the icon gallery and choose an override for this game.",
+      "cover": "Portrait cover",
+      "cover_desc": "Open the cover gallery and choose a 2:3 vertical box cover for Flow view."
     }
   },
   "power": {

@@ -15,6 +15,7 @@ class GpuDevice;
 
 class Font {
 public:
+    bool valid() const { return m_font != nullptr; }
     Font() = default;
     ~Font();
 

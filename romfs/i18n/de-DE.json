@@ -27,7 +27,14 @@
       "right_sidebar": "Rechte Seitenleiste",
       "user_profiles": "Benutzerprofile",
       "dynamic_line": "Mittellinie",
-      "menu": "Kontextmenü"
+      "menu": "Kontextmenü",
+      "flow": "Cover-Fluss",
+      "shelf": "Regal",
+      "deck": "Deck",
+      "cover": "Cover",
+      "xmb": "XMB",
+      "list": "Liste",
+      "metro": "Live-Kacheln"
     },
     "roles": {
       "button": "Taste",
@@ -93,7 +100,14 @@
     "user_profile": "Benutzerprofil",
     "layout": {
       "dynamic_line": "Dynamischer Linienmodus",
-      "grid": "Rastermodus"
+      "grid": "Rastermodus",
+      "flow": "Flussmodus",
+      "shelf": "Regalmodus",
+      "deck": "Deck-Modus",
+      "cover": "Cover-Modus",
+      "xmb": "XMB-Modus",
+      "list": "Listenmodus",
+      "metro": "Metro-Live-Kachel-Modus"
     }
   },
   "tutorial": {
@@ -354,7 +368,9 @@
       "ui_wireframe": "UI-Drahtgitter",
       "ui_wireframe_desc": "Zeigt Umrisse aller Box-Widgets zur Layout-Fehlersuche an.",
       "dynamic_pages": "Dynamische Seiten",
-      "dynamic_pages_desc": "Passt die Seitenzahl an die installierte Software an, anstatt 8 feste Seiten beizubehalten."
+      "dynamic_pages_desc": "Passt die Seitenzahl an die installierte Software an, anstatt 8 feste Seiten beizubehalten.",
+      "launcher_view": "Launcher-Ansicht",
+      "launcher_view_desc": "Wählen Sie zwischen Standard-Raster, Dynamischer Zeile oder 3D-Flow."
     },
     "internet": {
       "wifi_ssid": "WLAN-Netzwerk",
@@ -540,6 +556,17 @@
       "based_on_fork": "Basiert auf dem Fork von",
       "upstream_source": "Quellcode (Original)",
       "upstream_source_value": "github.com/PoloNX/SwitchU"
+    },
+    "layout": {
+      "grid": "Raster",
+      "dynamic_line": "Dynamische Zeile",
+      "flow": "Flow (3D)",
+      "shelf": "Shelf (3D)",
+      "deck": "Deck (3D)",
+      "cover": "Cover",
+      "xmb": "XMB",
+      "list": "Liste (Niagara)",
+      "metro": "Metro (Live-Kacheln)"
     }
   },
   "userselect": {
@@ -582,7 +609,9 @@
       "logo": "Logo",
       "logo_desc": "Öffne die Logo-Galerie und wähle das zu verwendende Bild.",
       "icon": "Ersatzsymbol",
-      "icon_desc": "Öffne die Symbolgalerie und wähle eine Überschreibung für dieses Spiel."
+      "icon_desc": "Öffne die Symbolgalerie und wähle eine Überschreibung für dieses Spiel.",
+      "cover": "Portrait cover",
+      "cover_desc": "Open the cover gallery and choose a 2:3 vertical box cover for Flow view."
     }
   },
   "power": {

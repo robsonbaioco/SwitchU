@@ -27,7 +27,14 @@
       "right_sidebar": "Barre latérale droite",
       "user_profiles": "Profils utilisateur",
       "dynamic_line": "Ligne centrale",
-      "menu": "Menu contextuel"
+      "menu": "Menu contextuel",
+      "flow": "Flux de jaquettes",
+      "shelf": "Étagère",
+      "deck": "Deck",
+      "cover": "Jaquette",
+      "xmb": "XMB",
+      "list": "Liste",
+      "metro": "Tuiles dynamiques"
     },
     "roles": {
       "button": "bouton",
@@ -93,7 +100,14 @@
     "user_profile": "Profil utilisateur",
     "layout": {
       "dynamic_line": "Mode ligne dynamique",
-      "grid": "Mode grille"
+      "grid": "Mode grille",
+      "flow": "Mode flux",
+      "shelf": "Mode étagère",
+      "deck": "Mode deck",
+      "cover": "Mode jaquette",
+      "xmb": "Mode XMB",
+      "list": "Mode liste",
+      "metro": "Mode Metro à tuiles dynamiques"
     }
   },
   "tutorial": {
@@ -354,7 +368,9 @@
       "ui_wireframe": "Filaire de l'interface",
       "ui_wireframe_desc": "Affiche les contours de tous les widgets Box pour déboguer la mise en page.",
       "dynamic_pages": "Pages dynamiques",
-      "dynamic_pages_desc": "Ajuste le nombre de pages aux logiciels installés au lieu de conserver 8 pages fixes."
+      "dynamic_pages_desc": "Ajuste le nombre de pages aux logiciels installés au lieu de conserver 8 pages fixes.",
+      "launcher_view": "Vue du Lanceur",
+      "launcher_view_desc": "Choisissez entre la Grille standard, le carrousel Ligne Dynamique ou le Flow 3D."
     },
     "internet": {
       "wifi_ssid": "Réseau WiFi",
@@ -540,6 +556,17 @@
       "based_on_fork": "Basé sur le fork de",
       "upstream_source": "Code source (original)",
       "upstream_source_value": "github.com/PoloNX/SwitchU"
+    },
+    "layout": {
+      "grid": "Grille",
+      "dynamic_line": "Ligne Dynamique",
+      "flow": "Flow (3D)",
+      "shelf": "Shelf (3D)",
+      "deck": "Deck (3D)",
+      "cover": "Jaquette",
+      "xmb": "XMB",
+      "list": "Liste (Niagara)",
+      "metro": "Metro (tuiles dynamiques)"
     }
   },
   "userselect": {
@@ -582,7 +609,9 @@
       "logo": "Logo",
       "logo_desc": "Ouvre la galerie des logos pour choisir l'image à utiliser.",
       "icon": "Icône de remplacement",
-      "icon_desc": "Ouvre la galerie des icônes pour remplacer celle du jeu."
+      "icon_desc": "Ouvre la galerie des icônes pour remplacer celle du jeu.",
+      "cover": "Portrait cover",
+      "cover_desc": "Open the cover gallery and choose a 2:3 vertical box cover for Flow view."
     }
   },
   "power": {

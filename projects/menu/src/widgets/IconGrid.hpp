@@ -7,7 +7,16 @@
 #include <vector>
 #include <memory>
 #include <functional>
+#include <unordered_map>
+#include <future>
+#include <atomic>
+#include <cstdint>
+#include <nxui/core/Texture.hpp>
 
+namespace nxui {
+class ThreadPool;
+class Font;
+}
 
 class GlossyIcon;
 
@@ -33,6 +42,31 @@ public:
     void setLayoutMode(AppLayoutMode mode);
     AppLayoutMode layoutMode() const { return m_layoutMode; }
     bool isDynamicLine() const { return m_layoutMode == AppLayoutMode::DynamicLine; }
+    bool isFlow() const { return m_layoutMode == AppLayoutMode::Flow; }
+    bool isShelf() const { return m_layoutMode == AppLayoutMode::Shelf; }
+    bool isDeck() const { return m_layoutMode == AppLayoutMode::Deck; }
+    bool isCover() const { return m_layoutMode == AppLayoutMode::Cover; }
+    bool isXmb() const { return m_layoutMode == AppLayoutMode::Xmb; }
+    bool isList() const { return m_layoutMode == AppLayoutMode::List; }
+    bool isMetro() const { return m_layoutMode == AppLayoutMode::Metro; }
+    bool is3D() const {
+        return m_layoutMode == AppLayoutMode::Flow
+            || m_layoutMode == AppLayoutMode::Shelf
+            || m_layoutMode == AppLayoutMode::Deck
+            || m_layoutMode == AppLayoutMode::Cover;
+    }
+    // All carousel views share one model: a single wrapping row driven by
+    // m_lineScrollOffset, with the same focus bindings and the same per-item
+    // rects. They differ only in how that row is drawn. Layout, navigation,
+    // hit-testing, paging and animation must therefore test this rather than
+    // DynamicLine alone.
+    bool isCarousel() const {
+        return m_layoutMode == AppLayoutMode::DynamicLine
+            || m_layoutMode == AppLayoutMode::Flow
+            || m_layoutMode == AppLayoutMode::Shelf
+            || m_layoutMode == AppLayoutMode::Deck
+            || m_layoutMode == AppLayoutMode::Cover;
+    }
     bool isDynamicLineScrolling() const;
     bool isLayoutMorphing() const { return m_layoutMorphing; }
     void setDynamicLineUpTarget(nxui::Widget* target);
@@ -53,7 +87,160 @@ public:
 
     std::vector<GlossyIcon*> pageIcons() const;
 
+    void setThreadPool(nxui::ThreadPool* pool) { m_threadPool = pool; }
+    void clearFlowCovers();
+    void preloadFlowCoversAround(int centerIdx);
+
+    struct XmbContext {
+        nxui::Font* fontNormal = nullptr;
+        nxui::Font* fontSmall = nullptr;
+
+        nxui::Texture* texSettings = nullptr;
+        nxui::Texture* texThemes = nullptr;
+        nxui::Texture* texControllers = nullptr;
+        nxui::Texture* texPower = nullptr;
+        nxui::Texture* texAlbum = nullptr;
+        nxui::Texture* texMediaCenter = nullptr;
+        nxui::Texture* texUser = nullptr;
+        nxui::Texture* texMii = nullptr;
+        nxui::Texture* texNetwork = nullptr;
+        nxui::Texture* texBrowser = nullptr;
+        nxui::Texture* texGames = nullptr;
+        nxui::Texture* texHomebrew = nullptr;
+
+        std::function<void()> onOpenSettings;
+        std::function<void()> onOpenThemeShop;
+        std::function<void()> onOpenControllers;
+        std::function<void()> onOpenPower;
+        std::function<void()> onOpenAlbum;
+        std::function<void()> onOpenMediaCenter;
+        std::function<void()> onOpenUserPage;
+        std::function<void()> onOpenMiiEditor;
+        std::function<void()> onOpenNetConnect;
+        std::function<void()> onOpenWebBrowser;
+        std::function<void()> onOpenHbMenu;
+
+        nxui::Widget* upTarget = nullptr;
+        std::vector<nxui::Widget*> leftTargets;
+        std::vector<nxui::Widget*> rightTargets;
+    };
+
+    // XMB geometry. Rendering, focus rects and touch hit-testing all derive
+    // from these, so a tweak here moves the picture and everything that has to
+    // line up with it together.
+    static constexpr float kXmbAnchorX     = 352.f;
+    static constexpr float kXmbSpacingH    = 128.f;
+    static constexpr float kXmbTabY        = 223.5f;
+    static constexpr float kXmbIconBase    = 85.f;
+    static constexpr float kXmbMarginTop   = 181.f;
+    static constexpr float kXmbZoomActive  = 1.0f;
+    static constexpr float kXmbZoomPassive = 0.55f;
+
+    struct GameDetailInfo {
+        std::string publisher;
+        std::string version;
+        std::string playtime;
+        std::string playCount;
+        std::string lastPlayed;
+        std::string storage;
+        std::string summary;
+    };
+    using GameDetailProvider = std::function<GameDetailInfo(std::uint64_t titleId)>;
+
+    struct ListContext {
+        nxui::Font* fontNormal = nullptr;
+        nxui::Font* fontSmall = nullptr;
+    };
+    static constexpr float kListLeft       = 114.f;
+    static constexpr float kListWidth      = 540.f;
+    static constexpr float kListCenterY    = 360.f;
+    static constexpr float kListRowHeight  = 54.f;
+
+    void setListContext(const ListContext& ctx) { m_listContext = ctx; }
+    const ListContext& listContext() const { return m_listContext; }
+    void setGameDetailProvider(GameDetailProvider provider) { m_gameDetailProvider = std::move(provider); }
+    nxui::Rect listIconRect(int idx) const;
+    void layoutList();
+    void syncListChildRects();
+    void renderList(nxui::Renderer& ren);
+
+    struct MetroContext {
+        nxui::Font* fontNormal = nullptr;
+        nxui::Font* fontSmall = nullptr;
+        std::string username;
+        nxui::Texture* texThemes = nullptr;
+        nxui::Texture* texControllers = nullptr;
+        nxui::Texture* texAlbum = nullptr;
+        nxui::Texture* texMusic = nullptr;
+        nxui::Texture* texSettings = nullptr;
+        nxui::Texture* texHomebrew = nullptr;
+    };
+    struct MetroTileRect {
+        int itemIndex = -1;
+        float x = 0.f;
+        float y = 0.f;
+        float w = 0.f;
+        float h = 0.f;
+        int spanW = 1;
+        int spanH = 1;
+        int row = 0;
+        int col = 0;
+    };
+    static constexpr float kMetroWallMargin = 32.f;
+    static constexpr float kMetroWallTop    = 108.f;
+    static constexpr float kMetroWallBot    = 660.f;
+    static constexpr float kMetroGridGap    = 12.f;
+    static constexpr int   kMetroCols       = 6;
+    static constexpr int   kMetroRowsVis    = 3;
+
+    void setMetroContext(const MetroContext& ctx) {
+        m_metroContext = ctx;
+        setupMetroSystemIcons();
+    }
+    const MetroContext& metroContext() const { return m_metroContext; }
+    // Widget the top row of Metro tiles navigates UP to (the top-bar buttons).
+    void setMetroUpTarget(nxui::Widget* target);
+    void setMetroTileSpans(const std::unordered_map<std::uint64_t, std::pair<int, int>>& spans) {
+        m_metroTileSpans = spans;
+    }
+    const std::unordered_map<std::uint64_t, std::pair<int, int>>& metroTileSpans() const {
+        return m_metroTileSpans;
+    }
+    void onMetroTileSpanChanged(std::function<void(std::uint64_t, int, int)> cb) {
+        m_onMetroTileSpanChanged = std::move(cb);
+    }
+    void cycleMetroTileSize(int globalIndex);
+    void buildMetroTiles(std::vector<MetroTileRect>& out) const;
+    int metroTileNeighbour(int currentGlobalIndex, int dir) const;
+    void layoutMetro();
+    void syncMetroChildRects();
+    void renderMetro(nxui::Renderer& ren);
+    void setMetroFocused(bool focused) { m_metroFocused = focused; }
+    bool metroFocused() const { return m_metroFocused; }
+    std::shared_ptr<GlossyIcon> metroSharedIconAt(int globalIndex) const;
+    GlossyIcon* metroIconAt(int globalIndex) const;
+    int metroTotalCount() const;
+    void setupMetroSystemIcons();
+    const XmbContext& xmbContext() const { return m_xmbContext; }
+
+    void setXmbContext(const XmbContext& ctx);
+    void stepXmb(int dCol, int dItem);
+    void setXmbPosition(int col, int item = -1);
+    int xmbCol() const { return m_xmbCol; }
+    int xmbItem() const { return m_xmbItem; }
+    int xmbColumnCount() const { return static_cast<int>(m_xmbCols.size()); }
+    // Index into m_allIcons that the icon streamer should centre its window on
+    // while XMB is active, even when a system category currently holds focus.
+    // -1 when there is nothing to centre on.
+    int xmbStreamCenterIndex() const;
+    void syncXmbFocusFromCurrent();
+    // True when the focused XMB entry is a real app/folder tile rather than one
+    // of the synthesized system shortcuts, so the app can keep the grid-only
+    // behaviour (title pill, options menu, edit mode) off the system columns.
+    bool xmbFocusIsAppEntry() const;
+
     int hitTest(float screenX, float screenY) const;
+    nxui::Widget* findTopHit(float x, float y) override;
     nxui::Rect focusedDisplayRect() const;
     nxui::Rect gridSpanRect(int globalIndex, int columns, int rows) const;
     // Bounds of the laid-out cell block (not the whole widget rect).
@@ -81,6 +268,7 @@ public:
     void onEdgePageHold(std::function<bool(int dir)> cb) { m_onEdgePageHold = std::move(cb); }
 
     void onPageSwitched(std::function<void()> cb) { m_onPageSwitched = std::move(cb); }
+    void onFocusChanged(std::function<void(nxui::Widget*)> cb) { m_onFocusChanged = std::move(cb); }
 
     void render(nxui::Renderer& ren) override;
 
@@ -97,6 +285,75 @@ private:
     void renderLayoutMorph(nxui::Renderer& ren);
     nxui::Rect gridSlotRect(int globalIndex) const;
     nxui::Rect morphBlend(int globalIndex, const nxui::Rect& gridRect) const;
+
+    // Flow: a 3D coverflow row drawn with nxui's drawQuad3D primitive.
+    //
+    // Focus, navigation and activation are the carousel's: Flow reuses
+    // layoutLine()'s LEFT/RIGHT wrap bindings and the same GlossyIcon
+    // callbacks, so it is a presentation layer over the identical model and
+    // adds no lifecycle path of its own. Only the drawing differs.
+    void renderFlow(nxui::Renderer& ren);
+    // Shelf: an Xbox 360 NXE-style 3D library row with prominent front-left
+    // selection, receding diagonal perspective, reflections, and glow frame.
+    void renderShelf(nxui::Renderer& ren);
+    static void shelfPlace(float d, float& x, float& y, float& z, float& a);
+    // Deck: a SteamOS/Steam Deck style card ribbon with prominent hero artwork,
+    // card depth pop-out, and glowing accent frame.
+    void renderDeck(nxui::Renderer& ren);
+    static void deckPlace(float d, float& x, float& y, float& z, float& ang, float& a);
+    static void deckCorners(float x, float y, float z, float ang,
+                            float halfW, float halfH, nxui::Vec3 out[4]);
+    // Cover: sLaunch-style fullscreen single-cover showcase with screen-width
+    // horizontal slide paging, reflection, glow frame, and 2:3 or 1:1 artwork.
+    void renderCover(nxui::Renderer& ren);
+    static void coverPlace(float d, float& x, float& y, float& z, float& a);
+    static void coverCorners(float x, float y, float z,
+                             float halfW, float halfH, nxui::Vec3 out[4]);
+
+    // 3D Folder preview rendering for Flow, Shelf, Deck, and Cover
+    static void drawFolderQuad3D(nxui::Renderer& ren,
+                                const nxui::Vec3 corners[4],
+                                const std::vector<nxui::Texture*>& previewTextures,
+                                int previewCount,
+                                int colorIndex,
+                                const nxui::Color& tint,
+                                float topAlpha = 1.0f,
+                                float bottomAlpha = 1.0f,
+                                bool isReflection = false,
+                                int strips = 8);
+
+    // XMB: PSP/PS3 cross-media bar with horizontal categories and vertical items.
+    void layoutXmb();
+    void renderXmb(nxui::Renderer& ren);
+    int hitTestXmb(float screenX, float screenY);
+    static float xmbRowOffset(float d);
+    // Places every icon at the rect XMB actually draws it into, and takes the
+    // inactive columns out of the focus tree. Called whenever the column, the
+    // item or the model changes.
+    void syncXmbChildRects();
+    nxui::Rect xmbItemRect(int itemIndex) const;
+    nxui::Rect xmbCategoryRect(int columnIndex) const;
+
+    int hitTestFlow(float screenX, float screenY) const;
+    int hitTestShelf(float screenX, float screenY) const;
+    int hitTestDeck(float screenX, float screenY) const;
+    int hitTestCover(float screenX, float screenY) const;
+    static bool projectPoint3D(const nxui::Vec3& p, float screenW, float screenH, nxui::Vec2& out);
+    static bool pointInQuad(float px, float py, const nxui::Vec2 pts[4]);
+    nxui::Rect projected3DIconRect(int index) const;
+    // Places one case by its signed distance from the row centre, saturating at
+    // one item out. That saturation is what gives coverflow a single upright
+    // face against a receding wall rather than a smooth arc.
+    static void flowPlace(float p, float& x, float& z, float& angle);
+    // A face of the 3D case box in its own local coordinates: lx runs across the face,
+    // lz is depth. Watertight geometry so front, left spine, right edge, and back
+    // share identical coordinates at their seams.
+    static void flowFace(float x, float z, float angle,
+                         float lx0, float lz0, float lx1, float lz1,
+                         float halfH, nxui::Vec3 out[4]);
+    // Corners of a case at (x, z) swung by angle, ordered TL, TR, BR, BL.
+    static void flowCorners(float x, float z, float angle,
+                            float halfW, float halfH, nxui::Vec3 out[4]);
     void bindEdgeActions(int start, int end);
     void bindGridNavigation(int start, int end);
     nxui::Rect dynamicIconRect(int index, float* outScale = nullptr,
@@ -117,6 +374,45 @@ private:
     };
     mutable std::vector<RenderCandidate> m_lineRenderScratch;
 
+    // Flow render scratch: the visible virtual range, ordered outside-in. There
+    // is no depth buffer, so this ordering is the only depth information the
+    // painter has.
+    struct FlowCandidate {
+        int   index;      // folded index into m_allIcons
+        float p;          // signed distance from the row centre, in items
+        float z;          // depth after placement, for the outside-in sort
+    };
+    mutable std::vector<FlowCandidate> m_flowRenderScratch;
+    // Wall-clock seconds, sampled once per frame so every case in the row is
+    // placed against the same instant.
+    float m_flowClock = 0.f;
+
+    struct FlowCoverEntry {
+        nxui::Texture texture;
+        bool checked = false;
+        bool available = false;
+        bool loading = false;
+    };
+    std::unordered_map<std::uint64_t, FlowCoverEntry> m_flowCovers;
+
+    // White Nintendo Switch logo printed on the case tab in Flow view
+    // (icons/switch_logo_white.png). Loaded once, lazily; absent file means the
+    // tab is drawn as plain red.
+    nxui::Texture m_flowLogoTex;
+    bool m_flowLogoTried = false;
+    nxui::ThreadPool* m_threadPool = nullptr;
+    struct CoverDecodeState {
+        nxui::DecodedImage decoded;
+        std::atomic<bool> done{false};
+        std::atomic<bool> failed{false};
+    };
+    struct PendingCoverDecode {
+        std::uint64_t titleId = 0;
+        std::shared_ptr<CoverDecodeState> state;
+        std::future<void> future;
+    };
+    std::vector<PendingCoverDecode> m_pendingCoverDecodes;
+
     // Inputs the carousel layout was last computed against. Used to skip the
     // full-library rect rebuild while the line is at rest.
     int m_lineLayoutCacheCount = -1;
@@ -132,6 +428,7 @@ private:
     int m_lineRingCount = -1;
     float lineRingDelta(float from, float to) const;
     nxui::AnimatedFloat m_lineScrollOffset{0.f};
+    nxui::AnimatedFloat m_layoutReveal{1.f};
     // 0 = grid geometry (usual), 1 = carousel geometry (single row)
     nxui::AnimatedFloat m_layoutMorph{0.f};
     bool m_layoutMorphing = false;
@@ -142,6 +439,38 @@ private:
     nxui::Widget* m_lineDownTarget = nullptr;
     std::vector<nxui::Widget*> m_gridLeftTargets;
     std::vector<nxui::Widget*> m_gridRightTargets;
+
+    // List (Niagara) state
+    ListContext m_listContext;
+    GameDetailProvider m_gameDetailProvider;
+    float m_listScrollOffset = 0.0f;
+    float m_listTargetScroll = 0.0f;
+
+    // Metro (Live Tiles) state
+    MetroContext m_metroContext;
+    nxui::Widget* m_metroUpTarget = nullptr;
+    std::unordered_map<std::uint64_t, std::pair<int, int>> m_metroTileSpans;
+    std::vector<MetroTileRect> m_metroTiles;
+    std::vector<std::shared_ptr<GlossyIcon>> m_metroSystemIcons;
+    float m_metroScrollY = 0.0f;
+    float m_metroTargetScrollY = 0.0f;
+    bool m_metroFocused = true;
+    std::function<void(std::uint64_t, int, int)> m_onMetroTileSpanChanged;
+
+    // XMB Cross-Media Bar state
+    XmbContext m_xmbContext;
+    std::vector<std::shared_ptr<GlossyIcon>> m_xmbSystemIcons;
+    std::vector<std::vector<GlossyIcon*>> m_xmbCols;
+    std::vector<std::string> m_xmbColNames;
+    std::vector<nxui::Texture*> m_xmbColIcons;
+    int m_xmbCol = 4;
+    int m_xmbItem = 0;
+    // Row last selected in the games column. Kept so leaving the games category
+    // and coming back restores the player's place, and so the icon streamer has
+    // somewhere sensible to centre while a system category is selected.
+    int m_xmbGamesRow = 0;
+    float m_xmbColScroll = 4.0f;
+    float m_xmbItemScroll = 0.0f;
 
     int m_cols = 5, m_rows = 3;
     int m_page = 0, m_totalPages = 1;
@@ -165,6 +494,7 @@ private:
     static constexpr float kEdgeBumpDistance = 26.f;
 
     std::function<void()> m_onPageSwitched;
+    std::function<void(nxui::Widget*)> m_onFocusChanged;
     std::function<void(int)> m_onEdgePage;
     std::function<bool(int)> m_onEdgePageHold;
 };

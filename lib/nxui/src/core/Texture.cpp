@@ -72,7 +72,10 @@ bool Texture::loadImageData(GpuDevice& gpu, Renderer& ren,
     // MemBlock is dropped when a bigger one is needed, and the descriptor at
     // oldSlot is rewritten to point at the new image. Both belong to the frame
     // in flight until the GPU says otherwise.
-    if (m_valid && (oldSlot >= 0 || m_mem))
+    // Not gated on m_valid: a load that failed at registerTexture leaves
+    // m_valid false but m_mem populated, with its upload possibly still queued.
+    // Dropping or overwriting that block without waiting is the same hazard.
+    if (oldSlot >= 0 || m_mem)
         gpu.waitIdle();
 
     m_valid = false;
@@ -147,6 +150,9 @@ bool Texture::loadImageData(GpuDevice& gpu, Renderer& ren,
     if (!gpu.uploadTexture(m_image, data, (uint32_t)dataSize, w, h, dataSize)) {
         std::printf("[Texture] uploadTexture FAILED (%dx%d)\n", w, h);
         // Half a texture is worse than none: it can still be bound and drawn.
+        // The descriptor slot taken from the previous image was cleared above
+        // (m_slot = -1); give it back, or it leaks and still points at m_mem.
+        if (oldSlot >= 0) ren.releaseTextureSlot(oldSlot);
         m_valid = false;
         return false;
     }
@@ -405,6 +411,19 @@ bool Texture::loadFromSurface(GpuDevice& gpu, Renderer& ren,
     for (int y = 0; y < h; ++y)
         std::memcpy(tight.data() + y * w * 4, data + y * pitch, w * 4);
     return loadFromPixels(gpu, ren, tight.data(), w, h);
+}
+
+bool Texture::updatePixels(GpuDevice& gpu, const void* pixels, uint32_t size) {
+    if (!m_valid || !pixels || size == 0 || !m_image.getGpuAddr())
+        return false;
+    // expectedBytes is the size this image occupies, NOT the caller's `size`:
+    // passing `size` made the short-buffer guard compare a number with itself
+    // and always pass, so a short buffer reached the copy. updatePixels is for
+    // uncompressed RGBA (video frames); this guard rejects a SHORT buffer only,
+    // it does not detect a compressed destination format.
+    // reuploadsLiveImage: the previous frame may still be sampling this image.
+    const uint64_t expected = static_cast<uint64_t>(m_width) * static_cast<uint64_t>(m_height) * 4u;
+    return gpu.uploadTexture(m_image, pixels, size, m_width, m_height, expected, true);
 }
 
 } // namespace nxui

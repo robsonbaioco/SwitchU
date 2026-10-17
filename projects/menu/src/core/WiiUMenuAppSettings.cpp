@@ -1469,6 +1469,10 @@ void WiiUMenuApp::createThemeShop() {
         m_config.save();
         reflowHomeGrid();
     });
+    m_themeShop->setLayoutModeState(m_appLayoutMode);
+    m_themeShop->onLayoutModeChange([this](AppLayoutMode mode) {
+        setAppLayoutMode(mode);
+    });
 
     m_themeShop->onAutoThemeOpen([this]() { openAutoThemeSettings(); });
     m_themeShop->onNextTrack([this]() {

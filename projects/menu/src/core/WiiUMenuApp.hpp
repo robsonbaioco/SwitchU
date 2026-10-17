@@ -1,4 +1,5 @@
 #pragma once
+#include <unordered_set>
 #include <nxui/Activity.hpp>
 #include <nxui/Application.hpp>
 #include <nxui/core/Font.hpp>
@@ -52,6 +53,7 @@
 #include "warawara/WaraWaraPlazaScreen.hpp"
 #include "warawara/PlazaScreenSwapButton.hpp"
 #include "widgets/MediaCenterButton.hpp"
+#include "widgets/PowerButton.hpp"
 #include "media/MediaCenterScreen.hpp"
 #include "gallery/GameArtworkStore.hpp"
 #include "core/Config.hpp"
@@ -128,6 +130,10 @@ private:
 
     void loadResources();
     void loadStaticTextures();
+    void ensureWaraWaraServices();
+    void ensureXmbTextures();
+    void ensureMetroTextures();
+    void ensureClockFont();
     void setupLockScreen();
     GridLayoutMetrics computeGridLayoutMetrics() const;
     GridLayoutMetrics computeGridLayoutMetrics(int columns, int rows) const;
@@ -194,6 +200,27 @@ private:
     nxui::Rect folderTileRect(std::uint32_t folderId) const;
     void snapCursorToFocus();
     void syncEditJiggle();
+    void updateGridXmbContext();
+    void updateGridListContext();
+    void updateGridMetroContext();
+    void applyMetroPowerButton(bool isMetro);
+    void cycleCurrentMetroTileSize();
+    IconGrid::GameDetailInfo getGameDetailInfo(std::uint64_t titleId);
+    std::string getOrFetchSummary(std::uint64_t titleId);
+    void triggerSummaryFetchIfNeeded(std::uint64_t titleId);
+    // The streamer thinks in pages. Each view has to say which "page" it is on
+    // and how many icons that page holds, and the three models answer
+    // differently: the paged grid reports its real page, the carousel reports
+    // the focused index with one icon per page, and XMB reports the focused
+    // index of its games column. Deriving that in one place is what keeps a
+    // view from silently reporting the paged-grid geometry -- which is what
+    // blanked the bar's icons after returning from a game.
+    struct StreamPump {
+        int page = 0;
+        int perPage = 1;
+    };
+    StreamPump gridStreamPump() const;
+    void pumpIconStreamer();
     void syncPageIndicator();
     void flipPageFromEdge(int dir);
     void requestOpenFolder(std::uint32_t folderId, std::uint64_t focusTitleId = 0);
@@ -370,6 +397,11 @@ private:
     int   m_lineRepeatDir = 0;
     float m_lineRepeatTimer = 0.f;
     bool stepDynamicLine(int dir);
+    int  listNeighbour(int dir) const;
+    int   m_listRepeatDir = 0;
+    float m_listRepeatTimer = 0.f;
+    bool stepList(int dir);
+    bool jumpList(int dir);
     struct PageArrowAnim {
         float show = 0.f;
         float press = 0.f;
@@ -426,6 +458,8 @@ private:
     bool handleAccessibilityToggleCombo();
     bool handleFrameDumpShortcut();
     void syncFrameDumpCapture();
+    // Defined outside the SWITCHU_MENU block: onUpdate() calls them in the
+    // homebrew build too.
     void checkNewGameSteamGridDbPrompt();
     void promptSteamGridDbForGame(std::uint64_t titleId, const std::string& title);
     std::string resolveAppTitle(std::uint64_t titleId, const std::string& currentTitle);
@@ -510,6 +544,26 @@ private:
     void setAppLayoutMode(AppLayoutMode mode);
     void configureDynamicLineNavigation();
     AppLayoutMode appLayoutMode() const { return m_appLayoutMode; }
+    // DynamicLine, Flow, Shelf, Deck, and Cover are presentations of one carousel model: a
+    // single wrapping row, ring icon streaming, no paging, and reordering by
+    // visible row order. Behaviour common to all carousel views must test this
+    // rather than DynamicLine alone.
+    bool isCarouselLayout() const {
+        return m_appLayoutMode == AppLayoutMode::DynamicLine
+            || m_appLayoutMode == AppLayoutMode::Flow
+            || m_appLayoutMode == AppLayoutMode::Shelf
+            || m_appLayoutMode == AppLayoutMode::Deck
+            || m_appLayoutMode == AppLayoutMode::Cover;
+    }
+    bool isXmbLayout() const {
+        return m_appLayoutMode == AppLayoutMode::Xmb;
+    }
+    bool isListLayout() const {
+        return m_appLayoutMode == AppLayoutMode::List;
+    }
+    bool isMetroLayout() const {
+        return m_appLayoutMode == AppLayoutMode::Metro;
+    }
     warawara::MiiAvatarManager& miiAvatarManager() { return m_miiAvatarManager; }
     const warawara::MiiAvatarManager& miiAvatarManager() const { return m_miiAvatarManager; }
     warawara::PlazaDialogueEngine& plazaDialogueEngine() { return m_plazaDialogueEngine; }
@@ -605,6 +659,8 @@ private:
     std::shared_ptr<nxui::Box>                       m_topCenterCluster;
     std::shared_ptr<warawara::PlazaScreenSwapButton> m_screenSwapButton;
     std::shared_ptr<widgets::MediaCenterButton>      m_mediaCenterButton;
+    std::shared_ptr<widgets::PowerButton>            m_powerButton;
+    std::function<void()>                            m_showPowerDialog;
     std::shared_ptr<media::MediaCenterScreen>        m_mediaCenterScreen;
     int m_plazaIconPumpIndex = 0;
     nxui::Widget* m_activityLogReturnFocus = nullptr;
@@ -618,6 +674,28 @@ private:
     nxui::Texture m_batteryJoyconLeftTex;
     nxui::Texture m_batteryJoyconRightTex;
     nxui::Texture m_batteryControllerTex;
+    // XMB needs artwork the sidebar does not carry: the bar shows a Media, a
+    // Network and a Homebrew category that have no sidebar button to borrow an
+    // icon from. Without these every one of those rows fell back to the
+    // settings gear or the album icon, so a whole category rendered as repeats
+    // of one picture. Loaded once with the other static textures; any that is
+    // missing from romfs stays invalid and the existing fallback still applies.
+    nxui::Texture m_xmbAlbumTex;
+    nxui::Texture m_xmbSettingsTex;
+    nxui::Texture m_xmbControllersTex;
+    nxui::Texture m_xmbPowerTex;
+    nxui::Texture m_xmbThemesTex;
+    nxui::Texture m_xmbMiiTex;
+    nxui::Texture m_xmbMediaCenterTex;
+    nxui::Texture m_xmbNetworkTex;
+    nxui::Texture m_xmbBrowserTex;
+    nxui::Texture m_xmbHomebrewTex;
+    nxui::Texture m_metroThemesTex;
+    nxui::Texture m_metroControllersTex;
+    nxui::Texture m_metroAlbumTex;
+    nxui::Texture m_metroMusicTex;
+    nxui::Texture m_metroSettingsTex;
+    nxui::Texture m_metroHomebrewTex;
     nxui::AnimatedFloat m_arrowCenterY;
     bool m_arrowCenterInit = false;
 
@@ -665,6 +743,7 @@ private:
     bool                 m_musicFadeActive = false;
 #ifdef SWITCHU_MENU
     uint64_t             m_transitionOriginTick = 0;
+    switchu::smi::MenuTransitionReason m_transitionReason = switchu::smi::MenuTransitionReason::Unknown;
     // Boot-guard safe mode, from the daemon's start status. The overrides are
     // applied to m_config in memory only (see AppConfig::enterSafeMode).
     bool                 m_safeModeRequested = false;
@@ -857,6 +936,8 @@ private:
     // must outlive that dialog's own return-focus handoff.
     nxui::Widget* m_gameGalleryReturnFocus = nullptr;
     nxui::Widget* m_gameDetailsReturnFocus = nullptr;
+    nxui::Widget* m_settingsReturnFocus = nullptr;
+    nxui::Widget* m_themeShopReturnFocus = nullptr;
     bool m_dialogWasActive            = false;
 #ifdef SWITCHU_PREFLIGHT_EDGE_TEST
     // Diagnostic-only state. Production lock behavior still clears every
@@ -925,6 +1006,14 @@ private:
 
     float m_returnFadeTimer = 0.f;
     float m_tutorialStartupFadeTimer = 0.f;
+
+    std::mutex m_summaryMutex;
+    std::unordered_map<std::uint64_t, std::string> m_summaryCache;
+    std::unordered_set<std::uint64_t> m_summaryPending;
+    std::unordered_map<std::uint64_t, float> m_summaryFailedCooldown;
+    std::uint64_t m_settledTitleId = 0;
+    float m_settleTimer = 0.f;
+    static constexpr float kMetadataSettleDelay = 0.35f;
     std::uint64_t m_tutorialStartupFadeDeadlineTick = 0;
     bool  m_tutorialStartupFade = false;
     bool m_hintPanelInitialized = false;

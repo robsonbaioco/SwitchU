@@ -282,26 +282,34 @@ void SteamGridDbBackdrop::drawSet(nxui::Renderer& renderer,
     const nxui::Rect screen = rect();
 
     if (set.hasHero && set.hero.valid()) {
-        const float maxHeroAlpha = m_layoutMode == AppLayoutMode::DynamicLine ? 0.85f : 0.40f;
-        const float heroAlpha = maxHeroAlpha * m_artworkOpacityScale;
+        // The paged grid keeps the hero as a faint wash under the fork's 0.40
+        // ceiling; every carousel/3D view showcases it and follows the 2.6.5
+        // opacity slider directly.
+        const float heroAlpha = m_layoutMode == AppLayoutMode::Grid
+            ? 0.40f * m_artworkOpacityScale
+            : std::clamp(m_artworkOpacityScale, 0.f, 1.f);
         renderer.pushClipRect(screen);
         renderer.drawTexture(&set.hero, fillRect(set.hero, screen),
                              nxui::Color::white().withAlpha(alpha * heroAlpha));
         renderer.popClipRect();
-        if (m_layoutMode == AppLayoutMode::DynamicLine) {
+        if (m_layoutMode == AppLayoutMode::DynamicLine || m_layoutMode == AppLayoutMode::Deck || m_layoutMode == AppLayoutMode::Cover || m_layoutMode == AppLayoutMode::List) {
             renderer.drawGradientRect(
                 screen,
                 nxui::Color(0.f, 0.f, 0.f, 0.04f * alpha),
-                nxui::Color(0.f, 0.f, 0.f, 0.46f * alpha));
+                nxui::Color(0.f, 0.f, 0.f, 0.52f * alpha));
         }
     }
 
-    if (m_layoutMode != AppLayoutMode::DynamicLine) return;
+    // Dynamic line and Deck showcase the hero logo and banner above the ribbon.
+    // Flow/Shelf keep the backdrop minimal to avoid drawing over 3D cases/reflections.
+    if (m_layoutMode != AppLayoutMode::DynamicLine && m_layoutMode != AppLayoutMode::Deck) return;
 
     if (set.hasLogo && set.logo.valid()) {
-        // Visually center the logo in the open space between the profile strip
-        // and the single-row carousel.
-        const nxui::Rect logoArea{370.f, 149.f, 540.f, 150.f};
+        // Visually position the logo in the upper open space (top-left for Deck,
+        // center for DynamicLine, between the profile strip and the carousel).
+        const nxui::Rect logoArea = (m_layoutMode == AppLayoutMode::Deck)
+            ? nxui::Rect{80.f, 90.f, 440.f, 130.f}
+            : nxui::Rect{370.f, 149.f, 540.f, 150.f};
         const float logoAlpha = std::clamp(m_artworkOpacityScale * 1.5f, 0.f, 0.96f);
         renderer.drawTexture(&set.logo, containRect(set.logo, logoArea),
                              nxui::Color::white().withAlpha(logoAlpha * alpha));

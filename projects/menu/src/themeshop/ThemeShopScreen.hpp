@@ -4,6 +4,7 @@
 #include "YouTubeClient.hpp"
 #include <unordered_set>
 #include "settings/TabbedOverlayScreen.hpp"
+#include "core/AppLayoutMode.hpp"
 
 #include <nxui/core/Texture.hpp>
 
@@ -103,6 +104,28 @@ public:
     void onGridColumnsChange(IntCb cb)   { m_gridColumnsCb = std::move(cb); }
     void onGridRowsChange(IntCb cb)      { m_gridRowsCb = std::move(cb); }
     void onDynamicPagesChange(BoolCb cb) { m_dynamicPagesCb = std::move(cb); }
+    // Launcher view selector (OmniLaunch views port). setLayoutModeState keeps
+    // the 9-option selector in sync when R cycles the view outside this screen.
+    using LayoutModeCb = std::function<void(AppLayoutMode)>;
+    void onLayoutModeChange(LayoutModeCb cb) { m_layoutModeCb = std::move(cb); }
+    void setLayoutModeState(AppLayoutMode mode) {
+        m_layoutMode = mode;
+        const int val = mode == AppLayoutMode::Metro ? 8
+                      : mode == AppLayoutMode::List  ? 7
+                      : mode == AppLayoutMode::Xmb   ? 6
+                      : mode == AppLayoutMode::Cover ? 5
+                      : mode == AppLayoutMode::Deck  ? 4
+                      : mode == AppLayoutMode::Shelf ? 3
+                      : mode == AppLayoutMode::Flow  ? 2
+                      : mode == AppLayoutMode::DynamicLine ? 1 : 0;
+        for (auto& tab : m_tabs) {
+            for (auto& item : tab.items) {
+                if (item.type == ItemType::Selector && item.options.size() == 9) {
+                    item.intVal = val;
+                }
+            }
+        }
+    }
     void onAutoThemeOpen(VoidCb cb) { m_autoThemeOpenCb = std::move(cb); }
     void onNextTrack(VoidCb cb)          { m_nextTrackCb = std::move(cb); }
     void onThemeShopApply(StringCb cb)   { m_themeShopApplyCb = std::move(cb); }
@@ -352,6 +375,8 @@ private:
     IntCb m_gridColumnsCb;
     IntCb m_gridRowsCb;
     BoolCb m_dynamicPagesCb;
+    LayoutModeCb m_layoutModeCb;
+    AppLayoutMode m_layoutMode = AppLayoutMode::Grid;
     VoidCb m_autoThemeOpenCb;
     VoidCb m_nextTrackCb;
     StringCb m_themeShopApplyCb;

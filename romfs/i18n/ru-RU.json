@@ -27,7 +27,14 @@
       "right_sidebar": "Правая панель",
       "user_profiles": "Профили пользователей",
       "dynamic_line": "Центральная линия",
-      "menu": "Контекстное меню"
+      "menu": "Контекстное меню",
+      "flow": "Поток обложек",
+      "shelf": "Полка",
+      "deck": "Дек",
+      "cover": "Обложка",
+      "xmb": "XMB",
+      "list": "Список",
+      "metro": "Живые плитки"
     },
     "roles": {
       "button": "кнопка",
@@ -93,7 +100,14 @@
     "user_profile": "Профиль пользователя",
     "layout": {
       "dynamic_line": "Режим динамической линии",
-      "grid": "Режим сетки"
+      "grid": "Режим сетки",
+      "flow": "Режим потока",
+      "shelf": "Режим полки",
+      "deck": "Режим дека",
+      "cover": "Режим обложки",
+      "xmb": "Режим XMB",
+      "list": "Режим списка",
+      "metro": "Режим Metro с живыми плитками"
     }
   },
   "tutorial": {
@@ -354,7 +368,9 @@
       "ui_wireframe": "Каркас интерфейса",
       "ui_wireframe_desc": "Показывать контуры всех блоков Box для отладки макета.",
       "dynamic_pages": "Динамические страницы",
-      "dynamic_pages_desc": "Подстраивает количество страниц под установленные программы вместо 8 фиксированных страниц."
+      "dynamic_pages_desc": "Подстраивает количество страниц под установленные программы вместо 8 фиксированных страниц.",
+      "launcher_view": "Вид лаунчера",
+      "launcher_view_desc": "Выберите между сеткой, динамической линией или 3D Flow."
     },
     "internet": {
       "wifi_ssid": "WiFi-сеть",
@@ -540,6 +556,17 @@
       "based_on_fork": "Основан на форке",
       "upstream_source": "Исходный код (оригинал)",
       "upstream_source_value": "github.com/PoloNX/SwitchU"
+    },
+    "layout": {
+      "grid": "Сетка",
+      "dynamic_line": "Динамическая линия",
+      "flow": "Flow (3D)",
+      "shelf": "Shelf (3D)",
+      "deck": "Deck (3D)",
+      "cover": "Cover",
+      "xmb": "XMB",
+      "list": "Список (Niagara)",
+      "metro": "Metro (живые плитки)"
     }
   },
   "userselect": {
@@ -582,7 +609,9 @@
       "logo": "Логотип",
       "logo_desc": "Открыть галерею логотипов и выбрать изображение.",
       "icon": "Замена значка",
-      "icon_desc": "Открыть галерею значков и выбрать замену для этой игры."
+      "icon_desc": "Открыть галерею значков и выбрать замену для этой игры.",
+      "cover": "Portrait cover",
+      "cover_desc": "Open the cover gallery and choose a 2:3 vertical box cover for Flow view."
     }
   },
   "power": {

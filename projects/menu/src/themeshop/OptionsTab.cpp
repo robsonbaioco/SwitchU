@@ -26,7 +26,7 @@ ThemeShopScreen::Tab themeshop::tabs::OptionsTab::build(ThemeShopScreen& screen)
         t.items.push_back(std::move(it));
     }
 
-    {
+        {
         SettingItem it;
         it.label = i18n.tr("settings.music.music_volume", "Music Volume");
         it.type = ItemType::Slider;
@@ -102,6 +102,48 @@ ThemeShopScreen::Tab themeshop::tabs::OptionsTab::build(ThemeShopScreen& screen)
         t.items.push_back(std::move(it));
     }
 
+
+
+    {
+        SettingItem it;
+        it.label = i18n.tr("settings.display.launcher_view", "Launcher View");
+        it.description = i18n.tr("settings.display.launcher_view_desc",
+                                 "Choose between standard Grid, Dynamic Line carousel, 3D Flow, 3D Shelf, 3D Deck, Fullscreen Cover, XMB, List (Niagara), or Metro (Live Tiles).");
+        it.type = ItemType::Selector;
+        it.options = {
+            i18n.tr("settings.layout.grid", "Grid"),
+            i18n.tr("settings.layout.dynamic_line", "Dynamic Line"),
+            i18n.tr("settings.layout.flow", "Flow (3D)"),
+            i18n.tr("settings.layout.shelf", "Shelf (3D)"),
+            i18n.tr("settings.layout.deck", "Deck (3D)"),
+            i18n.tr("settings.layout.cover", "Cover"),
+            i18n.tr("settings.layout.xmb", "XMB"),
+            i18n.tr("settings.layout.list", "List (Niagara)"),
+            i18n.tr("settings.layout.metro", "Metro (Live Tiles)"),
+        };
+        it.intVal = screen.m_layoutMode == AppLayoutMode::Metro ? 8
+                  : screen.m_layoutMode == AppLayoutMode::List  ? 7
+                  : screen.m_layoutMode == AppLayoutMode::Xmb   ? 6
+                  : screen.m_layoutMode == AppLayoutMode::Cover ? 5
+                  : screen.m_layoutMode == AppLayoutMode::Deck  ? 4
+                  : screen.m_layoutMode == AppLayoutMode::Shelf ? 3
+                  : screen.m_layoutMode == AppLayoutMode::Flow  ? 2
+                  : screen.m_layoutMode == AppLayoutMode::DynamicLine ? 1 : 0;
+        it.onChange = [&screen](SettingItem& self) {
+            AppLayoutMode mode = self.intVal == 8 ? AppLayoutMode::Metro
+                               : self.intVal == 7 ? AppLayoutMode::List
+                               : self.intVal == 6 ? AppLayoutMode::Xmb
+                               : self.intVal == 5 ? AppLayoutMode::Cover
+                               : self.intVal == 4 ? AppLayoutMode::Deck
+                               : self.intVal == 3 ? AppLayoutMode::Shelf
+                               : self.intVal == 2 ? AppLayoutMode::Flow
+                               : self.intVal == 1 ? AppLayoutMode::DynamicLine
+                                                  : AppLayoutMode::Grid;
+            screen.m_layoutMode = mode;
+            if (screen.m_layoutModeCb) screen.m_layoutModeCb(mode);
+        };
+        t.items.push_back(std::move(it));
+    }
 
 
     {

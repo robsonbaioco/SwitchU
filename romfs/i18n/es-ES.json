@@ -28,7 +28,14 @@
       "right_sidebar": "Barra lateral derecha",
       "user_profiles": "Perfiles de usuario",
       "dynamic_line": "Línea central",
-      "menu": "Menú contextual"
+      "menu": "Menú contextual",
+      "flow": "Flujo de portadas",
+      "shelf": "Estantería",
+      "deck": "Deck",
+      "cover": "Portada",
+      "xmb": "XMB",
+      "list": "Lista",
+      "metro": "Mosaicos dinámicos"
     },
     "roles": {
       "button": "botón",
@@ -94,7 +101,14 @@
     "user_profile": "Perfil de usuario",
     "layout": {
       "dynamic_line": "Modo de línea dinámica",
-      "grid": "Modo de cuadrícula"
+      "grid": "Modo de cuadrícula",
+      "flow": "Modo flujo",
+      "shelf": "Modo estantería",
+      "deck": "Modo deck",
+      "cover": "Modo portada",
+      "xmb": "Modo XMB",
+      "list": "Modo lista",
+      "metro": "Modo Metro de mosaicos dinámicos"
     }
   },
   "tutorial": {
@@ -355,7 +369,9 @@
       "ui_wireframe": "Wireframe de interfaz",
       "ui_wireframe_desc": "Muestra los contornos de todos los widgets Box para depurar el diseño.",
       "dynamic_pages": "Páginas dinámicas",
-      "dynamic_pages_desc": "Ajusta la cantidad de páginas al software instalado en lugar de mantener 8 páginas fijas."
+      "dynamic_pages_desc": "Ajusta la cantidad de páginas al software instalado en lugar de mantener 8 páginas fijas.",
+      "launcher_view": "Vista del Lanzador",
+      "launcher_view_desc": "Elija entre la Cuadrícula estándar, el carrusel de Línea Dinámica o el Flow 3D."
     },
     "internet": {
       "wifi_ssid": "Red WiFi",
@@ -541,6 +557,17 @@
       "based_on_fork": "Basado en el fork de",
       "upstream_source": "Código fuente (original)",
       "upstream_source_value": "github.com/PoloNX/SwitchU"
+    },
+    "layout": {
+      "grid": "Cuadrícula",
+      "dynamic_line": "Línea Dinámica",
+      "flow": "Flow (3D)",
+      "shelf": "Shelf (3D)",
+      "deck": "Deck (3D)",
+      "cover": "Portada",
+      "xmb": "XMB",
+      "list": "Lista (Niagara)",
+      "metro": "Metro (mosaicos dinámicos)"
     }
   },
   "userselect": {
@@ -583,7 +610,9 @@
       "logo": "Logo",
       "logo_desc": "Abre la galería de logos y elige la imagen que usar.",
       "icon": "Icono sustituto",
-      "icon_desc": "Abre la galería de iconos y elige una sustitución para este juego."
+      "icon_desc": "Abre la galería de iconos y elige una sustitución para este juego.",
+      "cover": "Portrait cover",
+      "cover_desc": "Open the cover gallery and choose a 2:3 vertical box cover for Flow view."
     }
   },
   "power": {

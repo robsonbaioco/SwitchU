@@ -71,8 +71,32 @@ bool AppConfig::load() {
         readJsonOpt(j, "appLayoutMode", mode);
         if (mode == "dynamic_line" || mode == "line")
             appLayoutMode = AppLayoutMode::DynamicLine;
+        else if (mode == "flow")
+            appLayoutMode = AppLayoutMode::Flow;
+        else if (mode == "shelf")
+            appLayoutMode = AppLayoutMode::Shelf;
+        else if (mode == "deck")
+            appLayoutMode = AppLayoutMode::Deck;
+        else if (mode == "cover")
+            appLayoutMode = AppLayoutMode::Cover;
+        else if (mode == "xmb")
+            appLayoutMode = AppLayoutMode::Xmb;
+        else if (mode == "list")
+            appLayoutMode = AppLayoutMode::List;
+        else if (mode == "metro" || mode == "tiles")
+            appLayoutMode = AppLayoutMode::Metro;
         else if (mode == "grid")
             appLayoutMode = AppLayoutMode::Grid;
+    }
+    if (j.contains("metroTileSpans") && j["metroTileSpans"].is_object()) {
+        for (auto it = j["metroTileSpans"].begin(); it != j["metroTileSpans"].end(); ++it) {
+            try {
+                std::uint64_t tid = std::stoull(it.key(), nullptr, 16);
+                if (it.value().is_array() && it.value().size() == 2) {
+                    metroTileSpans[tid] = {it.value()[0].get<int>(), it.value()[1].get<int>()};
+                }
+            } catch (...) {}
+        }
     }
     readJsonOpt(j, "actionHintStyle", actionHintStyle);
     readJsonOpt(j, "uiLanguageOverride", uiLanguageOverride);
@@ -249,7 +273,26 @@ bool AppConfig::save() const {
     j["gridColumns"] = std::clamp(gridColumns, 3, 8);
     j["gridRows"] = std::clamp(gridRows, 2, 5);
     j["dynamicPages"] = dynamicPages;
-    j["appLayoutMode"] = appLayoutMode == AppLayoutMode::DynamicLine ? "dynamic_line" : "grid";
+    // Stable strings, never enum ordinals: an installation written by a build
+    // that knows Flow/Shelf/Deck must still read correctly on one that does not.
+    j["appLayoutMode"] = appLayoutMode == AppLayoutMode::DynamicLine ? "dynamic_line"
+                       : appLayoutMode == AppLayoutMode::Flow        ? "flow"
+                       : appLayoutMode == AppLayoutMode::Shelf       ? "shelf"
+                       : appLayoutMode == AppLayoutMode::Deck        ? "deck"
+                       : appLayoutMode == AppLayoutMode::Cover       ? "cover"
+                       : appLayoutMode == AppLayoutMode::Xmb         ? "xmb"
+                       : appLayoutMode == AppLayoutMode::List        ? "list"
+                       : appLayoutMode == AppLayoutMode::Metro       ? "metro"
+                                                                     : "grid";
+    if (!metroTileSpans.empty()) {
+        nlohmann::json spansObj = nlohmann::json::object();
+        for (const auto& kv : metroTileSpans) {
+            char tidHex[32];
+            std::snprintf(tidHex, sizeof(tidHex), "%016llx", static_cast<unsigned long long>(kv.first));
+            spansObj[tidHex] = {kv.second.first, kv.second.second};
+        }
+        j["metroTileSpans"] = spansObj;
+    }
     j["actionHintStyle"] = actionHintStyle == "panel" ? "panel" : "capsules";
     j["uiLanguageOverride"] = uiLanguageOverride;
     j["soundPreset"] = (m_safe && !m_touchedSound) ? m_savedSound : soundPreset;

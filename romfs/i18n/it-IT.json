@@ -27,7 +27,14 @@
       "right_sidebar": "Barra laterale destra",
       "user_profiles": "Profili utente",
       "dynamic_line": "Riga centrale",
-      "menu": "Menu contestuale"
+      "menu": "Menu contestuale",
+      "flow": "Flusso di copertine",
+      "shelf": "Scaffale",
+      "deck": "Deck",
+      "cover": "Copertina",
+      "xmb": "XMB",
+      "list": "Elenco",
+      "metro": "Riquadri animati"
     },
     "roles": {
       "button": "pulsante",
@@ -93,7 +100,14 @@
     "user_profile": "Profilo utente",
     "layout": {
       "dynamic_line": "Modalità riga dinamica",
-      "grid": "Modalità griglia"
+      "grid": "Modalità griglia",
+      "flow": "Modalità flusso",
+      "shelf": "Modalità scaffale",
+      "deck": "Modalità deck",
+      "cover": "Modalità copertina",
+      "xmb": "Modalità XMB",
+      "list": "Modalità elenco",
+      "metro": "Modalità Metro a riquadri animati"
     }
   },
   "tutorial": {
@@ -354,7 +368,9 @@
       "ui_wireframe": "Wireframe interfaccia",
       "ui_wireframe_desc": "Mostra i contorni di tutti i widget Box per il debug del layout.",
       "dynamic_pages": "Pagine dinamiche",
-      "dynamic_pages_desc": "Regola il numero di pagine in base ai software installati invece di mantenere 8 pagine fisse."
+      "dynamic_pages_desc": "Regola il numero di pagine in base ai software installati invece di mantenere 8 pagine fisse.",
+      "launcher_view": "Vista Launcher",
+      "launcher_view_desc": "Scegli tra Griglia standard, carosello Linea Dinamica o Flow 3D."
     },
     "internet": {
       "wifi_ssid": "Rete WiFi",
@@ -540,6 +556,17 @@
       "based_on_fork": "Basato sul fork di",
       "upstream_source": "Codice sorgente (originale)",
       "upstream_source_value": "github.com/PoloNX/SwitchU"
+    },
+    "layout": {
+      "grid": "Griglia",
+      "dynamic_line": "Linea Dinamica",
+      "flow": "Flow (3D)",
+      "shelf": "Shelf (3D)",
+      "deck": "Deck (3D)",
+      "cover": "Copertina",
+      "xmb": "XMB",
+      "list": "Elenco (Niagara)",
+      "metro": "Metro (riquadri animati)"
     }
   },
   "userselect": {
@@ -582,7 +609,9 @@
       "logo": "Logo",
       "logo_desc": "Apri la galleria dei loghi e scegli l'immagine da usare.",
       "icon": "Icona sostitutiva",
-      "icon_desc": "Apri la galleria delle icone e scegli una sostituzione per questo gioco."
+      "icon_desc": "Apri la galleria delle icone e scegli una sostituzione per questo gioco.",
+      "cover": "Portrait cover",
+      "cover_desc": "Open the cover gallery and choose a 2:3 vertical box cover for Flow view."
     }
   },
   "power": {

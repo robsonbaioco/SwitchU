@@ -27,7 +27,14 @@
       "right_sidebar": "Barra lateral direita",
       "user_profiles": "Perfis de usuário",
       "dynamic_line": "Linha central",
-      "menu": "Menu de contexto"
+      "menu": "Menu de contexto",
+      "flow": "Fluxo de capas",
+      "shelf": "Estante (Shelf)",
+      "deck": "Deck",
+      "cover": "Capa",
+      "xmb": "XMB",
+      "list": "Lista",
+      "metro": "Blocos dinâmicos"
     },
     "roles": {
       "button": "botão",
@@ -93,7 +100,14 @@
     "user_profile": "Perfil de usuário",
     "layout": {
       "dynamic_line": "Modo de linha dinâmica",
-      "grid": "Modo de grade"
+      "grid": "Modo de grade",
+      "flow": "Modo fluxo",
+      "shelf": "Modo estante",
+      "deck": "Modo deck",
+      "cover": "Modo capa",
+      "xmb": "Modo XMB",
+      "list": "Modo lista",
+      "metro": "Modo Metro de blocos dinâmicos"
     }
   },
   "tutorial": {
@@ -360,7 +374,9 @@
       "ui_wireframe": "Contornos da interface",
       "ui_wireframe_desc": "Mostra o contorno de todos os widgets Box para depurar o layout.",
       "dynamic_pages": "Páginas dinâmicas",
-      "dynamic_pages_desc": "Ajusta a quantidade de páginas aos jogos instalados em vez de manter 8 páginas fixas."
+      "dynamic_pages_desc": "Ajusta a quantidade de páginas aos jogos instalados em vez de manter 8 páginas fixas.",
+      "launcher_view": "Modo do Inicializador",
+      "launcher_view_desc": "Escolha entre a Grade padrão, o carrossel Linha Dinâmica ou o Flow 3D."
     },
     "internet": {
       "wifi_ssid": "Rede WiFi",
@@ -558,6 +574,17 @@
       "igdb_id": "IGDB Client ID",
       "igdb_secret": "IGDB Client Secret",
       "igdb_hint": "Opcional. Traz o tempo para zerar. Crie um aplicativo em dev.twitch.tv."
+    },
+    "layout": {
+      "grid": "Grade",
+      "dynamic_line": "Linha Dinâmica",
+      "flow": "Flow (3D)",
+      "shelf": "Shelf (3D)",
+      "deck": "Deck (3D)",
+      "cover": "Capa",
+      "xmb": "XMB",
+      "list": "Lista (Niagara)",
+      "metro": "Metro (Blocos Dinâmicos)"
     }
   },
   "userselect": {
@@ -600,7 +627,9 @@
       "logo": "Logo",
       "logo_desc": "Abre a galeria de logos e escolhe a imagem a usar.",
       "icon": "Ícone substituto",
-      "icon_desc": "Abre a galeria de ícones e escolhe uma substituição para este jogo."
+      "icon_desc": "Abre a galeria de ícones e escolhe uma substituição para este jogo.",
+      "cover": "Capa vertical",
+      "cover_desc": "Abre a galeria de capas e escolhe uma capa de caixa 2:3 para o modo Flow."
     }
   },
   "power": {

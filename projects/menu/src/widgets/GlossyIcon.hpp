@@ -59,13 +59,20 @@ public:
     void setFolderPreview(std::vector<nxui::Texture*> textures) {
         m_folderPreview = std::move(textures);
     }
-    void setFolderVisualSeed(std::uint32_t seed) { m_folderVisualSeed = seed; }
+    const std::vector<nxui::Texture*>& folderPreview() const { return m_folderPreview; }
+    int folderPreviewCount() const { return m_folderPreviewCount; }
+    int folderColorIndex() const { return m_folderColorIndex; }
     void setFolderColorIndex(int index) { m_folderColorIndex = index; }
     void setFolderStyleIndex(int index) { m_folderStyleIndex = index; }
     void setFolderShowCover(bool show) { m_folderShowCover = show; }
     void setFolderCoverTexture(nxui::Texture* tex) { m_folderCover = tex; }
     void setFolderCoverTitleId(std::uint64_t id) { m_folderCoverTitleId = id; }
     void setThemeMode(nxui::ThemeMode mode) { m_themeMode = mode; }
+    void setFolderVisualSeed(std::uint32_t seed) { m_folderVisualSeed = seed; }
+    static void drawFolderContent(nxui::Renderer& ren, const nxui::Rect& bounds,
+                                  const std::vector<nxui::Texture*>& previewTextures,
+                                  int previewCount, int colorIndex, float opacity,
+                                  nxui::Font* font, const std::string& title);
     void setFont(nxui::Font* font) { m_font = font; }  // folder tiles carry their name
     void setWidgetData(switchu::widgets::WidgetType type, int columns, int rows,
                        std::string primary, std::string secondary,
@@ -119,6 +126,8 @@ public:
         m_wideGameHero = hero;
         m_wideGameLogo = logo;
     }
+    nxui::Texture* wideGameHero() const { return m_wideGameHero; }
+    nxui::Texture* wideGameLogo() const { return m_wideGameLogo; }
     void setFavorite(bool fav) { m_isFavorite = fav; }
     bool isFavorite() const { return m_isFavorite; }
     int gridSpanColumns() const { return m_widgetColumns; }
@@ -138,6 +147,7 @@ public:
 
     void setFocusable(bool f) { m_focusable = f; }
     bool isFocusable() const override { return m_focusable; }
+    bool isFocused() const { return m_focused; }
     void onFocusGained() override;
     void onFocusLost() override;
 

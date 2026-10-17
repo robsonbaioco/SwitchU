@@ -27,7 +27,14 @@
       "right_sidebar": "Rechterzijbalk",
       "user_profiles": "Gebruikersprofielen",
       "dynamic_line": "Middellijn",
-      "menu": "Contextmenu"
+      "menu": "Contextmenu",
+      "flow": "Coverstroom",
+      "shelf": "Plank",
+      "deck": "Deck",
+      "cover": "Cover",
+      "xmb": "XMB",
+      "list": "Lijst",
+      "metro": "Live tegels"
     },
     "roles": {
       "button": "knop",
@@ -93,7 +100,14 @@
     "user_profile": "Gebruikersprofiel",
     "layout": {
       "dynamic_line": "Dynamische lijnmodus",
-      "grid": "Rastermodus"
+      "grid": "Rastermodus",
+      "flow": "Stroommodus",
+      "shelf": "Plankmodus",
+      "deck": "Deck-modus",
+      "cover": "Covermodus",
+      "xmb": "XMB-modus",
+      "list": "Lijstmodus",
+      "metro": "Metro-live-tegelmodus"
     }
   },
   "tutorial": {
@@ -354,7 +368,9 @@
       "ui_wireframe": "UI-draadframe",
       "ui_wireframe_desc": "Toon omlijningen van alle Box-widgets voor lay-outdebugging.",
       "dynamic_pages": "Dynamische pagina's",
-      "dynamic_pages_desc": "Past het aantal pagina's aan op geïnstalleerde software in plaats van 8 vaste pagina's te behouden."
+      "dynamic_pages_desc": "Past het aantal pagina's aan op geïnstalleerde software in plaats van 8 vaste pagina's te behouden.",
+      "launcher_view": "Launcher-weergave",
+      "launcher_view_desc": "Kies tussen standaard Raster, Dynamische Lijn of 3D-Flow."
     },
     "internet": {
       "wifi_ssid": "WiFi-netwerk",
@@ -540,6 +556,17 @@
       "based_on_fork": "Gebaseerd op de fork van",
       "upstream_source": "Broncode (origineel)",
       "upstream_source_value": "github.com/PoloNX/SwitchU"
+    },
+    "layout": {
+      "grid": "Raster",
+      "dynamic_line": "Dynamische Lijn",
+      "flow": "Flow (3D)",
+      "shelf": "Shelf (3D)",
+      "deck": "Deck (3D)",
+      "cover": "Cover",
+      "xmb": "XMB",
+      "list": "Lijst (Niagara)",
+      "metro": "Metro (live tegels)"
     }
   },
   "userselect": {
@@ -582,7 +609,9 @@
       "logo": "Logo",
       "logo_desc": "Open de logogalerij en kies de te gebruiken afbeelding.",
       "icon": "Vervangend pictogram",
-      "icon_desc": "Open de pictogramgalerij en kies een vervanging voor dit spel."
+      "icon_desc": "Open de pictogramgalerij en kies een vervanging voor dit spel.",
+      "cover": "Portrait cover",
+      "cover_desc": "Open the cover gallery and choose a 2:3 vertical box cover for Flow view."
     }
   },
   "power": {

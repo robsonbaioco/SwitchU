@@ -48,6 +48,12 @@ std::string WiiUMenuApp::accessibilityContextFor(nxui::Widget* w) const {
         if (m_appLayoutMode == AppLayoutMode::DynamicLine)
             return i18n.tr("accessibility.context.main_menu", "Main menu")
                  + ", " + i18n.tr("accessibility.context.dynamic_line", "Center line");
+        if (m_appLayoutMode == AppLayoutMode::Flow)
+            return i18n.tr("accessibility.context.main_menu", "Main menu")
+                 + ", " + i18n.tr("accessibility.context.flow", "Cover flow");
+        if (m_appLayoutMode == AppLayoutMode::Shelf)
+            return i18n.tr("accessibility.context.main_menu", "Main menu")
+                 + ", " + i18n.tr("accessibility.context.shelf", "Shelf");
         return i18n.tr("accessibility.context.main_menu", "Main menu")
              + ", " + i18n.tr("accessibility.context.page", "page") + " "
              + std::to_string(m_grid->currentPage() + 1)
@@ -113,9 +119,18 @@ std::string WiiUMenuApp::accessibilityPositionFor(nxui::Widget* w) const {
     if (w->tag() == "glossy_icon" && m_grid) {
         const int global = m_grid->focusedGlobalIndex();
         if (global >= 0) {
-            if (m_appLayoutMode == AppLayoutMode::DynamicLine) {
+            // All carousel views are one wrapping row, so position is reported
+            // as "item N of M" rather than as a grid coordinate.
+            if (m_appLayoutMode == AppLayoutMode::DynamicLine ||
+                m_appLayoutMode == AppLayoutMode::Flow ||
+                m_appLayoutMode == AppLayoutMode::Shelf) {
                 const int total = (int)m_grid->allIcons().size();
-                return i18n.tr("accessibility.context.dynamic_line", "Center line") + ", "
+                const std::string view = (m_appLayoutMode == AppLayoutMode::Flow)
+                    ? i18n.tr("accessibility.context.flow", "Cover flow")
+                    : (m_appLayoutMode == AppLayoutMode::Shelf)
+                    ? i18n.tr("accessibility.context.shelf", "Shelf")
+                    : i18n.tr("accessibility.context.dynamic_line", "Center line");
+                return view + ", "
                      + i18n.tr("accessibility.position.item", "item") + " " + std::to_string(global + 1)
                      + " " + i18n.tr("accessibility.context.of", "of") + " " + std::to_string(total);
             }
@@ -425,6 +440,12 @@ void WiiUMenuApp::enterEditMode() {
     auto* cur = focusManager().current();
     if (!isEditableIcon(cur))
         return;
+    // Move mode rearranges home-grid slots, which the cross media bar does not
+    // present: its order comes from the model, and the system columns are not
+    // slots at all. It also rebinds the focused icon's actions, which would tear
+    // out the d-pad bindings XMB navigation depends on and freeze the bar.
+    if (m_grid && (m_grid->isXmb() || isListLayout()))
+        return;
 
     auto* icon = static_cast<GlossyIcon*>(cur);
     m_editMode = true;
@@ -493,7 +514,10 @@ bool WiiUMenuApp::commitEditModePlacement() {
     bool changed = (from != target);
     DebugLog::log("[edit] commit from=%d target=%d changed=%d", from, target,
                   changed ? 1 : 0);
-    if (m_appLayoutMode == AppLayoutMode::DynamicLine) {
+    // Reordering in either carousel view works on the visible single-row order,
+    // not on grid slots.
+    if (m_appLayoutMode == AppLayoutMode::DynamicLine ||
+        m_appLayoutMode == AppLayoutMode::Flow) {
         if (!changed)
             return true;
 
@@ -965,6 +989,11 @@ bool WiiUMenuApp::moveFocusedIcon(nxui::FocusDirection dir) {
 #if 1
 void WiiUMenuApp::wireFocusCallback() {
     focusManager().onFocusChanged([this](nxui::Widget*, nxui::Widget* cur) {
+        // Before the overlay early-return below: focus landing on a game tile
+        // while an overlay still reports active (hide() ordering) must not
+        // leave the Metro highlight switched off for the selected tile.
+        if (m_grid && cur && cur->tag() == "glossy_icon")
+            m_grid->setMetroFocused(true);
         updateCursor();
         announceFocusedWidget(cur);
 
@@ -985,16 +1014,17 @@ void WiiUMenuApp::wireFocusCallback() {
             m_audio.playSfx(Sfx::Navigate);
 
         if (cur && cur->tag() == "glossy_icon") {
-            m_grid->focusManager().setFocus(cur);
-            auto* icon = static_cast<GlossyIcon*>(cur);
-            if (m_appLayoutMode == AppLayoutMode::DynamicLine) {
-                const int focusedIndex = m_grid->focusedGlobalIndex();
-                if (focusedIndex >= 0) {
-                    m_iconStreamer.onPageChanged(focusedIndex, 1,
-                                                 app().gpu(), app().renderer(),
-                                                 m_grid->allIcons());
-                }
+            if (m_grid) {
+                m_grid->setMetroFocused(true);
+                m_grid->focusManager().setFocus(cur);
             }
+            auto* icon = static_cast<GlossyIcon*>(cur);
+            // Carousel views and XMB stream around the focused index rather
+            // than by page, so they must drive the streamer the same way or the
+            // list scrolls into titles whose icons were never requested. XMB was
+            // missing here, so moving along the bar never advanced the window.
+            if (isCarouselLayout() || m_grid->isXmb() || isListLayout())
+                pumpIconStreamer();
             if (m_steamGridDbBackdrop && icon->titleId() != 0
                 && icon->titleId() < kFolderTitleIdPrefix)
                 m_steamGridDbBackdrop->showTitle(icon->titleId());
@@ -1018,7 +1048,7 @@ void WiiUMenuApp::wireFocusCallback() {
                 m_titlePill->setVisible(true);
                 return;
             }
-            if (icon->titleId() == 0) {
+            if (icon->title().empty() || icon->entryKind() == GridEntryKind::Empty) {
                 m_titlePill->hideAnimated();
                 return;
             }
@@ -1028,8 +1058,17 @@ void WiiUMenuApp::wireFocusCallback() {
             } else
 #endif
             m_titlePill->setText(icon->title());
-            m_titlePill->setVisible(true);
+            const bool hidePill = (m_openFolderId == 0) &&
+                (m_grid && (m_grid->isXmb() || isListLayout() || isMetroLayout()));
+            if (hidePill) {
+                m_titlePill->setVisible(false);
+            } else {
+                m_titlePill->setVisible(true);
+            }
         } else if (cur) {
+            if (m_grid) {
+                m_grid->setMetroFocused(false);
+            }
             if (m_editMode)
                 exitEditMode();
             for (auto& btn : m_sidebar.leftButtons()) {
@@ -1047,6 +1086,9 @@ void WiiUMenuApp::wireFocusCallback() {
             }
             m_titlePill->hideAnimated();
         } else {
+            if (m_grid) {
+                m_grid->setMetroFocused(false);
+            }
             m_titlePill->hideAnimated();
         }
     });
@@ -1115,9 +1157,7 @@ bool WiiUMenuApp::focusTitle(uint64_t titleId) {
         return false;
 
     if (m_grid->currentPage() != oldPage || titleId != 0) {
-        m_iconStreamer.onPageChanged(m_grid->currentPage(), m_grid->iconsPerPage(),
-                                     app().gpu(), app().renderer(),
-                                     m_grid->allIcons());
+        pumpIconStreamer();
     }
 
     if (auto* cur = m_grid->focusManager().current())
@@ -1305,6 +1345,11 @@ void WiiUMenuApp::wireGlobalActions() {
             return;
         }
 
+        if (m_appLayoutMode == AppLayoutMode::Metro) {
+            cycleCurrentMetroTileSize();
+            return;
+        }
+
         auto* cur = focusManager().current();
         if (m_editMode)
             return;
@@ -1347,11 +1392,10 @@ void WiiUMenuApp::wireGlobalActions() {
         if (m_navigator.route() != switchu::navigation::Route::Home ||
             focusRoot() != &rootBox())
             return;
-        if (m_launcher.suspendedTitleId() == 0) return;
         auto* cur = focusManager().current();
         if (!cur || cur->tag() != "glossy_icon") return;
         auto* icon = static_cast<GlossyIcon*>(cur);
-        if (!m_launcher.isAppSuspended(icon->titleId())) return;
+        if (m_launcher.suspendedTitleId() != 0 && m_launcher.isAppSuspended(icon->titleId())) {
 
         m_audio.playSfx(Sfx::ModalShow);
         m_dialogReturnFocus = cur;
@@ -1373,6 +1417,9 @@ void WiiUMenuApp::wireGlobalActions() {
             {}
         );
         focusManager().setFocus(m_dialog.get());
+        return;
+    }
+    showIconOptions();
     });
 #endif
 }
@@ -1423,8 +1470,6 @@ void WiiUMenuApp::showGameContextMenu(GlossyIcon* icon) {
             : (sizeIndex == 1 ? switchu::widgets::WidgetSize{2, 1}
                               : switchu::widgets::WidgetSize{1, 1});
         m_gameSizes[titleId] = requested;
-        if (requested == switchu::widgets::WidgetSize{1, 1})
-            m_gameArtwork.erase(titleId);
         normalizeWidgetPlacements();
         m_layoutDirty = true;
         saveMenuLayout();
@@ -1432,6 +1477,10 @@ void WiiUMenuApp::showGameContextMenu(GlossyIcon* icon) {
         m_navigator.resetToHome();
         if (m_openFolderId == 0)
             applyDisplayModel(buildRootFolderModel(), titleId, false);
+        if (requested == switchu::widgets::WidgetSize{1, 1}) {
+            app().gpu().waitIdle();
+            m_gameArtwork.erase(titleId);
+        }
     });
     m_gameOptions->onCloseSoftware([this]() { m_launcher.terminateApplication(); });
     m_gameOptions->onDeleteSoftware([this, titleId, title]() {
@@ -1624,7 +1673,7 @@ void WiiUMenuApp::handleTouch() {
         if (!m_grid || localHit < 0)
             return nullptr;
 
-        int global = m_grid->currentPage() * m_grid->iconsPerPage() + localHit;
+        int global = m_grid->isCarousel() ? localHit : (m_grid->currentPage() * m_grid->iconsPerPage() + localHit);
         if (m_editMode)
             m_editTargetIndex = global;
         if (!m_grid->focusGlobalIndex(global))
@@ -1642,7 +1691,8 @@ void WiiUMenuApp::handleTouch() {
                     global, m_editGhostIcon->gridSpanColumns(),
                     m_editGhostIcon->gridSpanRows());
             m_cursor->moveTo(cursorRect.expanded(4.f), 0.f);
-            m_cursor->setVisible(true);
+            m_cursor->setVisible(!m_grid->is3D() && !m_grid->isMetro() && !isListLayout() &&
+                                 !m_grid->isXmb() && m_appLayoutMode != AppLayoutMode::Metro);
         } else {
             updateCursor();
         }
@@ -1693,9 +1743,14 @@ void WiiUMenuApp::handleTouch() {
         m_touchOnFocused = false;
         m_touchEditDragActive = false;
         if (hit >= 0) {
-            auto icons = m_grid->pageIcons();
-            if (hit < (int)icons.size())
-                m_touchOnFocused = (icons[hit] == focusManager().current());
+            if (m_grid->isCarousel()) {
+                if (hit < (int)m_grid->allIcons().size())
+                    m_touchOnFocused = (m_grid->allIcons()[hit].get() == focusManager().current());
+            } else {
+                auto icons = m_grid->pageIcons();
+                if (hit < (int)icons.size())
+                    m_touchOnFocused = (icons[hit] == focusManager().current());
+            }
         }
     }
 
@@ -1803,6 +1858,17 @@ void WiiUMenuApp::handleTouch() {
             // and empty gaps) to leave — mirrors B, including edit-mode keep-move.
             // From PoloNX/SwitchU#108.
             closeFolder(m_editMode, true);
+        } else if (m_touchHitIndex >= 0 && !m_editMode &&
+                   std::abs(dx) < 20.f && std::abs(dy) < 20.f && input.touchDuration() <= 0.40f) {
+            if (m_touchOnFocused) {
+                if (auto* icon = focusTouchedIcon(m_touchHitIndex)) {
+                    constexpr uint64_t kA = static_cast<uint64_t>(nxui::Button::A);
+                    if (!icon->fireAction(kA))
+                        icon->activate();
+                }
+            } else {
+                focusTouchedIcon(m_touchHitIndex);
+            }
         }
         m_touchHitIndex = -1;
         m_touchEditDragActive = false;
@@ -1910,11 +1976,31 @@ void WiiUMenuApp::updateCursor() {
 
     auto* cur = focusManager().current();
     if (cur) {
+        const bool isGameInCustomView = (cur->tag() == "glossy_icon" && m_openFolderId == 0);
+        if (isGameInCustomView && m_grid &&
+            (m_grid->is3D() || m_appLayoutMode == AppLayoutMode::Metro || m_grid->isMetro())) {
+            // Metro and the 3D views draw their own highlight. XMB and List do
+            // not: they rely on the shared cursor (xmbFocus below), so it must
+            // stay visible. List used to draw a private pill next to the
+            // cursor, which stayed lit on the game after focus moved to a HUD
+            // button and did not match the default selection style.
+            m_cursor->setVisible(false);
+            return;
+        }
         const bool morphing = m_grid && m_grid->isLayoutMorphing();
         const bool movingLineFocus = m_grid
                                   && (m_grid->isDynamicLine() || morphing)
                                   && cur->tag() == "glossy_icon";
-        nxui::Rect fr = movingLineFocus
+        // XMB places its own rects every time the selection moves, and its
+        // focused tile is scaled, so the ring must come from the view rather
+        // than from whatever rect the widget was last left with by another
+        // layout. Reading the stale rect is what drew the selection frame
+        // across the whole screen instead of around the focused item.
+        // With a folder open the grid runs in plain Grid mode even while the
+        // app layout is List, so read the layout the grid is actually in.
+        const bool xmbFocus = m_grid && (m_grid->isXmb() || (isListLayout() && m_openFolderId == 0))
+                           && cur->tag() == "glossy_icon";
+        nxui::Rect fr = (movingLineFocus || xmbFocus)
             ? m_grid->focusedDisplayRect()
             : cur->focusRect();
         if (m_editMode && m_editGhostIcon && m_grid) {
@@ -1930,7 +2016,9 @@ void WiiUMenuApp::updateCursor() {
             static_cast<GlossyIcon*>(cur)->entryKind() == GridEntryKind::Folder));
         const bool carouselScrolling = movingLineFocus
                                     && (morphing || m_grid->isDynamicLineScrolling());
-        m_cursor->moveTo(fr.expanded(4.f), carouselScrolling ? 0.f : 0.2f);
+        const float targetRadius = xmbFocus ? 18.f :
+            (cur->tag() == "glossy_icon" ? static_cast<GlossyIcon*>(cur)->cornerRadius() + 4.f : 18.f);
+        m_cursor->moveTo(fr.expanded(4.f), targetRadius, carouselScrolling ? 0.f : 0.2f);
         m_cursor->setVisible(true);
     } else {
         m_cursor->setVisible(false);

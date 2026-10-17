@@ -145,7 +145,7 @@ std::string WiiUMenuApp::accessibilityActionsFor(nxui::Widget* w) const {
     if (m_gameMods && w == m_gameMods.get())
         return i18n.tr("dialog.mods_hint", "A enable/disable. X remove. B back.");
     if (m_gameCheats && w == m_gameCheats.get())
-        return i18n.tr("dialog.cheats_hint", "A toggle  •  X toggle all  •  B back");
+        return i18n.tr("dialog.cheats_hint", "A toggle  -  X toggle all  -  B back");
     if (m_gameDetails && w == m_gameDetails.get())
         return i18n.tr("dialog.details_actions", "Left and right to select gameplay art. A to expand. B to return.");
     if ((m_dialog && w == m_dialog.get()) || (m_userSelect && w == m_userSelect.get()))
@@ -544,6 +544,9 @@ void WiiUMenuApp::wireFocusCallback() {
             m_audio.playSfx(Sfx::Navigate);
 
         if (cur && cur->tag() == "glossy_icon") {
+            if (m_grid && m_grid->isXmb()) {
+                m_grid->syncXmbFocusFromCurrent();
+            }
             m_grid->focusManager().setFocus(cur);
             auto* icon = static_cast<GlossyIcon*>(cur);
             auto& i18n = nxui::I18n::instance();
@@ -559,7 +562,7 @@ void WiiUMenuApp::wireFocusCallback() {
                 m_titlePill->setVisible(true);
                 return;
             }
-            if (icon->titleId() == 0) {
+            if (icon->title().empty() || icon->entryKind() == GridEntryKind::Empty) {
                 refreshGameArtworkBackdrop(0);
                 m_titlePill->hideAnimated();
                 return;
@@ -571,8 +574,11 @@ void WiiUMenuApp::wireFocusCallback() {
             } else
 #endif
             m_titlePill->setText(icon->title());
-            m_titlePill->setVisible(true);
+            const bool showTitle = (m_openFolderId != 0) || (m_appLayoutMode != AppLayoutMode::Xmb && m_appLayoutMode != AppLayoutMode::List && m_appLayoutMode != AppLayoutMode::Metro);
+            m_titlePill->setVisible(showTitle);
         } else if (cur) {
+            if (m_grid)
+                m_grid->focusManager().setFocus(nullptr);
             refreshGameArtworkBackdrop(0);
             if (m_editMode)
                 exitEditMode();
@@ -717,9 +723,9 @@ bool WiiUMenuApp::focusTitle(uint64_t titleId) {
 
 // Leva o seletor de volta para a grade, seja qual for o jogo.
 //
-// HOME traz o menu para a frente e o seletor tem de vir junto. Quando não há
-// jogo suspenso, focusTitle não tem o que procurar e devolve false, e até aqui
-// isso deixava o cursor parado no botão da barra lateral que abriu a tela --
+// HOME traz o menu para a frente e o seletor tem de vir junto. Quando nÃ£o hÃ¡
+// jogo suspenso, focusTitle nÃ£o tem o que procurar e devolve false, e atÃ© aqui
+// isso deixava o cursor parado no botÃ£o da barra lateral que abriu a tela --
 // com o nome do jogo escrito embaixo, apontando para outra coisa. Era esse
 // desencontro que aparecia no relato.
 #endif
@@ -730,7 +736,7 @@ bool WiiUMenuApp::focusGridSelection() {
 
     nxui::Widget* target = m_grid->focusManager().current();
     if (!target) {
-        // Sem nada lembrado, o primeiro ícone da página aberta serve.
+        // Sem nada lembrado, o primeiro Ã­cone da pÃ¡gina aberta serve.
         const int first = m_grid->currentPage() * m_grid->iconsPerPage();
         if (!m_grid->focusGlobalIndex(first))
             return false;
@@ -898,9 +904,6 @@ void WiiUMenuApp::handleSortShortcutRelease(float dt) {
     m_sortShortcutHeld = 0.f;
     if (!armed)
         return;
-    // Only a tap sorts. Holding R is how the homebrew override reaches Sphaira,
-    // and a player doing that is not asking for the grid to be reordered when
-    // they let go -- which is what made the shortcut feel like it fired twice.
     if (held > kSortShortcutTapSeconds)
         return;
     // Anything with its own R meaning, or any overlay covering the grid, keeps
@@ -922,10 +925,11 @@ void WiiUMenuApp::handleSortShortcutRelease(float dt) {
     // the same slots rearranged the row around the cursor and left the icons it
     // moved reloading. Order in that view is the arrangement the owner built,
     // and R has nothing to offer it.
-    if (m_appLayoutMode == AppLayoutMode::DynamicLine)
+    // Only Minus tap sorts.
+    if (isCarouselLayout())
         return;
     // Taking a title out of a folder briefly lived here, and moved to X so that
-    // one button does both halves of the same job. R stays inert inside a
+    // one button does both halves of the same job. Minus stays inert inside a
     // folder, for the reason above.
     if (m_openFolderId != 0 ||
         focusRoot() != &rootBox() ||
@@ -1293,6 +1297,16 @@ void WiiUMenuApp::wireGlobalActions() {
     root.addAction(static_cast<uint64_t>(nxui::Button::L), [this]() {
         if (m_navigator.route() == switchu::navigation::Route::ControllerTest)
             return;
+        if (m_navigator.route() == switchu::navigation::Route::Home &&
+            focusRoot() == &rootBox() && m_grid && m_grid->isXmb()) {
+            m_grid->stepXmb(-1, 0);
+            return;
+        }
+        if (m_navigator.route() == switchu::navigation::Route::Home &&
+            focusRoot() == &rootBox() && isListLayout()) {
+            jumpList(-1);
+            return;
+        }
         m_accessibility.repeatLastAnnouncement();
     });
 
@@ -1413,6 +1427,11 @@ void WiiUMenuApp::wireGlobalActions() {
             (m_folderOptions && m_folderOptions->isActive()) ||
             (m_controllerTest && m_controllerTest->isActive()) ||
             (m_userSelect && m_userSelect->isActive())) {
+            return;
+        }
+
+        if (m_appLayoutMode == AppLayoutMode::Metro) {
+            cycleCurrentMetroTileSize();
             return;
         }
 
@@ -1603,7 +1622,8 @@ void WiiUMenuApp::handleTouch() {
         focusManager().setFocus(cur);
         if (m_cursor) {
             m_cursor->moveTo(cur->focusRect().expanded(4.f), 0.f);
-            m_cursor->setVisible(true);
+            m_cursor->setVisible(!m_grid->is3D() && !m_grid->isMetro() && !isListLayout() &&
+                                 !m_grid->isXmb() && m_appLayoutMode != AppLayoutMode::Metro);
         } else {
             updateCursor();
         }
@@ -1732,7 +1752,7 @@ void WiiUMenuApp::handleSystemAction(SysAction a) {
 
             markSuspendedIcon(m_launcher.suspendedTitleId());
             closeActiveOverlays();
-            // Sem jogo suspenso não há título para procurar, e antes o seletor
+            // Sem jogo suspenso nÃ£o hÃ¡ tÃ­tulo para procurar, e antes o seletor
             // simplesmente ficava onde estava -- na barra lateral.
             if (!focusTitle(m_launcher.suspendedTitleId()))
                 focusGridSelection();
@@ -1780,6 +1800,12 @@ void WiiUMenuApp::showIconOptions() {
     auto* cur = focusManager().current();
     if (!cur || cur->tag() != "glossy_icon") return;
     auto* icon = static_cast<GlossyIcon*>(cur);
+
+    if (icon->entryKind() == GridEntryKind::Folder) {
+        const std::uint32_t folderId = static_cast<std::uint32_t>(icon->titleId() - kFolderTitleIdPrefix);
+        showFolderContextMenu(folderId);
+        return;
+    }
 
     const int index = findTitleIndex(icon->titleId());
     if (index < 0) return;
@@ -2030,7 +2056,8 @@ void WiiUMenuApp::restoreGameArtworkFromOptions(
     const auto result = gallery::GameArtworkStore::restoreDefault(titleId, kind);
     const bool cover = kind == gallery::ArtworkKind::Cover;
     if (result.ok && cover && m_grid) {
-        m_iconStreamer.forceReload(m_grid->currentPage(), m_grid->iconsPerPage(),
+        const StreamPump pump = gridStreamPump();
+        m_iconStreamer.forceReload(pump.page, pump.perPage,
                                    app().gpu(), app().renderer(), m_grid->allIcons());
     }
     DebugLog::log("[gallery] options restore %s: title=%016llX ok=%d error=%s",
@@ -2380,7 +2407,8 @@ void WiiUMenuApp::syncGameArtworkSave() {
             // The visible icon may already own a streamed system texture. Reload
             // this small page cache so the new cover appears before navigating
             // away and back.
-            m_iconStreamer.forceReload(m_grid->currentPage(), m_grid->iconsPerPage(),
+            const StreamPump pump = gridStreamPump();
+            m_iconStreamer.forceReload(pump.page, pump.perPage,
                                        app().gpu(), app().renderer(), m_grid->allIcons());
         } else if (!cover) {
             auto* focused = focusManager().current();

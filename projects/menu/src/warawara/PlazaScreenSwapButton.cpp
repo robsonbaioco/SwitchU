@@ -34,6 +34,23 @@ void PlazaScreenSwapButton::onRender(nxui::Renderer& ren) {
     const float alpha = m_opacity * m_panelOpacity;
     if (alpha <= 0.01f) return;
 
+    if (m_metroStyle) {
+        if (!m_metroUIconLoaded) {
+            m_metroUIconLoaded = true;
+            m_metroUIconTex.loadFromFile(ren.gpu(), ren, "sdmc:/switch/SwitchU/icons/metro/warawara.png", 128);
+        }
+        nxui::Color bgCol = nxui::Color(0.f, 0.47f, 0.84f, 0.90f * alpha);
+        ren.drawRoundedRect(m_rect, bgCol, 4.f);
+        const float cx = m_rect.x + m_rect.width * 0.5f;
+        const float cy = m_rect.y + m_rect.height * 0.5f;
+        if (m_metroUIconTex.valid()) {
+            constexpr float iconSize = 28.0f;
+            const nxui::Rect iconRect{cx - iconSize * 0.5f, cy - iconSize * 0.5f, iconSize, iconSize};
+            ren.drawTexture(&m_metroUIconTex, iconRect, nxui::Color::white().withAlpha(alpha));
+        }
+        return;
+    }
+
     if (!m_uIconLoaded) {
         m_uIconLoaded = true;
         static constexpr const char* kSdIcon = "sdmc:/switch/SwitchU/icons/warawara_u.png";
@@ -53,13 +70,13 @@ void PlazaScreenSwapButton::onRender(nxui::Renderer& ren) {
 
     // Outline
     const float pulse = 0.5f + 0.5f * std::sin(m_pulseAnim * 3.0f);
-    nxui::Color borderCol = isFocused()
-        ? nxui::Color(1.0f, 0.85f, 0.25f, (0.80f + 0.20f * pulse) * alpha)
-        : (m_plazaActive
-            ? nxui::Color(0.35f, 0.75f, 1.0f, 0.70f * alpha)
-            : nxui::Color(1.0f, 1.0f, 1.0f, 0.32f * alpha));
+    // Focus is drawn by the shared SelectionCursor; no second (gold) ring here.
+    (void)pulse;
+    nxui::Color borderCol = m_plazaActive
+        ? nxui::Color(0.35f, 0.75f, 1.0f, 0.70f * alpha)
+        : nxui::Color(1.0f, 1.0f, 1.0f, 0.32f * alpha);
 
-    ren.drawRoundedRectOutline(m_rect, borderCol, r, isFocused() ? 2.0f : 1.2f);
+    ren.drawRoundedRectOutline(m_rect, borderCol, r, 1.2f);
 
     const float cx = m_rect.x + m_rect.width * 0.5f;
     const float cy = m_rect.y + m_rect.height * 0.5f;

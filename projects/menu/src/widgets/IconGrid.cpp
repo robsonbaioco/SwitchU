@@ -1,24 +1,282 @@
 #include "IconGrid.hpp"
 #include "GlossyIcon.hpp"
 #include "GridNavigation.hpp"
+#include "FolderPalette.hpp"
 #include "core/DebugLog.hpp"
 #include <nxui/core/Renderer.hpp>
+#include <nxui/core/Font.hpp>
 #include <nxui/core/Animation.hpp>
 #include <nxui/core/Input.hpp>
+#include <nxui/core/ThreadPool.hpp>
 #include <algorithm>
 #include <cmath>
+#include <ctime>
+#include <filesystem>
+#ifdef __SWITCH__
+#include <switch.h>
+#endif
 #include <limits>
+#include <sys/stat.h>
+#include <cstdio>
+#include <string>
+#include <sstream>
+#include <vector>
+#include <mutex>
+#include <unordered_map>
 
 
-IconGrid::IconGrid() {}
+IconGrid::IconGrid() {
+    m_focus.onFocusChanged([this](nxui::Widget* /*old*/, nxui::Widget* cur) {
+        if (m_onFocusChanged && cur) {
+            m_onFocusChanged(cur);
+        }
+    });
+}
 
 namespace {
+
+static std::unordered_map<std::uint64_t, std::string> s_coverPathCache;
+static std::mutex s_coverPathMutex;
+
+std::string resolveFlowCoverPath(std::uint64_t titleId) {
+    if (titleId == 0) return {};
+    {
+        std::lock_guard<std::mutex> lock(s_coverPathMutex);
+        auto it = s_coverPathCache.find(titleId);
+        if (it != s_coverPathCache.end()) return it->second;
+    }
+
+    char hexUpper[17];
+    char hexLower[17];
+    std::snprintf(hexUpper, sizeof(hexUpper), "%016llX", static_cast<unsigned long long>(titleId));
+    std::snprintf(hexLower, sizeof(hexLower), "%016llx", static_cast<unsigned long long>(titleId));
+
+    const char* exts[] = {".jpg", ".png", ".jpeg"};
+    struct stat st;
+    std::string found;
+
+    for (const char* ext : exts) {
+        // 1. SwitchU config covers root (SteamGridDB 600x900 covers or manual drops)
+        std::string p1 = std::string("sdmc:/config/SwitchU/covers/") + hexUpper + ext;
+        std::error_code ec;
+        if (std::filesystem::is_regular_file(p1, ec) || (stat(p1.c_str(), &st) == 0 && S_ISREG(st.st_mode))) { found = std::move(p1); break; }
+        p1 = std::string("sdmc:/config/SwitchU/covers/") + hexLower + ext;
+        if (std::filesystem::is_regular_file(p1, ec) || (stat(p1.c_str(), &st) == 0 && S_ISREG(st.st_mode))) { found = std::move(p1); break; }
+
+        // 2. SwitchU app covers root
+        std::string p2 = std::string("sdmc:/switch/SwitchU/covers/") + hexUpper + ext;
+        if (std::filesystem::is_regular_file(p2, ec) || (stat(p2.c_str(), &st) == 0 && S_ISREG(st.st_mode))) { found = std::move(p2); break; }
+        p2 = std::string("sdmc:/switch/SwitchU/covers/") + hexLower + ext;
+        if (std::filesystem::is_regular_file(p2, ec) || (stat(p2.c_str(), &st) == 0 && S_ISREG(st.st_mode))) { found = std::move(p2); break; }
+
+        // 3. SwitchU game_art cover slot (custom covers applied from Dossier/Gallery)
+        std::string p3 = std::string("sdmc:/config/SwitchU/game_art/") + hexUpper + "/cover" + ext;
+        if (std::filesystem::is_regular_file(p3, ec) || (stat(p3.c_str(), &st) == 0 && S_ISREG(st.st_mode))) { found = std::move(p3); break; }
+        p3 = std::string("sdmc:/config/SwitchU/game_art/") + hexLower + "/cover" + ext;
+        if (std::filesystem::is_regular_file(p3, ec) || (stat(p3.c_str(), &st) == 0 && S_ISREG(st.st_mode))) { found = std::move(p3); break; }
+
+        // 4. sLaunch covers root (shared SD cover art)
+        std::string p4 = std::string("sdmc:/slaunch/covers/") + hexUpper + ext;
+        if (std::filesystem::is_regular_file(p4, ec) || (stat(p4.c_str(), &st) == 0 && S_ISREG(st.st_mode))) { found = std::move(p4); break; }
+        p4 = std::string("sdmc:/slaunch/covers/") + hexLower + ext;
+        if (std::filesystem::is_regular_file(p4, ec) || (stat(p4.c_str(), &st) == 0 && S_ISREG(st.st_mode))) { found = std::move(p4); break; }
+    }
+
+    if (!found.empty()) {
+        std::lock_guard<std::mutex> lock(s_coverPathMutex);
+        s_coverPathCache[titleId] = found;
+        DebugLog::log("[cover] resolved title=%016llX -> %s", static_cast<unsigned long long>(titleId), found.c_str());
+    }
+    return found;
+}
 
 float clamp01(float v) {
     return std::clamp(v, 0.f, 1.f);
 }
 
+// ---- Flow tuning -----------------------------------------------------------
+//
+// World units where a case is one unit tall; nxui's focal length turns those
+// into pixels. A Switch case is roughly 2:3, so it is taller than it is wide -
+// a square extent is what makes a coverflow row read as rotated icons instead
+// of boxes on a shelf.
+constexpr float kFlowHalfH   = 0.50f;   // half-height
+constexpr float kFlowHalfW   = 0.34f;   // half-width (2:3 of the height)
+constexpr float kFlowDepth   = 0.030f;  // half-thickness of the case
+constexpr float kFlowY       = 0.12f;   // row lifted a little off centre
+
+// Spacing must clear the case's *on-screen* width, which depends on the swing:
+// at 34 degrees a case covers 2*halfW*cos(34) = 0.561 world units. Lowering the
+// angle without raising the spacing is what makes covers touch.
+constexpr float kFlowSpacing  = 0.70f;  // centre-to-centre along the row
+constexpr float kFlowSideStep = 0.14f;  // extra shove away from centre
+constexpr float kFlowZBase    = 2.35f;  // centre case distance
+constexpr float kFlowZBack    = 0.38f;  // how far the sides recede
+constexpr float kFlowAngle    = 0.60f;  // max swing, radians (~34 deg)
+
+// Past the first neighbour each case recedes further and turns a little more
+// edge-on. Depth alone cannot express this: it shrinks on-screen spacing faster
+// than it shrinks the cases, so any recession strong enough to see closes the
+// gaps. The extra turn narrows them, buying back the spacing recession costs.
+constexpr float kFlowZStep = 0.30f;
+constexpr float kFlowAStep = 0.10f;
+
+constexpr int   kFlowVisible = 6;       // cases drawn either side of centre
+constexpr float kFlowRunSpin = 0.62f;   // rad/s idle turn for the running title
+
+// Subdivision per surface. Flat artwork full of straight edges shows the
+// affine sawtooth worst, so the printed front gets the most.
+constexpr int kFlowStripsSide  = 4;
+constexpr int kFlowStripsFront = 12;
+constexpr int kFlowStripsRefl  = 4;
+
+// Reflection gradient. Mirrored about each case's own bottom edge.
+constexpr float kFlowReflTop = 0.27f;   // ~70/255
+
+int flowWrap(int i, int n) {
+    if (n <= 0) return 0;
+    i %= n;
+    return (i < 0) ? i + n : i;
+}
+
+float flowMidZ(const nxui::Vec3 q[4]) {
+    return 0.25f * (q[0].z + q[1].z + q[2].z + q[3].z);
+}
+
 } // namespace
+
+// Point on a flow face: u runs TL->TR, v runs top->bottom, both 0..1. Used to
+// print the Switch-case tab as sub-quads of the real 3D front face, so it gets
+// the same perspective and subdivision as the artwork underneath it.
+static nxui::Vec3 flowFacePoint(const nxui::Vec3 q[4], float u, float v) {
+    auto lerp = [](const nxui::Vec3& a, const nxui::Vec3& b, float t) {
+        return nxui::Vec3{a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t};
+    };
+    return lerp(lerp(q[0], q[1], u), lerp(q[3], q[2], u), v);
+}
+
+// Red "Nintendo Switch" tab in the top-left corner of a game case, with a
+// drawn Joy-Con mark. Built from flat quads only: no imported artwork.
+static void drawFlowSwitchTab(nxui::Renderer& ren, const nxui::Vec3 face[4],
+                              const nxui::Texture* logo, float lit, float alpha) {
+    const nxui::Color red  {0.80f * lit, 0.03f * lit, 0.08f * lit, alpha};
+    const nxui::Color white{lit, lit, lit, alpha};
+    auto rect = [&](float u0, float v0, float u1, float v1, const nxui::Color& c) {
+        nxui::Vec3 q[4] = {
+            flowFacePoint(face, u0, v0), flowFacePoint(face, u1, v0),
+            flowFacePoint(face, u1, v1), flowFacePoint(face, u0, v1),
+        };
+        ren.drawQuad3D(nullptr, q, c, 1.f, 1.f, false, 1);
+    };
+    // sLaunch tab: ~0.22 x 0.13 of the face, flush with its top-left corner.
+    // Logo is a Switch mark (left Joy-Con hollow with a stick, right Joy-Con
+    // solid with a button) over a thin "NINTENDO SWITCH" caption line.
+    // Geometry measured from an sLaunch 1.5.2 screenshot: the tab is 0.227 of
+    // the face width by 0.131 of its height, flush with the top-left corner.
+    // The logo (emblem over the NINTENDO SWITCH wordmark, 96x102 PNG) covers
+    // 0.135 x 0.097 of the face, which is ~35x37 px on the centre card, so the
+    // PNG's 0.94 aspect is kept and the logo is not stretched.
+    rect(0.000f, 0.000f, 0.227f, 0.131f, red);
+    if (logo && logo->valid()) {
+        nxui::Vec3 q[4] = {
+            flowFacePoint(face, 0.0538f, 0.0157f), flowFacePoint(face, 0.1884f, 0.0157f),
+            flowFacePoint(face, 0.1884f, 0.1131f), flowFacePoint(face, 0.0538f, 0.1131f),
+        };
+        ren.drawQuad3D(logo, q, white, 1.f, 1.f, false, 4);
+    }
+}
+
+void IconGrid::flowPlace(float p, float& x, float& z, float& angle) {
+    const float t = std::clamp(p, -1.f, 1.f);
+    angle = -t * kFlowAngle;
+    x     = p * kFlowSpacing + t * kFlowSideStep;
+
+    // The swing and the initial fall-back saturate one item out; depth keeps
+    // creeping beyond that, so the wall recedes instead of sitting flat.
+    const float beyond = std::max(0.f, std::abs(p) - 1.f);
+    z = kFlowZBase + std::abs(t) * kFlowZBack + beyond * kFlowZStep;
+    if (beyond > 0.f)
+        angle += (t < 0.f ? 1.f : -1.f) * beyond * kFlowAStep;
+}
+
+void IconGrid::flowFace(float x, float z, float angle,
+                        float lx0, float lz0, float lx1, float lz1,
+                        float halfH, nxui::Vec3 out[4]) {
+    const float ca = std::cos(angle);
+    const float sa = std::sin(angle);
+    auto put = [&](int i, float lx, float lz, float ly) {
+        out[i] = {
+            x + lx * ca + lz * sa,
+            kFlowY + ly,
+            z - lx * sa + lz * ca
+        };
+    };
+    put(0, lx0, lz0,  halfH);   // TL
+    put(1, lx1, lz1,  halfH);   // TR
+    put(2, lx1, lz1, -halfH);   // BR
+    put(3, lx0, lz0, -halfH);   // BL
+}
+
+void IconGrid::flowCorners(float x, float z, float angle,
+                           float halfW, float halfH, nxui::Vec3 out[4]) {
+    flowFace(x, z, angle, -halfW, 0.f, halfW, 0.f, halfH, out);
+}
+
+void IconGrid::clearFlowCovers() {
+    for (auto& pcd : m_pendingCoverDecodes) {
+        try {
+            if (pcd.future.valid()) pcd.future.wait();
+        } catch (...) {}
+    }
+    m_flowCovers.clear();
+    m_pendingCoverDecodes.clear();
+    {
+        std::lock_guard<std::mutex> lock(s_coverPathMutex);
+        s_coverPathCache.clear();
+    }
+}
+
+void IconGrid::preloadFlowCoversAround(int centerIdx) {
+    if (!is3D() || m_allIcons.empty() || !m_threadPool)
+        return;
+    const int count = static_cast<int>(m_allIcons.size());
+    for (int offset = -3; offset <= 3; ++offset) {
+        int idx = ((centerIdx + offset) % count + count) % count;
+        const auto& icon = m_allIcons[static_cast<size_t>(idx)];
+        if (!icon) continue;
+        const std::uint64_t tid = icon->titleId();
+        if (tid == 0) continue;
+        auto& cov = m_flowCovers[tid];
+        if (!cov.checked) {
+            cov.checked = true;
+            cov.loading = true;
+            auto decodeState = std::make_shared<CoverDecodeState>();
+            auto work = [decodeState, tid]() {
+                try {
+                    const std::string coverPath = resolveFlowCoverPath(tid);
+                    if (!coverPath.empty()) {
+                        decodeState->decoded = nxui::Texture::decodeFile(coverPath, 720);
+                        decodeState->failed = !decodeState->decoded.valid();
+                        DebugLog::log("[cover] decoded title=%016llX: ok=%d (%dx%d)",
+                                      static_cast<unsigned long long>(tid),
+                                      !decodeState->failed.load(),
+                                      decodeState->decoded.width, decodeState->decoded.height);
+                    } else {
+                        decodeState->failed = true;
+                    }
+                } catch (...) {
+                    decodeState->failed = true;
+                }
+                decodeState->done = true;
+            };
+            PendingCoverDecode pcd;
+            pcd.titleId = tid;
+            pcd.state = decodeState;
+            pcd.future = m_threadPool->submit(std::move(work));
+            m_pendingCoverDecodes.push_back(std::move(pcd));
+        }
+    }
+}
 
 void IconGrid::setup(std::vector<std::shared_ptr<GlossyIcon>> icons,
                      int cols, int rows,
@@ -27,42 +285,150 @@ void IconGrid::setup(std::vector<std::shared_ptr<GlossyIcon>> icons,
 {
     m_allIcons = std::move(icons);
     reconfigureLayout(cols, rows, cellW, cellH, padX, padY);
+    if (is3D()) {
+        int cur = focusedGlobalIndex();
+        preloadFlowCoversAround(cur >= 0 ? cur : 0);
+    }
 }
 
 void IconGrid::setLayoutMode(AppLayoutMode mode) {
     if (m_layoutMode == mode) return;
-    int cur = focusedGlobalIndex();
-    const int perPage = std::max(1, iconsPerPage());
-    m_layoutMorphPage = (mode == AppLayoutMode::DynamicLine)
-        ? m_page
-        : (cur >= 0 ? cur / perPage : m_page);
+    const AppLayoutMode previous = m_layoutMode;
     m_layoutMode = mode;
-    if (m_layoutMode == AppLayoutMode::DynamicLine) {
+    // XMB takes the icons of every non-selected category out of the focus tree
+    // (see syncXmbChildRects). Those are the same shared GlossyIcon objects the
+    // other views use, so leaving XMB without putting them back would carry the
+    // non-focusable state into Grid or Flow and make most of the library
+    // unreachable there. Restoring is cheap and only runs on the way out.
+    if (previous == AppLayoutMode::Xmb) {
+        for (auto& icon : m_allIcons) {
+            if (!icon) continue;
+            // addDirectionAction stores one callback per d-pad/stick button.
+            // Repeated XMB layouts overwrite those map entries (they do not
+            // accumulate), but leaving them installed would make another view
+            // consume every direction press and call stepXmb(), which now
+            // returns immediately because the mode is no longer XMB -- a new
+            // navigation freeze. Remove precisely the twelve actions XMB owns;
+            // normal layouts navigate through FocusManager/customNavigation.
+            for (nxui::Button button : {
+                     nxui::Button::DLeft, nxui::Button::DRight,
+                     nxui::Button::DUp, nxui::Button::DDown,
+                     nxui::Button::LStickL, nxui::Button::LStickR,
+                     nxui::Button::LStickU, nxui::Button::LStickD,
+                     nxui::Button::RStickL, nxui::Button::RStickR,
+                     nxui::Button::RStickU, nxui::Button::RStickD}) {
+                icon->removeAction(static_cast<uint64_t>(button));
+            }
+            switch (icon->entryKind()) {
+                case GridEntryKind::WidgetContinuation:
+                    // The hidden second half of a 2x1 widget is never focusable.
+                    icon->setFocusable(false);
+                    break;
+                case GridEntryKind::Empty:
+                    // Padding at the end of the model. The carousel compacts
+                    // real entries to the front and must not stop on these;
+                    // the paged grid uses them as placeable slots.
+                    icon->setFocusable(!isCarousel());
+                    break;
+                default:
+                    icon->setFocusable(true);
+                    break;
+            }
+        }
+    }
+    int cur = focusedGlobalIndex();
+    // The Grid<->Dynamic Line morph (PoloNX #106) needs the page each side
+    // shows: entering the line remembers the grid page, leaving it lands on
+    // the focused icon's page.
+    m_layoutMorphPage = isCarousel()
+        ? m_page
+        : (cur >= 0 ? cur / std::max(1, iconsPerPage()) : m_page);
+    m_layoutReveal.setImmediate(0.86f);
+    m_layoutReveal.set(1.f, 0.24f, nxui::Easing::outCubic);
+    if (m_layoutMode == AppLayoutMode::Xmb) {
+        layoutXmb();
+        if (cur >= 0 && cur < (int)m_allIcons.size() && m_xmbCols.size() > 4) {
+            auto& gameCol = m_xmbCols[4];
+            for (size_t i = 0; i < gameCol.size(); ++i) {
+                if (gameCol[i] == m_allIcons[cur].get()) {
+                    m_xmbCol = 4;
+                    m_xmbItem = static_cast<int>(i);
+                    m_xmbGamesRow = m_xmbItem;
+                    m_xmbColScroll = 4.0f;
+                    m_xmbItemScroll = static_cast<float>(i);
+                    // The column and row just changed, so the rects layoutXmb()
+                    // placed are for the old selection. Re-place before focus
+                    // so the ring lands on the right tile on the first frame.
+                    syncXmbChildRects();
+                    m_focus.setFocus(gameCol[i]);
+                    break;
+                }
+            }
+        }
+        return;
+    }
+    // Flow/Shelf share the carousel's model, focus bindings and scroll offset:
+    // they are different presentations of the same row, so switching between
+    // views keeps your place on the same title without re-deriving anything.
+    if (m_layoutMode == AppLayoutMode::List) {
+        m_listScrollOffset = cur >= 0 ? static_cast<float>(cur) : 0.f;
+        m_listTargetScroll = m_listScrollOffset;
+        layoutList();
+        syncListChildRects();
+    } else if (m_layoutMode == AppLayoutMode::Metro) {
+        layoutMetro();
+        syncMetroChildRects();
+        if (cur >= 0) {
+            focusGlobalIndex(cur);
+        }
+    } else if (isCarousel()) {
         m_lineScrollOffset.setImmediate(cur >= 0 ? static_cast<float>(cur) : 0.f);
         layoutLine();
+        if (is3D()) {
+            preloadFlowCoversAround(cur >= 0 ? cur : 0);
+        }
     } else {
         setPage(cur >= 0 ? cur / std::max(1, iconsPerPage()) : m_page);
         layoutPage();
     }
-    if (cur >= 0 && cur < (int)m_allIcons.size() && m_allIcons[cur]->isFocusable()) {
+    if (m_layoutMode != AppLayoutMode::Metro && cur >= 0 && cur < (int)m_allIcons.size() && m_allIcons[cur]->isFocusable()) {
         m_focus.setFocus(m_allIcons[cur].get());
     }
 
+    // The slide morph exists between the paged grid and the Dynamic Line; the
+    // 3D and tile views draw their own entrances, so they just snap the morph
+    // to the side they build on.
     const bool toLine = m_layoutMode == AppLayoutMode::DynamicLine;
-    m_layoutMorphing = true;
-    m_layoutMorph.setImmediate(toLine ? 0.f : 1.f);
-    m_layoutMorph.set(toLine ? 1.f : 0.f, kLayoutMorphDuration,
-                      nxui::Easing::inOutCubic);
+    const bool morphable =
+        (previous == AppLayoutMode::Grid || previous == AppLayoutMode::DynamicLine) &&
+        (m_layoutMode == AppLayoutMode::Grid || m_layoutMode == AppLayoutMode::DynamicLine);
+    if (morphable) {
+        m_layoutMorphing = true;
+        m_layoutMorph.setImmediate(toLine ? 0.f : 1.f);
+        m_layoutMorph.set(toLine ? 1.f : 0.f, kLayoutMorphDuration,
+                          nxui::Easing::inOutCubic);
+    } else {
+        m_layoutMorphing = false;
+        m_layoutMorph.setImmediate(toLine ? 1.f : 0.f);
+    }
 }
 
 bool IconGrid::isDynamicLineScrolling() const {
-    return m_layoutMode == AppLayoutMode::DynamicLine
+    return isCarousel()
         && std::abs(m_lineScrollOffset.value() - m_lineScrollOffset.target()) > 0.01f;
 }
 
 void IconGrid::setDynamicLineUpTarget(nxui::Widget* target) {
     m_lineUpTarget = target;
-    if (m_layoutMode != AppLayoutMode::DynamicLine)
+    if (m_layoutMode == AppLayoutMode::List) {
+        layoutList();
+        return;
+    }
+    if (m_layoutMode == AppLayoutMode::Metro) {
+        layoutMetro();
+        return;
+    }
+    if (!isCarousel())
         return;
     for (auto& icon : m_allIcons) {
         if (icon)
@@ -72,7 +438,7 @@ void IconGrid::setDynamicLineUpTarget(nxui::Widget* target) {
 
 void IconGrid::setDynamicLineDownTarget(nxui::Widget* target) {
     m_lineDownTarget = target;
-    if (m_layoutMode != AppLayoutMode::DynamicLine)
+    if (!isCarousel())
         return;
     for (auto& icon : m_allIcons) {
         if (icon)
@@ -96,7 +462,17 @@ void IconGrid::reconfigureLayout(int cols, int rows,
     m_originX = (m_rect.width  - gridW) * 0.5f + m_rect.x;
     m_originY = (m_rect.height - gridH) * 0.5f + m_rect.y;
 
-    if (m_layoutMode == AppLayoutMode::DynamicLine)
+    if (m_layoutMode == AppLayoutMode::Xmb)
+        layoutXmb();
+    else if (m_layoutMode == AppLayoutMode::List) {
+        layoutList();
+        syncListChildRects();
+    }
+    else if (m_layoutMode == AppLayoutMode::Metro) {
+        layoutMetro();
+        syncMetroChildRects();
+    }
+    else if (isCarousel())
         layoutLine();
     else
         setPage(m_page);
@@ -111,6 +487,7 @@ nxui::Rect IconGrid::contentRect() const {
 }
 
 void IconGrid::setPage(int page) {
+    if (isCarousel() || m_layoutMode == AppLayoutMode::Xmb || m_layoutMode == AppLayoutMode::List || m_layoutMode == AppLayoutMode::Metro) return;
     m_page = std::clamp(page, 0, m_totalPages - 1);
     layoutPage();
 }
@@ -241,6 +618,10 @@ void IconGrid::setGridSideTargets(std::vector<nxui::Widget*> left,
     m_gridRightTargets = std::move(right);
     if (m_layoutMode == AppLayoutMode::Grid)
         layoutPage();
+    else if (m_layoutMode == AppLayoutMode::List)
+        layoutList();
+    else if (m_layoutMode == AppLayoutMode::Metro)
+        layoutMetro();
 }
 
 nxui::Rect IconGrid::gridSpanRect(int globalIndex, int columns, int rows) const {
@@ -249,6 +630,21 @@ nxui::Rect IconGrid::gridSpanRect(int globalIndex, int columns, int rows) const 
     // The single-row carousel has its own fixed metrics and animation. Edit
     // ghosts/cursors must follow that displayed rect instead of reconstructing
     // a cell from the configurable grid dimensions.
+    // The Dynamic Line itself stays on the fall-through path so the #106
+    // grid<->line morph still blends its rects; the 3D rows reuse the same
+    // carousel rect without morphing.
+    if (isCarousel() && m_layoutMode != AppLayoutMode::DynamicLine)
+        return dynamicIconRect(globalIndex);
+    if (m_layoutMode == AppLayoutMode::List)
+        return listIconRect(globalIndex);
+    if (m_layoutMode == AppLayoutMode::Metro) {
+        for (const auto& t : m_metroTiles) {
+            if (t.itemIndex == globalIndex) {
+                return {t.x, t.y - m_metroScrollY, t.w, t.h};
+            }
+        }
+        return {};
+    }
     const int local = globalIndex % std::max(1, iconsPerPage());
     const int column = local % std::max(1, m_cols);
     const int row = local / std::max(1, m_cols);
@@ -400,8 +796,43 @@ int IconGrid::focusedGlobalIndex() const {
     auto* cur = m_focus.current();
     if (!cur)
         return -1;
+    if (m_layoutMode == AppLayoutMode::Metro) {
+        const int total = metroTotalCount();
+        for (int i = 0; i < total; ++i) {
+            if (metroIconAt(i) == cur)
+                return i;
+        }
+        return -1;
+    }
     for (int i = 0; i < (int)m_allIcons.size(); ++i) {
         if (m_allIcons[i].get() == cur)
+            return i;
+    }
+    return -1;
+}
+
+int IconGrid::xmbStreamCenterIndex() const {
+    if (m_layoutMode != AppLayoutMode::Xmb || m_xmbCols.size() <= 4)
+        return -1;
+    const auto& games = m_xmbCols[4];
+    if (games.empty())
+        return -1;
+    const int gamesRow = std::clamp(m_xmbGamesRow, 0, static_cast<int>(games.size()) - 1);
+    // While a system category is selected the focused widget is not an app at
+    // all, so focusedGlobalIndex() reports -1 and the streamer would be told to
+    // centre on index 0 -- evicting every game icon the player had just been
+    // looking at. The games column keeps its own row, so the window stays put
+    // over the apps while the player visits Settings or Network and is still
+    // correct when they come back.
+    // Both indices are clamped here rather than trusted: the games column is
+    // rebuilt from m_allIcons whenever the model changes (uninstall, folder
+    // open, sort, filter) and can shrink under a remembered row.
+    const int row = std::clamp(m_xmbItem, 0, static_cast<int>(games.size()) - 1);
+    GlossyIcon* target = (m_xmbCol == 4) ? games[row] : games[gamesRow];
+    if (!target)
+        return -1;
+    for (int i = 0; i < (int)m_allIcons.size(); ++i) {
+        if (m_allIcons[i].get() == target)
             return i;
     }
     return -1;
@@ -498,9 +929,37 @@ nxui::Rect IconGrid::focusedDisplayRect() const {
     const int focused = focusedGlobalIndex();
     if (m_layoutMorphing && focused >= 0)
         return morphBlend(focused, gridSlotRect(focused));
-    if (m_layoutMode == AppLayoutMode::DynamicLine) {
-        if (focused >= 0)
+    if (m_layoutMode == AppLayoutMode::Xmb) {
+        // Exactly the rect renderXmb draws the focused tile into, so the
+        // selection ring tracks the tile through its zoom instead of framing a
+        // fixed box that no longer matches it.
+        return xmbItemRect(m_xmbItem);
+    }
+    if (m_layoutMode == AppLayoutMode::List) {
+        // The list scrolls under a fixed selection slot: the focused row always
+        // comes to rest at kListCenterY. Use that resting slot, not the row's
+        // current animated position, so the ring does not chase a moving row.
+        // renderList() draws the selected row at 1.08x, so frame that height.
+        if (focusedGlobalIndex() >= 0) {
+            const float h = kListRowHeight * 1.08f;
+            return {kListLeft, kListCenterY - h * 0.5f, kListWidth, h};
+        }
+    }
+    if (m_layoutMode == AppLayoutMode::Metro) {
+        if (focused >= 0) {
+            for (const auto& t : m_metroTiles) {
+                if (t.itemIndex == focused) {
+                    return {t.x, t.y - m_metroScrollY, t.w, t.h};
+                }
+            }
+        }
+    }
+    if (isCarousel()) {
+        if (focused >= 0) {
+            if (is3D())
+                return projected3DIconRect(focused);
             return dynamicIconRect(focused);
+        }
     }
     if (auto* cur = m_focus.current())
         return cur->focusRect();
@@ -508,13 +967,44 @@ nxui::Rect IconGrid::focusedDisplayRect() const {
 }
 
 bool IconGrid::focusGlobalIndex(int idx) {
+    if (m_layoutMode == AppLayoutMode::Metro) {
+        if (idx < 0 || idx >= metroTotalCount()) return false;
+        auto icon = metroSharedIconAt(idx);
+        if (!icon || !icon->isFocusable()) return false;
+        m_focus.setFocus(icon.get());
+        for (const auto& t : m_metroTiles) {
+            if (t.itemIndex == idx) {
+                const float viewH = kMetroWallBot - kMetroWallTop;
+                float ideal = (t.y + t.h * 0.5f) - (kMetroWallTop + viewH * 0.5f);
+                if (ideal < 0.f) ideal = 0.f;
+                m_metroTargetScrollY = ideal;
+                break;
+            }
+        }
+        return true;
+    }
+
     if (idx < 0 || idx >= (int)m_allIcons.size())
         return false;
     if (!m_allIcons[idx] || !m_allIcons[idx]->isFocusable())
         return false;
 
-    if (m_layoutMode == AppLayoutMode::DynamicLine) {
+    if (m_layoutMode == AppLayoutMode::Xmb) {
+        setXmbPosition(4, idx);
+        return true;
+    }
+
+    if (m_layoutMode == AppLayoutMode::List) {
         m_focus.setFocus(m_allIcons[idx].get());
+        m_listTargetScroll = static_cast<float>(idx);
+        return true;
+    }
+
+    if (isCarousel()) {
+        m_focus.setFocus(m_allIcons[idx].get());
+        if (is3D()) {
+            preloadFlowCoversAround(idx);
+        }
         // Target the congruent value nearest the current offset, so a wrap moves
         // one step rather than scrolling the length of the line. The offset is
         // allowed outside [0, count) for this; every reader goes through
@@ -544,7 +1034,7 @@ bool IconGrid::swapSlots(int a, int b) {
         return true;
 
     std::swap(m_allIcons[a], m_allIcons[b]);
-    if (m_layoutMode == AppLayoutMode::DynamicLine)
+    if (isCarousel())
         layoutLine();
     else
         layoutPage();
@@ -553,7 +1043,23 @@ bool IconGrid::swapSlots(int a, int b) {
 
 std::vector<GlossyIcon*> IconGrid::pageIcons() const {
     std::vector<GlossyIcon*> out;
-    if (m_layoutMode == AppLayoutMode::DynamicLine) {
+    if (m_layoutMode == AppLayoutMode::Xmb) {
+        // "The icons on screen" for the bar is the neighbourhood of the
+        // selection in the games column, matching the window the streamer is
+        // asked to keep resident. The paged branch would have returned the
+        // first page's worth regardless of where the selection actually is.
+        if (m_xmbCols.size() > 4) {
+            const auto& col = m_xmbCols[4];
+            const int center = std::clamp(m_xmbCol == 4 ? m_xmbItem : 0,
+                                          0, std::max(0, (int)col.size() - 1));
+            const int start = std::max(0, center - 4);
+            const int end = std::min((int)col.size(), center + 5);
+            for (int i = start; i < end; ++i)
+                if (col[i]) out.push_back(col[i]);
+        }
+        return out;
+    }
+    if (isCarousel()) {
         int cur = focusedGlobalIndex();
         int center = cur >= 0 ? cur : 0;
         int start = std::max(0, center - 4);
@@ -568,7 +1074,319 @@ std::vector<GlossyIcon*> IconGrid::pageIcons() const {
     return out;
 }
 
+bool IconGrid::projectPoint3D(const nxui::Vec3& p, float screenW, float screenH, nxui::Vec2& out) {
+    constexpr float kFocal = 900.f;
+    constexpr float kNearZ = 0.05f;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) || p.z < kNearZ)
+        return false;
+    out.x = screenW * 0.5f + (p.x * kFocal) / p.z;
+    out.y = screenH * 0.5f - (p.y * kFocal) / p.z;
+    return std::isfinite(out.x) && std::isfinite(out.y);
+}
+
+bool IconGrid::pointInQuad(float px, float py, const nxui::Vec2 pts[4]) {
+    bool hasPos = false;
+    bool hasNeg = false;
+    for (int i = 0; i < 4; ++i) {
+        const nxui::Vec2& a = pts[i];
+        const nxui::Vec2& b = pts[(i + 1) % 4];
+        float cross = (b.x - a.x) * (py - a.y) - (b.y - a.y) * (px - a.x);
+        if (cross > 0.001f) hasPos = true;
+        else if (cross < -0.001f) hasNeg = true;
+        if (hasPos && hasNeg)
+            return false;
+    }
+    return true;
+}
+
+int IconGrid::hitTestFlow(float screenX, float screenY) const {
+    const int n = (int)m_allIcons.size();
+    if (n <= 0) return -1;
+    const float scroll = m_lineScrollOffset.value();
+    const int centre = (int)std::round(scroll);
+
+    struct HitCand {
+        int index;
+        float p;
+        float z;
+    };
+    std::vector<HitCand> order;
+    order.reserve(16);
+    for (int i = centre - 6; i <= centre + 6; ++i) {
+        float p = (float)i - scroll;
+        float fx, fz, fang;
+        flowPlace(p, fx, fz, fang);
+        order.push_back({flowWrap(i, n), p, fz});
+    }
+
+    // Near to far (smallest z first)
+    std::sort(order.begin(), order.end(), [](const HitCand& a, const HitCand& b) {
+        return a.z < b.z;
+    });
+
+    const float halfW = kFlowHalfW;
+    const float halfH = kFlowHalfH;
+    const float depth = kFlowDepth;
+
+    for (const auto& c : order) {
+        float fx, fz, fang;
+        flowPlace(c.p, fx, fz, fang);
+        if (c.index >= 0 && c.index < (int)m_allIcons.size() && m_allIcons[c.index]->isSuspended())
+            fang += m_flowClock * kFlowRunSpin;
+
+        // 1. Front face
+        nxui::Vec3 front3D[4];
+        flowFace(fx, fz, fang, -halfW, 0.f, halfW, 0.f, halfH, front3D);
+        nxui::Vec2 front2D[4];
+        bool ok = true;
+        for (int k = 0; k < 4; ++k) {
+            if (!projectPoint3D(front3D[k], 1280.f, 720.f, front2D[k])) {
+                ok = false;
+                break;
+            }
+        }
+        if (ok && pointInQuad(screenX, screenY, front2D))
+            return c.index;
+
+        // 2. Left spine
+        if (fang > 0.05f) {
+            nxui::Vec3 spine3D[4];
+            flowFace(fx, fz, fang, -halfW, 0.f, -halfW, 2.f * depth, halfH, spine3D);
+            ok = true;
+            for (int k = 0; k < 4; ++k) {
+                if (!projectPoint3D(spine3D[k], 1280.f, 720.f, front2D[k])) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok && pointInQuad(screenX, screenY, front2D))
+                return c.index;
+        }
+
+        // 3. Right edge
+        if (fang < -0.05f) {
+            nxui::Vec3 spine3D[4];
+            flowFace(fx, fz, fang, halfW, 0.f, halfW, 2.f * depth, halfH, spine3D);
+            ok = true;
+            for (int k = 0; k < 4; ++k) {
+                if (!projectPoint3D(spine3D[k], 1280.f, 720.f, front2D[k])) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok && pointInQuad(screenX, screenY, front2D))
+                return c.index;
+        }
+    }
+    return -1;
+}
+
+int IconGrid::hitTestShelf(float screenX, float screenY) const {
+    const int n = (int)m_allIcons.size();
+    if (n <= 0) return -1;
+    const float scroll = m_lineScrollOffset.value();
+    const int centre = (int)std::round(scroll);
+
+    struct HitCand {
+        int index;
+        float d;
+        float z;
+    };
+    std::vector<HitCand> order;
+    order.reserve(16);
+    for (int i = centre - 3; i <= centre + 8; ++i) {
+        float d = (float)i - scroll;
+        float x, y, z, a;
+        shelfPlace(d, x, y, z, a);
+        if (a <= 0.05f) continue;
+        order.push_back({flowWrap(i, n), d, z});
+    }
+
+    // Near to far (smallest z first)
+    std::sort(order.begin(), order.end(), [](const HitCand& a, const HitCand& b) {
+        return a.z < b.z;
+    });
+
+    const float halfW = 0.44f;
+    const float halfH = 0.66f;
+
+    for (const auto& c : order) {
+        float x, y, z, a;
+        shelfPlace(c.d, x, y, z, a);
+
+        const nxui::Vec3 quad[4] = {
+            { x - halfW, y + halfH, z },
+            { x + halfW, y + halfH, z },
+            { x + halfW, y - halfH, z },
+            { x - halfW, y - halfH, z }
+        };
+
+        nxui::Vec2 quad2D[4];
+        bool ok = true;
+        for (int k = 0; k < 4; ++k) {
+            if (!projectPoint3D(quad[k], 1280.f, 720.f, quad2D[k])) {
+                ok = false;
+                break;
+            }
+        }
+        if (ok && pointInQuad(screenX, screenY, quad2D))
+            return c.index;
+    }
+    return -1;
+}
+
+int IconGrid::hitTestDeck(float screenX, float screenY) const {
+    const int n = (int)m_allIcons.size();
+    if (n <= 0) return -1;
+    const float scroll = m_lineScrollOffset.value();
+    const int centre = (int)std::round(scroll);
+
+    struct HitCand {
+        int index;
+        float d;
+        float z;
+    };
+    std::vector<HitCand> order;
+    order.reserve(16);
+    for (int i = centre - 5; i <= centre + 5; ++i) {
+        float d = (float)i - scroll;
+        float x, y, z, ang, a;
+        deckPlace(d, x, y, z, ang, a);
+        if (a <= 0.05f) continue;
+        order.push_back({flowWrap(i, n), d, z});
+    }
+
+    // Near to far (smallest z first)
+    std::sort(order.begin(), order.end(), [](const HitCand& a, const HitCand& b) {
+        return a.z < b.z;
+    });
+
+    const float halfW = 0.36f;
+    const float halfH = 0.54f;
+
+    for (const auto& c : order) {
+        float x, y, z, ang, a;
+        deckPlace(c.d, x, y, z, ang, a);
+
+        nxui::Vec3 quad[4];
+        deckCorners(x, y, z, ang, halfW, halfH, quad);
+
+        nxui::Vec2 quad2D[4];
+        bool ok = true;
+        for (int k = 0; k < 4; ++k) {
+            if (!projectPoint3D(quad[k], 1280.f, 720.f, quad2D[k])) {
+                ok = false;
+                break;
+            }
+        }
+        if (ok && pointInQuad(screenX, screenY, quad2D))
+            return c.index;
+    }
+    return -1;
+}
+
+nxui::Rect IconGrid::projected3DIconRect(int index) const {
+    if (index < 0 || index >= (int)m_allIcons.size())
+        return {};
+
+    const float offset = m_lineScrollOffset.value();
+    const float d = lineRingDelta(offset, static_cast<float>(index));
+
+    nxui::Vec3 quad[4];
+    if (m_layoutMode == AppLayoutMode::Flow) {
+        float fx, fz, fang;
+        flowPlace(d, fx, fz, fang);
+        const float halfW = kFlowHalfW;
+        const float halfH = kFlowHalfH;
+        flowFace(fx, fz, fang, -halfW, 0.f, halfW, 0.f, halfH, quad);
+    } else if (m_layoutMode == AppLayoutMode::Shelf) {
+        float x, y, z, a;
+        shelfPlace(d, x, y, z, a);
+        const float halfW = 0.44f;
+        const float halfH = 0.66f;
+        quad[0] = { x - halfW, y + halfH, z };
+        quad[1] = { x + halfW, y + halfH, z };
+        quad[2] = { x + halfW, y - halfH, z };
+        quad[3] = { x - halfW, y - halfH, z };
+    } else if (m_layoutMode == AppLayoutMode::Deck) {
+        float x, y, z, ang, a;
+        deckPlace(d, x, y, z, ang, a);
+        const float halfW = 0.36f;
+        const float halfH = 0.54f;
+        deckCorners(x, y, z, ang, halfW, halfH, quad);
+    } else if (m_layoutMode == AppLayoutMode::Cover) {
+        float x, y, z, a;
+        coverPlace(d, x, y, z, a);
+        const auto& icon = m_allIcons[(size_t)index];
+        const std::uint64_t tid = icon ? icon->titleId() : 0;
+        bool hasCover = false;
+        if (tid != 0) {
+            auto it = m_flowCovers.find(tid);
+            if (it != m_flowCovers.end() && it->second.available && it->second.texture.valid()) {
+                hasCover = true;
+            }
+        }
+        const float halfW = 0.44f;
+        const float halfH = 0.66f;
+        coverCorners(x, y, z, halfW, halfH, quad);
+    } else {
+        return dynamicIconRect(index);
+    }
+
+    nxui::Vec2 p2D[4];
+    for (int k = 0; k < 4; ++k) {
+        if (!projectPoint3D(quad[k], 1280.f, 720.f, p2D[k]))
+            return dynamicIconRect(index);
+    }
+
+    float minX = std::min({p2D[0].x, p2D[1].x, p2D[2].x, p2D[3].x});
+    float maxX = std::max({p2D[0].x, p2D[1].x, p2D[2].x, p2D[3].x});
+    float minY = std::min({p2D[0].y, p2D[1].y, p2D[2].y, p2D[3].y});
+    float maxY = std::max({p2D[0].y, p2D[1].y, p2D[2].y, p2D[3].y});
+
+    return nxui::Rect{minX, minY, std::max(1.f, maxX - minX), std::max(1.f, maxY - minY)};
+}
+
 int IconGrid::hitTest(float screenX, float screenY) const {
+    if (m_layoutMode == AppLayoutMode::Flow) {
+        return hitTestFlow(screenX, screenY);
+    }
+    if (m_layoutMode == AppLayoutMode::Shelf) {
+        return hitTestShelf(screenX, screenY);
+    }
+    if (m_layoutMode == AppLayoutMode::Deck) {
+        return hitTestDeck(screenX, screenY);
+    }
+    if (m_layoutMode == AppLayoutMode::Cover) {
+        return hitTestCover(screenX, screenY);
+    }
+    // XMB touch is resolved in findTopHit(): a tap there changes the selected
+    // category or row, which is a mutation, and hitTest() is const by contract
+    // for every other view. The old code cast the const away from here instead.
+    if (m_layoutMode == AppLayoutMode::Xmb)
+        return -1;
+
+    if (m_layoutMode == AppLayoutMode::List) {
+        for (int i = 0; i < (int)m_allIcons.size(); ++i) {
+            if (m_allIcons[i] && m_allIcons[i]->isFocusable()) {
+                const nxui::Rect r = listIconRect(i);
+                if (r.contains(screenX, screenY))
+                    return i;
+            }
+        }
+        return -1;
+    }
+
+    if (m_layoutMode == AppLayoutMode::Metro) {
+        for (const auto& t : m_metroTiles) {
+            const float drawY = t.y - m_metroScrollY;
+            const nxui::Rect r{t.x, drawY, t.w, t.h};
+            if (r.contains(screenX, screenY))
+                return t.itemIndex;
+        }
+        return -1;
+    }
+
     if (m_layoutMode == AppLayoutMode::DynamicLine) {
         for (int i = 0; i < (int)m_allIcons.size(); ++i) {
             nxui::Rect r = dynamicIconRect(i);
@@ -587,8 +1405,68 @@ int IconGrid::hitTest(float screenX, float screenY) const {
     return -1;
 }
 
+nxui::Widget* IconGrid::findTopHit(float x, float y) {
+    if (!isVisible()) return nullptr;
+    if (m_layoutMode == AppLayoutMode::Xmb) {
+        // hitTestXmb moves the selection (and activates on a second tap on the
+        // same row) and reports nothing back: the caller must not then treat
+        // the tap as a launch of whatever the selection happens to be, which is
+        // how a single touch on the bar could start an app the player only
+        // meant to highlight.
+        hitTestXmb(x, y);
+        if (m_xmbCol >= 0 && m_xmbCol < static_cast<int>(m_xmbCols.size())) {
+            auto& col = m_xmbCols[m_xmbCol];
+            if (m_xmbItem >= 0 && m_xmbItem < static_cast<int>(col.size()))
+                return col[m_xmbItem];
+        }
+        return nullptr;
+    }
+    if (m_layoutMode == AppLayoutMode::Metro) {
+        int hit = hitTest(x, y);
+        if (hit >= 0) {
+            auto icon = metroSharedIconAt(hit);
+            if (icon && icon->isFocusable()) return icon.get();
+        }
+        return nullptr;
+    }
+    int hit = hitTest(x, y);
+    if (hit < 0) return nullptr;
+    if (isCarousel()) {
+        if (hit >= 0 && hit < (int)m_allIcons.size())
+            return m_allIcons[hit].get();
+    } else {
+        int global = m_page * iconsPerPage() + hit;
+        if (global >= 0 && global < (int)m_allIcons.size())
+            return m_allIcons[global].get();
+    }
+    return nullptr;
+}
+
 void IconGrid::startAppearAnimation(const IconAppearOptions& opt) {
-    if (m_layoutMode == AppLayoutMode::DynamicLine) {
+    if (m_layoutMode == AppLayoutMode::Metro) {
+        for (auto& icon : m_allIcons) {
+            if (icon) icon->forceVisible();
+        }
+        for (auto& sys : m_metroSystemIcons) {
+            if (sys) sys->forceVisible();
+        }
+        return;
+    }
+    if (m_layoutMode == AppLayoutMode::Xmb) {
+        // XMB draws one long column, not a page. Taking the paged branch below
+        // only started the appear animation for the first cols*rows icons, so
+        // everything past that stayed at zero opacity: after returning from a
+        // game the bar came back with blank tiles that only filled in once the
+        // player scrolled far enough to rebuild them.
+        for (auto& icon : m_allIcons) {
+            if (icon) icon->forceVisible();
+        }
+        for (auto& sys : m_xmbSystemIcons) {
+            if (sys) sys->forceVisible();
+        }
+        return;
+    }
+    if (isCarousel()) {
         int cur = focusedGlobalIndex();
         int center = cur >= 0 ? cur : 0;
         for (int i = 0; i < (int)m_allIcons.size(); ++i) {
@@ -633,7 +1511,7 @@ void IconGrid::startDisappearAnimation(const IconAppearOptions& opt, float dur) 
 }
 
 void IconGrid::startPageTransition(int targetPage) {
-    if (m_layoutMode == AppLayoutMode::DynamicLine) return;
+    if (isCarousel()) return;   // neither carousel view pages
 
     targetPage = std::clamp(targetPage, 0, m_totalPages - 1);
     if (targetPage == m_page) return;
@@ -725,7 +1603,71 @@ void IconGrid::onUpdate(float dt) {
         std::abs(m_layoutMorph.value() - m_layoutMorph.target()) < 0.001f)
         m_layoutMorphing = false;
 
-    if (m_layoutMode == AppLayoutMode::DynamicLine) {
+    m_layoutReveal.update(dt);
+    if (m_layoutMode == AppLayoutMode::Xmb) {
+        const float prevColScroll = m_xmbColScroll;
+        const float prevItemScroll = m_xmbItemScroll;
+        m_xmbColScroll += (static_cast<float>(m_xmbCol) - m_xmbColScroll) * 0.22f;
+        m_xmbItemScroll += (static_cast<float>(m_xmbItem) - m_xmbItemScroll) * 0.26f;
+        if (std::abs(static_cast<float>(m_xmbCol) - m_xmbColScroll) < 0.003f)
+            m_xmbColScroll = static_cast<float>(m_xmbCol);
+        if (std::abs(static_cast<float>(m_xmbItem) - m_xmbItemScroll) < 0.003f)
+            m_xmbItemScroll = static_cast<float>(m_xmbItem);
+        // Every XMB rect is a function of these two scroll values, and they move
+        // every frame while the bar settles. renderXmb() recomputes from them
+        // live, so without re-placing the children here the widget rects would
+        // describe the position the selection was in before the animation
+        // started -- a touch during the slide would land on the wrong row, and
+        // the selection ring would sit off the tile it is framing.
+        if (prevColScroll != m_xmbColScroll || prevItemScroll != m_xmbItemScroll)
+            syncXmbChildRects();
+        return;
+    }
+    if (m_layoutMode == AppLayoutMode::List) {
+        const int cur = focusedGlobalIndex();
+        if (cur >= 0) {
+            m_listTargetScroll = static_cast<float>(cur);
+        }
+        const float prevScroll = m_listScrollOffset;
+        m_listScrollOffset += (m_listTargetScroll - m_listScrollOffset) * 0.28f;
+        if (std::abs(m_listTargetScroll - m_listScrollOffset) < 0.003f)
+            m_listScrollOffset = m_listTargetScroll;
+        if (std::abs(prevScroll - m_listScrollOffset) > 0.0001f) {
+            syncListChildRects();
+        }
+        return;
+    }
+    if (m_layoutMode == AppLayoutMode::Metro) {
+        const int cur = focusedGlobalIndex();
+        if (cur >= 0) {
+            for (const auto& t : m_metroTiles) {
+                if (t.itemIndex == cur) {
+                    const float viewH = kMetroWallBot - kMetroWallTop;
+                    float ideal = (t.y + t.h * 0.5f) - (kMetroWallTop + viewH * 0.5f);
+                    if (ideal < 0.f) ideal = 0.f;
+                    m_metroTargetScrollY = ideal;
+                    break;
+                }
+            }
+        }
+        const float prevScroll = m_metroScrollY;
+        m_metroScrollY += (m_metroTargetScrollY - m_metroScrollY) * 0.25f;
+        if (std::abs(m_metroTargetScrollY - m_metroScrollY) < 0.2f) {
+            m_metroScrollY = m_metroTargetScrollY;
+        }
+        if (std::abs(prevScroll - m_metroScrollY) > 0.01f) {
+            syncMetroChildRects();
+        }
+        return;
+    }
+    if (isCarousel()) {
+        // Sampled once per frame so every case in the Flow row is placed
+        // against the same instant. Wraps harmlessly; only its fractional
+        // progression matters to the idle turn.
+        if (m_layoutMode == AppLayoutMode::Flow) {
+            m_flowClock += dt;
+            if (m_flowClock > 3600.f) m_flowClock -= 3600.f;
+        }
         m_lineScrollOffset.update(dt);
         int cur = focusedGlobalIndex();
         if (cur >= 0 &&
@@ -751,8 +1693,18 @@ void IconGrid::onUpdate(float dt) {
             || std::abs(m_lineLayoutCacheRect.height - m_rect.height) > 0.0001f;
 
         if (layoutDirty) {
-            for (int i = 0; i < (int)m_allIcons.size(); ++i) {
-                m_allIcons[i]->setRect(dynamicIconRect(i));
+            // Flow/Shelf/Deck position items in world space at draw time and never
+            // read these rects directly, but they are kept in sync with the projected
+            // 3D bounds anyway: the edit cursor, focus ring, touch feedback and
+            // accessibility all query focusedDisplayRect and rect() through this path.
+            if (is3D()) {
+                for (int i = 0; i < (int)m_allIcons.size(); ++i) {
+                    m_allIcons[i]->setRect(projected3DIconRect(i));
+                }
+            } else {
+                for (int i = 0; i < (int)m_allIcons.size(); ++i) {
+                    m_allIcons[i]->setRect(dynamicIconRect(i));
+                }
             }
             m_lineLayoutCacheCount = (int)m_allIcons.size();
             m_lineLayoutCacheOffset = offsetNow;
@@ -890,14 +1842,2626 @@ void IconGrid::renderLayoutMorph(nxui::Renderer& ren) {
     ren.popClipRect();
 }
 
+void IconGrid::drawFolderQuad3D(nxui::Renderer& ren,
+                                const nxui::Vec3 corners[4],
+                                const std::vector<nxui::Texture*>& previewTextures,
+                                int previewCount,
+                                int colorIndex,
+                                const nxui::Color& tint,
+                                float topAlpha,
+                                float bottomAlpha,
+                                bool isReflection,
+                                int strips) {
+    if (topAlpha <= 0.01f && bottomAlpha <= 0.01f) return;
+    const nxui::Color accent = switchu::folders::colorForIndex(colorIndex);
+
+    const int available = previewTextures.empty()
+        ? std::max(0, previewCount)
+        : static_cast<int>(previewTextures.size());
+    const int shown = std::clamp(available, 0, 9);
+    int gridColumns = 3;
+    int gridRows = 3;
+    if (shown <= 1)      { gridColumns = 1; gridRows = 1; }
+    else if (shown == 2) { gridColumns = 2; gridRows = 1; }
+    else if (shown == 3) { gridColumns = 3; gridRows = 1; }
+    else if (shown == 4) { gridColumns = 2; gridRows = 2; }
+    else if (shown <= 6) { gridColumns = 3; gridRows = 2; }
+
+    const int largest = std::max(gridColumns, gridRows);
+    const float span = 0.84f;
+    const float gapRatio = 0.12f;
+    const float cell = span / (static_cast<float>(largest) + gapRatio * static_cast<float>(largest - 1));
+    const float gap = cell * gapRatio;
+    const float gridW = cell * gridColumns + gap * (gridColumns - 1);
+    const float gridH = cell * gridRows + gap * (gridRows - 1);
+    const float startU = (1.0f - gridW) * 0.5f;
+    const float startV = (1.0f - gridH) * 0.5f;
+
+    auto evalPoint = [&](float u, float v) -> nxui::Vec3 {
+        nxui::Vec3 top = corners[0] + (corners[1] - corners[0]) * u;
+        nxui::Vec3 bot = corners[3] + (corners[2] - corners[3]) * u;
+        return top + (bot - top) * v;
+    };
+
+    for (int i = 0; i < shown; ++i) {
+        const int col = i % gridColumns;
+        const int row = i / gridColumns;
+        const float u0 = startU + static_cast<float>(col) * (cell + gap);
+        const float u1 = u0 + cell;
+        const float v0 = startV + static_cast<float>(row) * (cell + gap);
+        const float v1 = v0 + cell;
+
+        const nxui::Vec3 cellQuad[4] = {
+            evalPoint(u0, v0),
+            evalPoint(u1, v0),
+            evalPoint(u1, v1),
+            evalPoint(u0, v1)
+        };
+
+        nxui::Texture* icon = i < static_cast<int>(previewTextures.size())
+            ? previewTextures[static_cast<std::size_t>(i)] : nullptr;
+        if (icon && icon->valid()) {
+            ren.drawQuad3D(icon, cellQuad, tint, topAlpha, bottomAlpha, isReflection, strips);
+        } else {
+            const float variation = 0.88f + 0.04f * static_cast<float>((i + row) % 3);
+            const nxui::Color cellCol{
+                0.16f * variation * tint.r,
+                0.18f * variation * tint.g,
+                0.22f * variation * tint.b,
+                0.82f * tint.a
+            };
+            ren.drawQuad3D(nullptr, cellQuad, cellCol, topAlpha, bottomAlpha, isReflection, strips);
+        }
+    }
+}
+
+void IconGrid::renderFlow(nxui::Renderer& ren) {
+    const int n = (int)m_allIcons.size();
+    if (n <= 0) return;
+
+    // Allow reflections and floor plane to reach the bottom of the screen (y=720),
+    // keeping clipping bounded below the top HUD (y=60).
+    ren.pushClipRect(nxui::Rect{0.f, 60.f, 1280.f, 660.f});
+
+    const float reveal = clamp01(m_layoutReveal.value());
+
+    // Dark glossy floor plane grounding cases visually behind reflections
+    const float floorTop = 490.f;
+    const float floorHeight = 720.f - floorTop;
+    ren.drawGradientRect(
+        nxui::Rect{0.f, floorTop, 1280.f, floorHeight},
+        nxui::Color(0.04f, 0.05f, 0.08f, 0.55f * reveal),
+        nxui::Color(0.01f, 0.01f, 0.02f, 0.85f * reveal)
+    );
+    ren.drawRect(
+        nxui::Rect{0.f, floorTop, 1280.f, 1.5f},
+        nxui::Color(1.f, 1.f, 1.f, 0.08f * reveal)
+    );
+
+    // Harvest completed asynchronous cover decodes (up to 2 uploads per frame)
+    int uploads = 0;
+    for (auto it = m_pendingCoverDecodes.begin(); it != m_pendingCoverDecodes.end() && uploads < 2;) {
+        if (it->state && it->state->done.load()) {
+            try {
+                if (it->future.valid()) it->future.get();
+            } catch (...) {}
+            auto covIt = m_flowCovers.find(it->titleId);
+            if (covIt != m_flowCovers.end()) {
+                if (!it->state->failed.load() && it->state->decoded.valid()) {
+                    if (covIt->second.texture.loadFromDecoded(ren.gpu(), ren, it->state->decoded)) {
+                        covIt->second.available = true;
+                    }
+                }
+                covIt->second.loading = false;
+            }
+            it = m_pendingCoverDecodes.erase(it);
+            ++uploads;
+        } else {
+            ++it;
+        }
+    }
+
+    const int focusedIndex = focusedGlobalIndex();
+    const float scroll = m_lineScrollOffset.value();
+
+    // The drawn range is virtual: it may run below zero or past the end, and is
+    // folded to a real item only when its content is needed. That keeps the row
+    // continuous across a wrap.
+    const int centre = (int)std::lround(scroll);
+
+    auto& order = m_flowRenderScratch;
+    order.clear();
+    order.reserve((size_t)kFlowVisible * 2 + 1);
+    for (int i = centre - kFlowVisible; i <= centre + kFlowVisible; ++i) {
+        const float p = (float)i - scroll;
+        float fx, fz, fang;
+        flowPlace(p, fx, fz, fang);
+        order.push_back({flowWrap(i, n), p, fz});
+    }
+
+    // Outside-in. There is no depth buffer, so draw order is the only depth
+    // information there is: the centre case is nearest and must land last.
+    std::sort(order.begin(), order.end(), [](const FlowCandidate& a, const FlowCandidate& b) {
+        return a.z > b.z;
+    });
+
+    for (const auto& c : order) {
+        auto& icon = m_allIcons[(size_t)c.index];
+        if (!icon) continue;
+
+        float fx, fz, fang;
+        flowPlace(c.p, fx, fz, fang);
+
+        const bool isSel = (c.index == focusedIndex) && icon->isFocused();
+
+        // The running title turns slowly on its own so it can be picked out of
+        // the row at a glance. Added on top of any other rotation.
+        if (icon->isSuspended())
+            fang += m_flowClock * kFlowRunSpin;
+
+        const float halfW = kFlowHalfW;
+        const float halfH = kFlowHalfH;
+        const float depth = kFlowDepth;
+
+        // Watertight case geometry: front, left spine, right edge, and back
+        // are constructed via flowFace with shared corner coordinates.
+        nxui::Vec3 front[4];
+        flowFace(fx, fz, fang, -halfW, 0.f, halfW, 0.f, halfH, front);
+
+        nxui::Vec3 faceL[4];
+        flowFace(fx, fz, fang, -halfW, 0.f, -halfW, 2.f * depth, halfH, faceL);
+
+        nxui::Vec3 faceR[4];
+        flowFace(fx, fz, fang, halfW, 0.f, halfW, 2.f * depth, halfH, faceR);
+
+        nxui::Vec3 back[4];
+        flowFace(fx, fz, fang, halfW, 2.f * depth, -halfW, 2.f * depth, halfH, back);
+
+        // Proximity lighting. This is a large part of why the centre case reads
+        // as selected. Side faces are lit independently of the printed front:
+        // they are grey plastic and have nothing to do with the artwork.
+        //
+        // The selected case additionally lifts above the saturated proximity
+        // value, so the centre item stays distinguishable from its immediate
+        // neighbours once the row has settled and both are at prox ~1.
+        const float prox = std::max(0.f, 1.f - std::abs(c.p));
+        // Selected art gets a small additive lift, clamped before the float is
+        // converted to uint8_t by SDL2. Without the clamp 1.07*255 narrows to a
+        // dark byte on that backend instead of saturating to white.
+        const float selectedLift = isSel ? 0.08f : 0.f;
+        const float lit      = std::clamp((150.f + 105.f * prox) / 255.f
+                                          + selectedLift, 0.f, 1.f);
+        const float blankLit = std::clamp((18.f + 14.f * prox) / 255.f
+                                          + selectedLift * 0.25f, 0.f, 1.f);
+        const float sideLit  = std::clamp((70.f + 60.f * prox) / 255.f
+                                          + selectedLift * 0.35f, 0.f, 1.f);
+
+        const float alpha = m_opacity * icon->opacity() * reveal;
+        if (alpha <= 0.f) continue;
+
+        const nxui::Color artTint {lit, lit, lit, alpha};
+        const nxui::Color blankCol{blankLit, blankLit, blankLit, alpha};
+        const nxui::Color sideCol {sideLit, sideLit, sideLit, alpha};
+        // In sLaunch only the spine (left edge of the case) is red; the right
+        // edge is grey plastic. Cases left of centre show the grey edge, cases
+        // right of centre show the red spine.
+        const nxui::Color spineCol{std::min(1.f, sideLit * 1.7f), sideLit * 0.08f, sideLit * 0.14f, alpha};
+        const nxui::Color backCol {std::min(1.f, sideLit * 1.35f), sideLit * 0.07f, sideLit * 0.12f, alpha};
+
+        // Query 2:3 portrait cover art cache. If available, the cover spans the
+        // full front face. If absent, icon art stretches across the front face.
+        const std::uint64_t tid = icon->titleId();
+        nxui::Texture* coverTex = nullptr;
+        if (tid != 0) {
+            auto& cov = m_flowCovers[tid];
+            if (!cov.checked) {
+                cov.checked = true;
+                cov.loading = true;
+                if (m_threadPool) {
+                    auto decodeState = std::make_shared<CoverDecodeState>();
+                    auto work = [decodeState, tid]() {
+                        try {
+                            const std::string coverPath = resolveFlowCoverPath(tid);
+                            if (!coverPath.empty()) {
+                                decodeState->decoded = nxui::Texture::decodeFile(coverPath, 720);
+                                decodeState->failed = !decodeState->decoded.valid();
+                                DebugLog::log("[cover] decoded title=%016llX: ok=%d (%dx%d)",
+                                              static_cast<unsigned long long>(tid),
+                                              !decodeState->failed.load(),
+                                              decodeState->decoded.width, decodeState->decoded.height);
+                            } else {
+                                decodeState->failed = true;
+                            }
+                        } catch (...) {
+                            decodeState->failed = true;
+                        }
+                        decodeState->done = true;
+                    };
+                    PendingCoverDecode pcd;
+                    pcd.titleId = tid;
+                    pcd.state = decodeState;
+                    pcd.future = m_threadPool->submit(std::move(work));
+                    m_pendingCoverDecodes.push_back(std::move(pcd));
+                }
+            }
+            if (cov.available && cov.texture.valid()) {
+                coverTex = &cov.texture;
+            }
+        }
+
+        // The four faces are sorted by their actual depth rather than by rules
+        // read off the angle. The cases sit well off to either side, so
+        // perspective slides faces past one another at rotations the sine and
+        // cosine know nothing about; sorting a convex box far-to-near is
+        // correct at every angle and needs no winding convention.
+        struct FaceOrder { float z; int which; };
+        FaceOrder faces[4] = {
+            {flowMidZ(front), 0},
+            {flowMidZ(back),  1},
+            {flowMidZ(faceL), 2},
+            {flowMidZ(faceR), 3},
+        };
+        std::sort(std::begin(faces), std::end(faces),
+                  [](const FaceOrder& a, const FaceOrder& b) { return a.z > b.z; });
+
+        nxui::Texture* art = icon->texture();
+        const bool isFolder = (icon->entryKind() == GridEntryKind::Folder);
+        const bool showingFront = flowMidZ(front) <= flowMidZ(back);
+        const bool showingBack  = flowMidZ(back)  <= flowMidZ(front);
+
+        for (const auto& f : faces) {
+            switch (f.which) {
+                case 0:
+                    // A case is a solid object: the bare case is drawn first and
+                    // the artwork is printed on top of it, so a title with no
+                    // art is a blank case rather than a hole.
+                    ren.drawQuad3D(nullptr, front, blankCol, 1.f, 1.f, false, kFlowStripsSide);
+                    if (showingFront) {
+                        if (coverTex) {
+                            ren.drawQuad3D(coverTex, front, artTint, 1.f, 1.f, false, kFlowStripsFront);
+                        } else if (isFolder) {
+                            drawFolderQuad3D(ren, front, icon->folderPreview(), icon->folderPreviewCount(),
+                                             icon->folderColorIndex(), artTint, 1.f, 1.f, false, kFlowStripsFront);
+                        } else if (art && art->valid()) {
+                            ren.drawQuad3D(art, front, artTint, 1.f, 1.f, false, kFlowStripsFront);
+                        }
+                    }
+                    break;
+                case 1:
+                    ren.drawQuad3D(nullptr, back, backCol, 1.f, 1.f, false, kFlowStripsSide);
+                    if (showingBack) {
+                        if (coverTex) {
+                            ren.drawQuad3D(coverTex, back, artTint, 1.f, 1.f, false, kFlowStripsFront);
+                        } else if (isFolder) {
+                            drawFolderQuad3D(ren, back, icon->folderPreview(), icon->folderPreviewCount(),
+                                             icon->folderColorIndex(), artTint, 1.f, 1.f, false, kFlowStripsFront);
+                        } else if (art && art->valid()) {
+                            ren.drawQuad3D(art, back, artTint, 1.f, 1.f, false, kFlowStripsFront);
+                        }
+                    }
+                    break;
+                case 2: ren.drawQuad3D(nullptr, faceL, spineCol, 1.f, 1.f, false, kFlowStripsSide); break;
+                case 3: ren.drawQuad3D(nullptr, faceR, sideCol, 1.f, 1.f, false, kFlowStripsSide); break;
+            }
+        }
+
+        // Switch case tab, printed over the cover on the front face only.
+        if (showingFront) {
+            if (!m_flowLogoTried) {
+                m_flowLogoTried = true;
+#ifdef SWITCHU_HOMEBREW
+                const char* logoPath = "romfs:/icons/switch_logo_white.png";
+#else
+                const char* logoPath = "sdmc:/switch/SwitchU/icons/switch_logo_white.png";
+#endif
+                if (!m_flowLogoTex.loadFromFile(ren.gpu(), ren, logoPath, 128))
+                    DebugLog::log("[flow] case logo not loaded: %s", logoPath);
+            }
+            drawFlowSwitchTab(ren, front, m_flowLogoTex.valid() ? &m_flowLogoTex : nullptr, lit, alpha);
+        }
+
+        // Reflection. Mirrored about the case's OWN bottom edge rather than a
+        // fixed floor, so it stays edge to edge at any scale, and every face is
+        // mirrored so the reflection keeps the same silhouette. The corner
+        // order reverses because the mirror flips the winding. The cover
+        // texture is reused; no mirrored copy is ever allocated.
+        const float floorY = kFlowY - halfH;
+        auto mirror = [floorY](const nxui::Vec3 src[4], nxui::Vec3 out[4]) {
+            for (int k = 0; k < 4; ++k) {
+                const int j = 3 - k;
+                out[k] = {src[j].x, 2.f * floorY - src[j].y, src[j].z};
+            }
+        };
+
+        // Mirror and draw the SAME far-to-near face order as the case. A fixed
+        // front-only reflection lies when a suspended title turns its back to
+        // the viewer, and ordering sides independently can paint a farther edge
+        // over the visible face.
+        const float reflTop = kFlowReflTop;
+        nxui::Vec3 m[4];
+        for (const auto& f : faces) {
+            const nxui::Vec3* src = f.which == 0 ? front
+                                   : f.which == 1 ? back
+                                   : f.which == 2 ? faceL : faceR;
+            const nxui::Color col = f.which == 0 ? blankCol
+                                   : f.which == 1 ? backCol
+                                   : f.which == 2 ? spineCol : sideCol;
+            mirror(src, m);
+            ren.drawQuad3D(nullptr, m, col, reflTop, 0.f, true, kFlowStripsRefl);
+
+            if (f.which == 0 && showingFront) {
+                if (coverTex) {
+                    ren.drawQuad3D(coverTex, m, artTint, reflTop, 0.f, true, kFlowStripsRefl);
+                } else if (isFolder) {
+                    drawFolderQuad3D(ren, m, icon->folderPreview(), icon->folderPreviewCount(),
+                                     icon->folderColorIndex(), artTint, reflTop, 0.f, true, kFlowStripsRefl);
+                } else if (art && art->valid()) {
+                    ren.drawQuad3D(art, m, artTint, reflTop, 0.f, true, kFlowStripsRefl);
+                }
+            } else if (f.which == 1 && showingBack) {
+                if (coverTex) {
+                    ren.drawQuad3D(coverTex, m, artTint, reflTop, 0.f, true, kFlowStripsRefl);
+                } else if (isFolder) {
+                    drawFolderQuad3D(ren, m, icon->folderPreview(), icon->folderPreviewCount(),
+                                     icon->folderColorIndex(), artTint, reflTop, 0.f, true, kFlowStripsRefl);
+                } else if (art && art->valid()) {
+                    ren.drawQuad3D(art, m, artTint, reflTop, 0.f, true, kFlowStripsRefl);
+                }
+            }
+        }
+
+        // Selection glowing outline border around the active face (3D-aligned for rotating/spinning cases)
+        if (isSel) {
+            const nxui::Vec3* activeFace = showingFront ? front : back;
+            nxui::Vec2 p[4];
+            if (ren.project3D(activeFace[0], p[0]) && ren.project3D(activeFace[1], p[1]) &&
+                ren.project3D(activeFace[2], p[2]) && ren.project3D(activeFace[3], p[3])) {
+                const nxui::Vec2 center = (p[0] + p[1] + p[2] + p[3]) * 0.25f;
+
+                nxui::Vec2 ep[4];
+                nxui::Vec2 gp[4];
+                for (int k = 0; k < 4; ++k) {
+                    nxui::Vec2 v = p[k] - center;
+                    float len = std::sqrt(v.x * v.x + v.y * v.y);
+                    nxui::Vec2 dir = (len > 0.001f) ? nxui::Vec2{v.x / len, v.y / len} : nxui::Vec2{0.f, 0.f};
+                    ep[k] = p[k] + dir * 3.0f;
+                    gp[k] = p[k] + dir * 5.0f;
+                }
+
+                // Inner bright frame
+                const nxui::Color frameCol{0.25f, 0.72f, 1.0f, 0.95f * alpha};
+                ren.drawLine(ep[0], ep[1], frameCol, 3.5f);
+                ren.drawLine(ep[1], ep[2], frameCol, 3.5f);
+                ren.drawLine(ep[2], ep[3], frameCol, 3.5f);
+                ren.drawLine(ep[3], ep[0], frameCol, 3.5f);
+
+                // Outer soft glow
+                const nxui::Color glowCol{0.25f, 0.72f, 1.0f, 0.40f * alpha};
+                ren.drawLine(gp[0], gp[1], glowCol, 2.0f);
+                ren.drawLine(gp[1], gp[2], glowCol, 2.0f);
+                ren.drawLine(gp[2], gp[3], glowCol, 2.0f);
+                ren.drawLine(gp[3], gp[0], glowCol, 2.0f);
+            }
+        }
+    }
+
+    ren.popClipRect();
+}
+
+void IconGrid::shelfPlace(float d, float& x, float& y, float& z, float& a) {
+    if (d >= 0.0f) {
+        x = -1.45f + d * 0.78f;
+        y =  0.30f + d * 0.12f;
+        z =  3.60f + d * 1.00f;
+        a = std::clamp(1.0f - d * 0.16f, 0.0f, 1.0f);
+    } else { // sliding out to the left
+        x = -1.45f + d * 1.90f;
+        y =  0.30f;
+        z =  3.60f + d * 0.30f;
+        a = std::clamp(1.0f + d * 1.20f, 0.0f, 1.0f);
+    }
+}
+
+void IconGrid::renderShelf(nxui::Renderer& ren) {
+    const int n = (int)m_allIcons.size();
+    if (n <= 0) return;
+
+    ren.pushClipRect(nxui::Rect{0.f, 60.f, 1280.f, 660.f});
+
+    const float reveal = clamp01(m_layoutReveal.value());
+
+    // Dark glossy floor plane grounding cases visually behind reflections
+    const float floorTop = 460.f;
+    const float floorHeight = 720.f - floorTop;
+    ren.drawGradientRect(
+        nxui::Rect{0.f, floorTop, 1280.f, floorHeight},
+        nxui::Color(0.04f, 0.05f, 0.08f, 0.60f * reveal),
+        nxui::Color(0.01f, 0.01f, 0.02f, 0.90f * reveal)
+    );
+    ren.drawRect(
+        nxui::Rect{0.f, floorTop, 1280.f, 1.5f},
+        nxui::Color(1.f, 1.f, 1.f, 0.08f * reveal)
+    );
+
+    // Harvest completed asynchronous cover decodes (up to 2 uploads per frame)
+    int uploads = 0;
+    for (auto it = m_pendingCoverDecodes.begin(); it != m_pendingCoverDecodes.end() && uploads < 2;) {
+        if (it->state && it->state->done.load()) {
+            try {
+                if (it->future.valid()) it->future.get();
+            } catch (...) {}
+            auto covIt = m_flowCovers.find(it->titleId);
+            if (covIt != m_flowCovers.end()) {
+                if (!it->state->failed.load() && it->state->decoded.valid()) {
+                    if (covIt->second.texture.loadFromDecoded(ren.gpu(), ren, it->state->decoded)) {
+                        covIt->second.available = true;
+                    }
+                }
+                covIt->second.loading = false;
+            }
+            it = m_pendingCoverDecodes.erase(it);
+            ++uploads;
+        } else {
+            ++it;
+        }
+    }
+
+    const int focusedIndex = focusedGlobalIndex();
+    const float scroll = m_lineScrollOffset.value();
+    const int centre = (int)std::lround(scroll);
+
+    auto& order = m_flowRenderScratch;
+    order.clear();
+    order.reserve(16);
+    for (int i = centre - 3; i <= centre + 8; ++i) {
+        const float d = (float)i - scroll;
+        float x, y, z, a;
+        shelfPlace(d, x, y, z, a);
+        if (a <= 0.01f) continue;
+        order.push_back({flowWrap(i, n), d, z});
+    }
+
+    // Far to near: the row recedes to the right, so the furthest items land first.
+    std::sort(order.begin(), order.end(), [](const FlowCandidate& a, const FlowCandidate& b) {
+        return a.z > b.z;
+    });
+
+    for (const auto& c : order) {
+        auto& icon = m_allIcons[(size_t)c.index];
+        if (!icon) continue;
+
+        float x, y, z, a;
+        shelfPlace(c.p, x, y, z, a);
+
+        const bool isSel = (c.index == focusedIndex) && icon->isFocused();
+
+        const float halfW = 0.44f;
+        const float halfH = 0.66f;
+
+        const nxui::Vec3 quad[4] = {
+            { x - halfW, y + halfH, z },
+            { x + halfW, y + halfH, z },
+            { x + halfW, y - halfH, z },
+            { x - halfW, y - halfH, z }
+        };
+
+        const float floorY = y - halfH - 0.04f;
+        const nxui::Vec3 refl[4] = {
+            { x - halfW, floorY, z },
+            { x + halfW, floorY, z },
+            { x + halfW, floorY - 2.f * halfH, z },
+            { x - halfW, floorY - 2.f * halfH, z }
+        };
+
+        const float prox = std::max(0.0f, 1.0f - std::abs(c.p));
+        const float selectedLift = isSel ? 0.08f : 0.f;
+        const float lit = std::clamp((150.f + 105.f * prox) / 255.f + selectedLift, 0.f, 1.f);
+        const float blankLit = std::clamp((20.f + 15.f * prox) / 255.f + selectedLift * 0.25f, 0.f, 1.f);
+
+        const float alpha = m_opacity * icon->opacity() * reveal * a;
+        if (alpha <= 0.01f) continue;
+
+        const nxui::Color artTint {lit, lit, lit, alpha};
+        const nxui::Color blankCol{blankLit, blankLit, blankLit, alpha};
+
+        // Query 2:3 portrait cover art cache.
+        const std::uint64_t tid = icon->titleId();
+        nxui::Texture* coverTex = nullptr;
+        if (tid != 0) {
+            auto& cov = m_flowCovers[tid];
+            if (!cov.checked) {
+                cov.checked = true;
+                cov.loading = true;
+                if (m_threadPool) {
+                    auto decodeState = std::make_shared<CoverDecodeState>();
+                    auto work = [decodeState, tid]() {
+                        try {
+                            const std::string coverPath = resolveFlowCoverPath(tid);
+                            if (!coverPath.empty()) {
+                                decodeState->decoded = nxui::Texture::decodeFile(coverPath, 720);
+                                decodeState->failed = !decodeState->decoded.valid();
+                            } else {
+                                decodeState->failed = true;
+                            }
+                        } catch (...) {
+                            decodeState->failed = true;
+                        }
+                        decodeState->done = true;
+                    };
+                    PendingCoverDecode pcd;
+                    pcd.titleId = tid;
+                    pcd.state = decodeState;
+                    pcd.future = m_threadPool->submit(std::move(work));
+                    m_pendingCoverDecodes.push_back(std::move(pcd));
+                }
+            }
+            if (cov.available && cov.texture.valid()) {
+                coverTex = &cov.texture;
+            }
+        }
+
+        nxui::Texture* art = icon->texture();
+        const bool isFolder = (icon->entryKind() == GridEntryKind::Folder);
+
+        // 1:1 square icon inset centered on front face when 2:3 vertical cover is not present.
+        const float iconHalf = halfW * 0.88f;
+        const nxui::Vec3 iconQuad[4] = {
+            { x - iconHalf, y + iconHalf, z - 0.001f },
+            { x + iconHalf, y + iconHalf, z - 0.001f },
+            { x + iconHalf, y - iconHalf, z - 0.001f },
+            { x - iconHalf, y - iconHalf, z - 0.001f }
+        };
+        const nxui::Vec3 iconRefl[4] = {
+            { x - iconHalf, floorY - (halfH - iconHalf), z },
+            { x + iconHalf, floorY - (halfH - iconHalf), z },
+            { x + iconHalf, floorY - (halfH + iconHalf), z },
+            { x - iconHalf, floorY - (halfH + iconHalf), z }
+        };
+
+        // 1. Draw floor reflection
+        const float reflTop = 0.32f * alpha;
+        ren.drawQuad3D(nullptr, refl, blankCol, reflTop, 0.f, true, 8);
+        if (coverTex) {
+            ren.drawQuad3D(coverTex, refl, artTint, reflTop, 0.f, true, 8);
+        } else if (isFolder) {
+            drawFolderQuad3D(ren, iconRefl, icon->folderPreview(), icon->folderPreviewCount(),
+                             icon->folderColorIndex(), artTint, reflTop, 0.f, true, 8);
+        } else if (art && art->valid()) {
+            ren.drawQuad3D(art, iconRefl, artTint, reflTop, 0.f, true, 8);
+        }
+
+        // 2. Draw card face
+        ren.drawQuad3D(nullptr, quad, blankCol, 1.f, 1.f, false, 8);
+        if (coverTex) {
+            ren.drawQuad3D(coverTex, quad, artTint, 1.f, 1.f, false, 8);
+        } else if (isFolder) {
+            drawFolderQuad3D(ren, iconQuad, icon->folderPreview(), icon->folderPreviewCount(),
+                             icon->folderColorIndex(), artTint, 1.f, 1.f, false, 8);
+        } else if (art && art->valid()) {
+            ren.drawQuad3D(art, iconQuad, artTint, 1.f, 1.f, false, 8);
+        }
+
+        // 3. Selection glowing border (Xbox 360 style)
+        if (isSel) {
+            nxui::Vec2 tl, br;
+            if (ren.project3D(quad[0], tl) && ren.project3D(quad[2], br)) {
+                const float fx0 = tl.x - 4.f;
+                const float fy0 = tl.y - 4.f;
+                const float fw  = (br.x - tl.x) + 8.f;
+                const float fh  = (br.y - tl.y) + 8.f;
+
+                const nxui::Color frameCol{0.25f, 0.72f, 1.0f, 0.95f * alpha};
+                ren.drawRect(nxui::Rect{fx0, fy0, fw, 3.5f}, frameCol);
+                ren.drawRect(nxui::Rect{fx0, fy0 + fh - 3.5f, fw, 3.5f}, frameCol);
+                ren.drawRect(nxui::Rect{fx0, fy0, 3.5f, fh}, frameCol);
+                ren.drawRect(nxui::Rect{fx0 + fw - 3.5f, fy0, 3.5f, fh}, frameCol);
+
+                // Soft outer glow outline
+                const nxui::Color glowCol{0.25f, 0.72f, 1.0f, 0.35f * alpha};
+                ren.drawRect(nxui::Rect{fx0 - 2.f, fy0 - 2.f, fw + 4.f, 2.f}, glowCol);
+                ren.drawRect(nxui::Rect{fx0 - 2.f, fy0 + fh, fw + 4.f, 2.f}, glowCol);
+                ren.drawRect(nxui::Rect{fx0 - 2.f, fy0 - 2.f, 2.f, fh + 4.f}, glowCol);
+                ren.drawRect(nxui::Rect{fx0 + fw, fy0 - 2.f, 2.f, fh + 4.f}, glowCol);
+            }
+        }
+    }
+
+    ren.popClipRect();
+}
+
+void IconGrid::deckPlace(float d, float& x, float& y, float& z, float& ang, float& a) {
+    const float absD = std::abs(d);
+    const float sign = (d >= 0.f) ? 1.f : -1.f;
+
+    // Focused card sits prominently at x = 0, y = -0.48f, z = 2.70f (closer to camera).
+    // Non-focused cards sit back at z = 3.30f, y = -0.54f, spaced by ~0.84 world units.
+    if (absD <= 1.0f) {
+        const float t = absD; // 0 = centered, 1 = neighbor
+        const float smooth = t * t * (3.f - 2.f * t);
+        x = sign * (smooth * 0.84f);
+        y = -0.48f - smooth * 0.06f;
+        z = 2.70f + smooth * 0.60f;
+        ang = -sign * (smooth * 0.12f); // gentle yaw tilt towards center
+        a = 1.0f;
+    } else {
+        const float extra = absD - 1.0f;
+        x = sign * (0.84f + extra * 0.76f);
+        y = -0.54f;
+        z = 3.30f + extra * 0.12f; // subtle curve away
+        ang = -sign * std::min(0.24f, 0.12f + extra * 0.03f);
+        a = std::clamp(1.0f - extra * 0.22f, 0.0f, 1.0f);
+    }
+}
+
+void IconGrid::deckCorners(float x, float y, float z, float ang,
+                           float halfW, float halfH, nxui::Vec3 out[4]) {
+    const float cosA = std::cos(ang);
+    const float sinA = std::sin(ang);
+    // Ordered TL, TR, BR, BL
+    out[0] = { x - halfW * cosA, y + halfH, z + halfW * sinA };
+    out[1] = { x + halfW * cosA, y + halfH, z - halfW * sinA };
+    out[2] = { x + halfW * cosA, y - halfH, z - halfW * sinA };
+    out[3] = { x - halfW * cosA, y - halfH, z + halfW * sinA };
+}
+
+void IconGrid::renderDeck(nxui::Renderer& ren) {
+    const int n = (int)m_allIcons.size();
+    if (n <= 0) return;
+
+    ren.pushClipRect(nxui::Rect{0.f, 60.f, 1280.f, 660.f});
+
+    const float reveal = clamp01(m_layoutReveal.value());
+
+    // Dark sleek gradient behind the card ribbon across the bottom half
+    const float ribbonTop = 330.f;
+    const float ribbonHeight = 720.f - ribbonTop;
+    ren.drawGradientRect(
+        nxui::Rect{0.f, ribbonTop, 1280.f, ribbonHeight},
+        nxui::Color(0.02f, 0.03f, 0.05f, 0.10f * reveal),
+        nxui::Color(0.01f, 0.01f, 0.03f, 0.88f * reveal)
+    );
+    ren.drawRect(
+        nxui::Rect{0.f, ribbonTop + 20.f, 1280.f, 1.0f},
+        nxui::Color(1.f, 1.f, 1.f, 0.05f * reveal)
+    );
+
+    // Harvest completed asynchronous cover decodes (up to 2 uploads per frame)
+    int uploads = 0;
+    for (auto it = m_pendingCoverDecodes.begin(); it != m_pendingCoverDecodes.end() && uploads < 2;) {
+        if (it->state && it->state->done.load()) {
+            try {
+                if (it->future.valid()) it->future.get();
+            } catch (...) {}
+            auto covIt = m_flowCovers.find(it->titleId);
+            if (covIt != m_flowCovers.end()) {
+                if (!it->state->failed.load() && it->state->decoded.valid()) {
+                    if (covIt->second.texture.loadFromDecoded(ren.gpu(), ren, it->state->decoded)) {
+                        covIt->second.available = true;
+                    }
+                }
+                covIt->second.loading = false;
+            }
+            it = m_pendingCoverDecodes.erase(it);
+            ++uploads;
+        } else {
+            ++it;
+        }
+    }
+
+    const float scroll = m_lineScrollOffset.value();
+    const int centre = (int)std::round(scroll);
+    const int focusedIndex = focusedGlobalIndex();
+
+    struct DeckCandidate {
+        int index;
+        float d;
+        float z;
+    };
+    std::vector<DeckCandidate> order;
+    order.reserve(16);
+    for (int i = centre - 5; i <= centre + 5; ++i) {
+        const float d = (float)i - scroll;
+        float x, y, z, ang, a;
+        deckPlace(d, x, y, z, ang, a);
+        if (a <= 0.01f) continue;
+        order.push_back({flowWrap(i, n), d, z});
+    }
+
+    // Far to near (largest z first)
+    std::sort(order.begin(), order.end(), [](const DeckCandidate& a, const DeckCandidate& b) {
+        return a.z > b.z;
+    });
+
+    for (const auto& c : order) {
+        auto& icon = m_allIcons[(size_t)c.index];
+        if (!icon) continue;
+
+        float x, y, z, ang, a;
+        deckPlace(c.d, x, y, z, ang, a);
+
+        const bool isSel = (c.index == focusedIndex) && icon->isFocused();
+
+        const float halfW = 0.36f;
+        const float halfH = 0.54f;
+
+        nxui::Vec3 quad[4];
+        deckCorners(x, y, z, ang, halfW, halfH, quad);
+
+        const float prox = std::max(0.0f, 1.0f - std::abs(c.d));
+        const float selectedLift = isSel ? 0.08f : 0.f;
+        const float lit = std::clamp((160.f + 95.f * prox) / 255.f + selectedLift, 0.f, 1.f);
+        const float blankLit = std::clamp((24.f + 16.f * prox) / 255.f + selectedLift * 0.25f, 0.f, 1.f);
+
+        const float alpha = m_opacity * icon->opacity() * reveal * a;
+        if (alpha <= 0.01f) continue;
+
+        const nxui::Color artTint {lit, lit, lit, alpha};
+        const nxui::Color blankCol{blankLit, blankLit, blankLit, alpha};
+
+        // Query 2:3 portrait cover art cache
+        const std::uint64_t tid = icon->titleId();
+        bool hasCover = false;
+        nxui::Texture* coverTex = nullptr;
+        if (tid != 0) {
+            auto& cov = m_flowCovers[tid];
+            if (!cov.checked) {
+                cov.checked = true;
+                cov.loading = true;
+                if (m_threadPool) {
+                    auto decodeState = std::make_shared<CoverDecodeState>();
+                    auto work = [decodeState, tid]() {
+                        try {
+                            const std::string coverPath = resolveFlowCoverPath(tid);
+                            if (!coverPath.empty()) {
+                                decodeState->decoded = nxui::Texture::decodeFile(coverPath, 720);
+                                decodeState->failed = !decodeState->decoded.valid();
+                            } else {
+                                decodeState->failed = true;
+                            }
+                        } catch (...) {
+                            decodeState->failed = true;
+                        }
+                        decodeState->done = true;
+                    };
+                    PendingCoverDecode pcd;
+                    pcd.titleId = tid;
+                    pcd.state = decodeState;
+                    pcd.future = m_threadPool->submit(std::move(work));
+                    m_pendingCoverDecodes.push_back(std::move(pcd));
+                }
+            }
+            if (cov.available && cov.texture.valid()) {
+                hasCover = true;
+                coverTex = &cov.texture;
+            }
+        }
+
+        // Draw soft floor shadow
+        const float floorY = y - halfH - 0.02f;
+        nxui::Vec3 shadowQuad[4];
+        deckCorners(x, floorY, z, ang, halfW * 0.96f, halfH * 0.25f, shadowQuad);
+        ren.drawQuad3D(nullptr, shadowQuad, nxui::Color(0.f, 0.f, 0.f, 0.45f * alpha),
+                       0.45f * alpha, 0.0f);
+
+        // If selected: draw SteamOS signature cyan/blue glowing accent frame!
+        if (isSel) {
+            nxui::Vec3 glowQuad[4];
+            const float glowW = halfW + 0.028f;
+            const float glowH = halfH + 0.028f;
+            deckCorners(x, y, z + 0.005f, ang, glowW, glowH, glowQuad);
+            // Signature SteamOS neon cyan-blue
+            const nxui::Color glowCol{0.10f, 0.65f, 0.98f, 0.88f * alpha};
+            ren.drawQuad3D(nullptr, glowQuad, glowCol, 0.88f * alpha, 0.88f * alpha);
+        }
+
+        const bool isFolder = (icon->entryKind() == GridEntryKind::Folder);
+
+        // Dark card chassis / backplate
+        ren.drawQuad3D(nullptr, quad, blankCol);
+
+        if (hasCover && coverTex) {
+            // Full 2:3 vertical cover art
+            ren.drawQuad3D(coverTex, quad, artTint);
+        } else if (isFolder) {
+            drawFolderQuad3D(ren, quad, icon->folderPreview(), icon->folderPreviewCount(),
+                             icon->folderColorIndex(), artTint, 1.f, 1.f, false, 8);
+        } else if (icon->texture()) {
+            ren.drawQuad3D(icon->texture(), quad, artTint);
+        }
+    }
+
+    ren.popClipRect();
+}
+
+void IconGrid::coverPlace(float d, float& x, float& y, float& z, float& a) {
+    const float absD = std::abs(d);
+    // At z = 3.0f and focal length 960, one screen width (1280px) equals 4.0 world units.
+    // Neighboring items are spaced exactly 4.0 units apart (1 screen width), matching sLaunch.
+    x = d * 4.0f;
+    // Cover center sits slightly above mid-screen (screenY = 300px)
+    y = 0.1875f;
+    // Subtle z-receding during transition slide gives a refined depth cue
+    z = 3.0f + std::min(absD, 1.0f) * 0.15f;
+    a = std::clamp(1.0f - absD * 0.65f, 0.0f, 1.0f);
+}
+
+void IconGrid::coverCorners(float x, float y, float z,
+                            float halfW, float halfH, nxui::Vec3 out[4]) {
+    // Ordered TL, TR, BR, BL
+    out[0] = { x - halfW, y + halfH, z };
+    out[1] = { x + halfW, y + halfH, z };
+    out[2] = { x + halfW, y - halfH, z };
+    out[3] = { x - halfW, y - halfH, z };
+}
+
+int IconGrid::hitTestCover(float screenX, float screenY) const {
+    const int n = (int)m_allIcons.size();
+    if (n <= 0) return -1;
+    const float scroll = m_lineScrollOffset.value();
+    const int centre = (int)std::round(scroll);
+    const int offsets[] = {0, 1, -1};
+    for (int off : offsets) {
+        int idx = centre + off;
+        const float d = (float)idx - scroll;
+        if (std::abs(d) > 1.25f) continue;
+        int wrapped = flowWrap(idx, n);
+        auto& icon = m_allIcons[(size_t)wrapped];
+        if (!icon) continue;
+
+        float x, y, z, a;
+        coverPlace(d, x, y, z, a);
+
+        const std::uint64_t tid = icon->titleId();
+        bool hasCover = false;
+        if (tid != 0) {
+            auto it = m_flowCovers.find(tid);
+            if (it != m_flowCovers.end() && it->second.available && it->second.texture.valid()) {
+                hasCover = true;
+            }
+        }
+        const float halfW = 0.44f;
+        const float halfH = 0.66f;
+
+        nxui::Vec3 quad[4];
+        coverCorners(x, y, z, halfW, halfH, quad);
+
+        nxui::Vec2 p2D[4];
+        bool ok = true;
+        for (int k = 0; k < 4; ++k) {
+            if (!projectPoint3D(quad[k], 1280.f, 720.f, p2D[k])) {
+                ok = false;
+                break;
+            }
+        }
+        if (!ok) continue;
+        if (pointInQuad(screenX, screenY, p2D)) {
+            return wrapped;
+        }
+    }
+    return -1;
+}
+
+void IconGrid::renderCover(nxui::Renderer& ren) {
+    const int n = (int)m_allIcons.size();
+    if (n <= 0) return;
+
+    ren.pushClipRect(nxui::Rect{0.f, 60.f, 1280.f, 660.f});
+
+    const float reveal = clamp01(m_layoutReveal.value());
+
+    // Dark sleek floor plane grounding the cover reflection
+    const float floorTop = 490.f;
+    const float floorHeight = 720.f - floorTop;
+    ren.drawGradientRect(
+        nxui::Rect{0.f, floorTop, 1280.f, floorHeight},
+        nxui::Color(0.02f, 0.03f, 0.05f, 0.08f * reveal),
+        nxui::Color(0.01f, 0.01f, 0.03f, 0.70f * reveal)
+    );
+    ren.drawRect(
+        nxui::Rect{0.f, floorTop, 1280.f, 1.0f},
+        nxui::Color(1.f, 1.f, 1.f, 0.06f * reveal)
+    );
+
+    // Harvest completed asynchronous cover decodes (up to 2 uploads per frame)
+    int uploads = 0;
+    for (auto it = m_pendingCoverDecodes.begin(); it != m_pendingCoverDecodes.end() && uploads < 2;) {
+        if (it->state && it->state->done.load()) {
+            try {
+                if (it->future.valid()) it->future.get();
+            } catch (...) {}
+            auto covIt = m_flowCovers.find(it->titleId);
+            if (covIt != m_flowCovers.end()) {
+                if (!it->state->failed.load() && it->state->decoded.valid()) {
+                    if (covIt->second.texture.loadFromDecoded(ren.gpu(), ren, it->state->decoded)) {
+                        covIt->second.available = true;
+                    }
+                }
+                covIt->second.loading = false;
+            }
+            it = m_pendingCoverDecodes.erase(it);
+            ++uploads;
+        } else {
+            ++it;
+        }
+    }
+
+    const float scroll = m_lineScrollOffset.value();
+    const int centre = (int)std::round(scroll);
+    const int focusedIndex = focusedGlobalIndex();
+
+    struct CoverCandidate {
+        int index;
+        float d;
+        float absD;
+    };
+    std::vector<CoverCandidate> order;
+    order.reserve(3);
+    for (int off = -1; off <= 1; ++off) {
+        int idx = centre + off;
+        const float d = (float)idx - scroll;
+        if (std::abs(d) > 1.25f) continue;
+        order.push_back({flowWrap(idx, n), d, std::abs(d)});
+    }
+
+    // Draw farther items first so centered cover paints last (on top)
+    std::sort(order.begin(), order.end(), [](const CoverCandidate& a, const CoverCandidate& b) {
+        return a.absD > b.absD;
+    });
+
+    for (const auto& c : order) {
+        auto& icon = m_allIcons[(size_t)c.index];
+        if (!icon) continue;
+
+        float x, y, z, a;
+        coverPlace(c.d, x, y, z, a);
+
+        const bool isSel = (c.index == focusedIndex) && icon->isFocused();
+
+        // Query 2:3 portrait cover art cache
+        const std::uint64_t tid = icon->titleId();
+        bool hasCover = false;
+        nxui::Texture* coverTex = nullptr;
+        if (tid != 0) {
+            auto& cov = m_flowCovers[tid];
+            if (!cov.checked) {
+                cov.checked = true;
+                cov.loading = true;
+                if (m_threadPool) {
+                    auto decodeState = std::make_shared<CoverDecodeState>();
+                    auto work = [decodeState, tid]() {
+                        try {
+                            const std::string coverPath = resolveFlowCoverPath(tid);
+                            if (!coverPath.empty()) {
+                                decodeState->decoded = nxui::Texture::decodeFile(coverPath, 720);
+                                decodeState->failed = !decodeState->decoded.valid();
+                            } else {
+                                decodeState->failed = true;
+                            }
+                        } catch (...) {
+                            decodeState->failed = true;
+                        }
+                        decodeState->done = true;
+                    };
+                    PendingCoverDecode pcd;
+                    pcd.titleId = tid;
+                    pcd.state = decodeState;
+                    pcd.future = m_threadPool->submit(std::move(work));
+                    m_pendingCoverDecodes.push_back(std::move(pcd));
+                }
+            }
+            if (cov.available && cov.texture.valid()) {
+                hasCover = true;
+                coverTex = &cov.texture;
+            }
+        }
+
+        const float halfW = 0.44f;
+        const float halfH = 0.66f;
+
+        nxui::Vec3 quad[4];
+        coverCorners(x, y, z, halfW, halfH, quad);
+
+        const float prox = std::max(0.0f, 1.0f - c.absD);
+        const float selectedLift = isSel ? 0.08f : 0.f;
+        const float lit = std::clamp((170.f + 85.f * prox) / 255.f + selectedLift, 0.f, 1.f);
+        const float blankLit = std::clamp((26.f + 18.f * prox) / 255.f + selectedLift * 0.25f, 0.f, 1.f);
+
+        const float alpha = m_opacity * icon->opacity() * reveal * a;
+        if (alpha <= 0.01f) continue;
+
+        const nxui::Color artTint {lit, lit, lit, alpha};
+        const nxui::Color blankCol{blankLit, blankLit, blankLit, alpha};
+
+        const bool isFolder = (icon->entryKind() == GridEntryKind::Folder);
+
+        // Floor reflection (fading downwards)
+        const float floorY = y - halfH - 0.03f;
+        const float reflH = halfH * 0.45f;
+        nxui::Vec3 reflQuad[4];
+        reflQuad[0] = { x - halfW, floorY, z };
+        reflQuad[1] = { x + halfW, floorY, z };
+        reflQuad[2] = { x + halfW, floorY - reflH, z };
+        reflQuad[3] = { x - halfW, floorY - reflH, z };
+
+        if (hasCover && coverTex) {
+            ren.drawQuad3D(coverTex, reflQuad, artTint, 0.35f * alpha, 0.0f, true);
+        } else if (isFolder) {
+            drawFolderQuad3D(ren, reflQuad, icon->folderPreview(), icon->folderPreviewCount(),
+                             icon->folderColorIndex(), artTint, 0.35f * alpha, 0.0f, true);
+        } else if (icon->texture()) {
+            ren.drawQuad3D(icon->texture(), reflQuad, artTint, 0.35f * alpha, 0.0f, true);
+        }
+
+        // Soft floor drop shadow
+        nxui::Vec3 shadowQuad[4];
+        coverCorners(x, floorY + 0.01f, z, halfW * 0.98f, halfH * 0.15f, shadowQuad);
+        ren.drawQuad3D(nullptr, shadowQuad, nxui::Color(0.f, 0.f, 0.f, 0.45f * alpha),
+                       0.45f * alpha, 0.0f);
+
+        // Selection glow frame
+        if (isSel) {
+            nxui::Vec3 glowQuad[4];
+            const float glowW = halfW + 0.028f;
+            const float glowH = halfH + 0.028f;
+            coverCorners(x, y, z + 0.005f, glowW, glowH, glowQuad);
+            // Signature cyan/blue accent glow (matching Deck/Shelf)
+            const nxui::Color glowCol{0.10f, 0.65f, 0.98f, 0.88f * alpha};
+            ren.drawQuad3D(nullptr, glowQuad, glowCol, 0.88f * alpha, 0.88f * alpha);
+        }
+
+        // Card chassis / plate
+        ren.drawQuad3D(nullptr, quad, blankCol);
+
+        // Artwork
+        if (hasCover && coverTex) {
+            ren.drawQuad3D(coverTex, quad, artTint);
+        } else if (isFolder) {
+            drawFolderQuad3D(ren, quad, icon->folderPreview(), icon->folderPreviewCount(),
+                             icon->folderColorIndex(), artTint, 1.f, 1.f, false);
+        } else if (icon->texture()) {
+            ren.drawQuad3D(icon->texture(), quad, artTint);
+        }
+    }
+
+    ren.popClipRect();
+}
+
+void IconGrid::setXmbContext(const XmbContext& ctx) {
+    m_xmbContext = ctx;
+    if (m_layoutMode == AppLayoutMode::Xmb) {
+        layoutXmb();
+    }
+}
+
+void IconGrid::setXmbPosition(int col, int item) {
+    if (m_layoutMode != AppLayoutMode::Xmb || m_xmbCols.empty()) return;
+    const int colCount = static_cast<int>(m_xmbCols.size());
+    col = std::clamp(col, 0, colCount - 1);
+    while (col >= 0 && col < colCount && m_xmbCols[col].empty()) {
+        col = (col == 0) ? col + 1 : col - 1;
+    }
+    if (col < 0 || col >= colCount || m_xmbCols[col].empty()) return;
+
+    m_xmbCol = col;
+    auto& c = m_xmbCols[m_xmbCol];
+    m_xmbItem = (m_xmbCol == 4)
+        ? std::clamp(item < 0 ? m_xmbGamesRow : item, 0, static_cast<int>(c.size()) - 1)
+        : std::clamp(item < 0 ? m_xmbItem : item, 0, static_cast<int>(c.size()) - 1);
+    if (m_xmbCol == 4)
+        m_xmbGamesRow = m_xmbItem;
+
+    m_xmbColScroll = static_cast<float>(m_xmbCol);
+    m_xmbItemScroll = static_cast<float>(m_xmbItem);
+    syncXmbChildRects();
+    if (!c.empty() && m_xmbItem < static_cast<int>(c.size())) {
+        m_focus.setFocus(c[m_xmbItem]);
+        if (m_onFocusChanged)
+            m_onFocusChanged(c[m_xmbItem]);
+    }
+}
+
+void IconGrid::syncXmbFocusFromCurrent() {
+    if (m_layoutMode != AppLayoutMode::Xmb || m_xmbCols.empty()) return;
+    nxui::Widget* cur = m_focus.current();
+    if (!cur) return;
+    for (size_t c = 0; c < m_xmbCols.size(); ++c) {
+        for (size_t i = 0; i < m_xmbCols[c].size(); ++i) {
+            if (m_xmbCols[c][i] == cur) {
+                m_xmbCol = static_cast<int>(c);
+                m_xmbItem = static_cast<int>(i);
+                if (m_xmbCol == 4)
+                    m_xmbGamesRow = m_xmbItem;
+                m_xmbColScroll = static_cast<float>(m_xmbCol);
+                m_xmbItemScroll = static_cast<float>(m_xmbItem);
+                syncXmbChildRects();
+                if (m_onFocusChanged)
+                    m_onFocusChanged(cur);
+                return;
+            }
+        }
+    }
+}
+
+void IconGrid::stepXmb(int dCol, int dItem) {
+    if (m_layoutMode != AppLayoutMode::Xmb || m_xmbCols.empty()) return;
+
+    const int colCount = static_cast<int>(m_xmbCols.size());
+    bool moved = false;
+
+    if (dCol != 0) {
+        // Walk past empty categories instead of stopping dead on one, and stop
+        // at the ends rather than wrapping: on the real bar the row has a first
+        // and a last category, and clamping is what makes the ends findable.
+        const int stepDir = (dCol > 0) ? 1 : -1;
+        int probe = m_xmbCol;
+        for (int guard = 0; guard < colCount; ++guard) {
+            probe += stepDir;
+            if (probe < 0 || probe >= colCount)
+                break;
+            if (m_xmbCols[probe].empty())
+                continue;
+            m_xmbCol = probe;
+            // Land on the first entry of the new category. Carrying the old
+            // row index across columns of different lengths is what made the
+            // selection appear to jump to an unrelated item. The games column
+            // is the exception: it is the long one the player scrolls through,
+            // so returning to it restores where they were.
+            m_xmbItem = (m_xmbCol == 4)
+                ? std::clamp(m_xmbGamesRow, 0,
+                             std::max(0, static_cast<int>(m_xmbCols[4].size()) - 1))
+                : 0;
+            moved = true;
+            break;
+        }
+
+        if (!moved) {
+            if (dCol < 0 && !m_xmbContext.leftTargets.empty()) {
+                const int targetIdx = std::clamp(
+                    m_xmbItem, 0, static_cast<int>(m_xmbContext.leftTargets.size()) - 1);
+                nxui::Widget* target = m_xmbContext.leftTargets[targetIdx];
+                if (target && target->isVisible() && target->isFocusable()) {
+                    if (m_onFocusChanged)
+                        m_onFocusChanged(target);
+                    return;
+                }
+            } else if (dCol > 0 && !m_xmbContext.rightTargets.empty()) {
+                const int targetIdx = std::clamp(
+                    m_xmbItem, 0, static_cast<int>(m_xmbContext.rightTargets.size()) - 1);
+                nxui::Widget* target = m_xmbContext.rightTargets[targetIdx];
+                if (target && target->isVisible() && target->isFocusable()) {
+                    if (m_onFocusChanged)
+                        m_onFocusChanged(target);
+                    return;
+                }
+            }
+            return;
+        }
+    }
+
+    if (dItem != 0 && m_xmbCol >= 0 && m_xmbCol < colCount) {
+        auto& col = m_xmbCols[m_xmbCol];
+        if (!col.empty()) {
+            if (dItem < 0 && m_xmbItem == 0 && m_xmbContext.upTarget &&
+                m_xmbContext.upTarget->isVisible() && m_xmbContext.upTarget->isFocusable()) {
+                // Stepping UP from row 0 navigates to the top header (profile / Mii bar)
+                if (m_onFocusChanged)
+                    m_onFocusChanged(m_xmbContext.upTarget);
+                return;
+            }
+            const int newItem =
+                std::clamp(m_xmbItem + dItem, 0, static_cast<int>(col.size()) - 1);
+            if (newItem != m_xmbItem) {
+                m_xmbItem = newItem;
+                moved = true;
+            }
+        }
+    }
+
+    if (!moved)
+        return;
+
+    if (m_xmbCol == 4)
+        m_xmbGamesRow = m_xmbItem;
+
+    // Rects first, focus second: the focus callback reads focusRect() to place
+    // the selection ring, so moving focus before the rects are current would
+    // draw the ring at the previous position for a frame.
+    syncXmbChildRects();
+    auto& col = m_xmbCols[m_xmbCol];
+    if (!col.empty() && m_xmbItem < static_cast<int>(col.size())) {
+        m_focus.setFocus(col[m_xmbItem]);
+        if (m_onFocusChanged)
+            m_onFocusChanged(col[m_xmbItem]);
+    }
+}
+
+bool IconGrid::xmbFocusIsAppEntry() const {
+    if (m_layoutMode != AppLayoutMode::Xmb) return false;
+    // Column 4 is the one built from m_allIcons; every other column holds the
+    // synthesized system shortcuts, which own no title and must not reach the
+    // grid's app-only paths.
+    return m_xmbCol == 4;
+}
+
+float IconGrid::xmbRowOffset(float d) {
+    constexpr float kXmbSpacingV   = 42.67f;
+    constexpr float kXmbAboveItem  = -1.0f;
+    constexpr float kXmbActiveItem =  3.0f;
+    constexpr float kXmbUnderItem  =  5.0f;
+
+    const float active = kXmbSpacingV * kXmbActiveItem;
+    if (d <= -1.0f) return kXmbSpacingV * (d + kXmbAboveItem);
+    if (d >=  1.0f) return kXmbSpacingV * (d + kXmbUnderItem);
+    if (d < 0.0f) {
+        const float edge = kXmbSpacingV * (-1.0f + kXmbAboveItem);
+        return active + (edge - active) * (-d);
+    }
+    const float edge = kXmbSpacingV * (1.0f + kXmbUnderItem);
+    return active + (edge - active) * d;
+}
+
+nxui::Rect IconGrid::xmbCategoryRect(int columnIndex) const {
+    const float d = static_cast<float>(columnIndex) - m_xmbColScroll;
+    const float prox = std::max(0.0f, 1.0f - std::abs(d));
+    const float zoom = kXmbZoomPassive + (kXmbZoomActive - kXmbZoomPassive) * prox;
+    const float sz = kXmbIconBase * zoom;
+    const float cx = kXmbAnchorX + d * kXmbSpacingH;
+    return {cx - sz * 0.5f, kXmbTabY - sz * 0.5f, sz, sz};
+}
+
+int IconGrid::hitTestXmb(float screenX, float screenY) {
+    if (m_xmbCols.empty()) return -1;
+
+    // A tap on a category selects it; it never activates. Selecting a category
+    // and launching whatever happened to sit at index 0 of it was how a touch
+    // on the bar could fire an applet the player never picked.
+    if (screenY >= kXmbTabY - 50.f && screenY <= kXmbTabY + 50.f) {
+        for (size_t c = 0; c < m_xmbCols.size(); ++c) {
+            const float cx = kXmbAnchorX +
+                             (static_cast<float>(c) - m_xmbColScroll) * kXmbSpacingH;
+            if (std::abs(screenX - cx) <= kXmbSpacingH * 0.5f) {
+                if (m_xmbCols[c].empty())
+                    return -1;
+                if (static_cast<int>(c) != m_xmbCol) {
+                    m_xmbCol = static_cast<int>(c);
+                    m_xmbItem = (m_xmbCol == 4)
+                        ? std::clamp(m_xmbGamesRow, 0,
+                                     std::max(0, static_cast<int>(m_xmbCols[4].size()) - 1))
+                        : 0;
+                    syncXmbChildRects();
+                    m_focus.setFocus(m_xmbCols[m_xmbCol][m_xmbItem]);
+                    if (m_onFocusChanged)
+                        m_onFocusChanged(m_xmbCols[m_xmbCol][m_xmbItem]);
+                }
+                // Handled as selection-only. findTopHit() will return the grid,
+                // not the newly focused item, so FocusManager cannot interpret
+                // this same tap-up as an activation.
+                return 0;
+            }
+        }
+        return -1;
+    }
+
+    // Items: first tap moves the selection onto the row, a second tap on the
+    // already-selected row activates it. The band is the drawn rect widened to
+    // the label, so tapping a title works as well as tapping its icon.
+    if (m_xmbCol >= 0 && m_xmbCol < static_cast<int>(m_xmbCols.size())) {
+        auto& col = m_xmbCols[m_xmbCol];
+        for (size_t i = 0; i < col.size(); ++i) {
+            if (!col[i]) continue;
+            const nxui::Rect r = xmbItemRect(static_cast<int>(i));
+            const float cy = r.y + r.height * 0.5f;
+            const float halfBand = std::max(22.f, r.height * 0.5f);
+            if (std::abs(screenY - cy) <= halfBand &&
+                screenX >= kXmbAnchorX - kXmbIconBase &&
+                screenX <= 1200.f) {
+                // Do not activate here. findTopHit() returns this widget to
+                // FocusManager, whose touch-up path implements the expected
+                // rule: first tap focuses; tapping an already-focused item
+                // fires A/activate. Activating during hit-testing fired once on
+                // touch-down and then a second time on touch-up.
+                if (static_cast<int>(i) != m_xmbItem) {
+                    m_xmbItem = static_cast<int>(i);
+                    if (m_xmbCol == 4)
+                        m_xmbGamesRow = m_xmbItem;
+                    syncXmbChildRects();
+                    m_focus.setFocus(col[m_xmbItem]);
+                    if (m_onFocusChanged)
+                        m_onFocusChanged(col[m_xmbItem]);
+                }
+                return -1;
+            }
+        }
+    }
+    return -1;
+}
+
+void IconGrid::layoutXmb() {
+    clearChildren();
+
+    if (m_xmbSystemIcons.empty()) {
+        m_xmbSystemIcons.resize(11);
+        for (auto& sys : m_xmbSystemIcons) {
+            sys = std::make_shared<GlossyIcon>();
+            sys->setTag("glossy_icon");
+            sys->setFocusable(true);
+            sys->setVisible(true);
+            sys->setCornerRadius(10.f);
+        }
+    }
+
+    auto bindSysAction = [](const std::shared_ptr<GlossyIcon>& icon,
+                            const std::string& title,
+                            const std::string& hint,
+                            nxui::Texture* tex,
+                            std::function<void()> act) {
+        icon->setTitle(title);
+        icon->setAccessibilityHint(hint);
+        icon->setTexture(tex);
+        icon->clearActions();
+        icon->setOnActivate(act);
+        if (act) {
+            icon->addAction(static_cast<uint64_t>(nxui::Button::A), act);
+        }
+    };
+
+    // Settings column items
+    bindSysAction(m_xmbSystemIcons[0], "Settings", "System and launcher preferences", m_xmbContext.texSettings, m_xmbContext.onOpenSettings);
+    bindSysAction(m_xmbSystemIcons[1], "Theme Shop", "Customize themes and sounds", m_xmbContext.texThemes, m_xmbContext.onOpenThemeShop);
+    bindSysAction(m_xmbSystemIcons[2], "Controllers", "Pair controllers and change grip", m_xmbContext.texControllers, m_xmbContext.onOpenControllers);
+    bindSysAction(m_xmbSystemIcons[3], "Power", "Sleep, restart or turn off console", m_xmbContext.texPower, m_xmbContext.onOpenPower);
+
+    // Media column items
+    bindSysAction(m_xmbSystemIcons[4], "Album", "Screenshots and captured videos", m_xmbContext.texAlbum, m_xmbContext.onOpenAlbum);
+    bindSysAction(m_xmbSystemIcons[5], "Media Center", "Play music and explore media", m_xmbContext.texMediaCenter, m_xmbContext.onOpenMediaCenter);
+
+    // User column items
+    bindSysAction(m_xmbSystemIcons[6], "User Page", "Account profile and activity log", m_xmbContext.texUser, m_xmbContext.onOpenUserPage);
+    bindSysAction(m_xmbSystemIcons[7], "Mii Editor", "Create and manage Mii characters", m_xmbContext.texMii, m_xmbContext.onOpenMiiEditor);
+
+    // Network column items.
+    nxui::Texture* netTex = m_xmbContext.texNetwork ? m_xmbContext.texNetwork : m_xmbContext.texSettings;
+    bindSysAction(m_xmbSystemIcons[8], "Internet Settings", "Configure Wi-Fi connections", netTex, m_xmbContext.onOpenNetConnect);
+    // The system browser is not wired yet. The old placeholder called
+    // launchNetConnect(), so selecting "Web Browser" opened Internet Settings
+    // again -- a duplicate action presented as a feature. Keep the prepared
+    // slot out of the column until a real Web applet launch path exists.
+    bindSysAction(m_xmbSystemIcons[9], "Web Browser", "Browse the Internet",
+                  m_xmbContext.texBrowser ? m_xmbContext.texBrowser : netTex,
+                  m_xmbContext.onOpenWebBrowser);
+
+    // Homebrew column items
+    nxui::Texture* hbTex = m_xmbContext.texHomebrew ? m_xmbContext.texHomebrew : m_xmbContext.texAlbum;
+    bindSysAction(m_xmbSystemIcons[10], "Homebrew Menu", "Launch homebrew applications (.nro)", hbTex, m_xmbContext.onOpenHbMenu);
+
+    // Assemble 6 columns
+    m_xmbCols.clear();
+    m_xmbCols.resize(6);
+
+    m_xmbColNames = {"Settings", "Media", "User", "Network", "Games", "Homebrew"};
+    m_xmbColIcons = {
+        m_xmbContext.texSettings,
+        m_xmbContext.texAlbum,
+        m_xmbContext.texUser,
+        m_xmbContext.texNetwork ? m_xmbContext.texNetwork : m_xmbContext.texSettings,
+        m_xmbContext.texGames,
+        m_xmbContext.texHomebrew ? m_xmbContext.texHomebrew : m_xmbContext.texAlbum
+    };
+
+    m_xmbCols[0] = { m_xmbSystemIcons[0].get(), m_xmbSystemIcons[1].get(), m_xmbSystemIcons[2].get(), m_xmbSystemIcons[3].get() };
+    m_xmbCols[1] = { m_xmbSystemIcons[4].get(), m_xmbSystemIcons[5].get() };
+    m_xmbCols[2] = { m_xmbSystemIcons[6].get(), m_xmbSystemIcons[7].get() };
+    m_xmbCols[3] = { m_xmbSystemIcons[8].get() };
+    if (m_xmbContext.onOpenWebBrowser)
+        m_xmbCols[3].push_back(m_xmbSystemIcons[9].get());
+
+    std::vector<GlossyIcon*> gameIcons;
+    gameIcons.reserve(m_allIcons.size());
+    for (auto& icon : m_allIcons) {
+        if (icon && icon->isFocusable() && (icon->titleId() != 0 || icon->entryKind() == GridEntryKind::Folder)) {
+            gameIcons.push_back(icon.get());
+        }
+    }
+    if (gameIcons.empty()) {
+        for (auto& icon : m_allIcons) {
+            if (icon) gameIcons.push_back(icon.get());
+        }
+    }
+    m_xmbCols[4] = std::move(gameIcons);
+
+    m_xmbCols[5] = { m_xmbSystemIcons[10].get() };
+
+    for (auto& sys : m_xmbSystemIcons) {
+        addChild(sys);
+    }
+    for (auto& icon : m_allIcons) {
+        if (icon) addChild(icon);
+    }
+
+    // Navigation.
+    //
+    // The first version wired a custom-navigation graph between individual
+    // icons and let FocusManager resolve the d-pad through it. On hardware that
+    // left the bar feeling locked: the graph pointed LEFT/RIGHT at icons in
+    // other columns, but those icons still carried the previous view's rects
+    // and a stale focusable state, so a move either resolved to a widget that
+    // is not drawn anywhere near the bar or was rejected outright -- and the
+    // player saw nothing happen at all.
+    //
+    // Direction actions are checked on the focused widget *before* any spatial
+    // search (see Application::tickFocusNavigation), so binding them here makes
+    // the d-pad a direct call into stepXmb: LEFT/RIGHT change category, UP/DOWN
+    // change row, and no geometry is consulted to decide where a press goes.
+    for (auto& col : m_xmbCols) {
+        for (GlossyIcon* cur : col) {
+            if (!cur) continue;
+            cur->setCustomNavigation(nxui::FocusDirection::UP, nullptr);
+            cur->setCustomNavigation(nxui::FocusDirection::DOWN, nullptr);
+            cur->setCustomNavigation(nxui::FocusDirection::LEFT, nullptr);
+            cur->setCustomNavigation(nxui::FocusDirection::RIGHT, nullptr);
+            cur->addDirectionAction(nxui::FocusDirection::LEFT,  [this]() { stepXmb(-1, 0); });
+            cur->addDirectionAction(nxui::FocusDirection::RIGHT, [this]() { stepXmb(+1, 0); });
+            cur->addDirectionAction(nxui::FocusDirection::UP,    [this]() { stepXmb(0, -1); });
+            cur->addDirectionAction(nxui::FocusDirection::DOWN,  [this]() { stepXmb(0, +1); });
+        }
+    }
+
+    if (m_xmbCol < 0 || m_xmbCol >= static_cast<int>(m_xmbCols.size()))
+        m_xmbCol = 4;
+    if (m_xmbCols[m_xmbCol].empty())
+        m_xmbCol = 0;
+
+    auto& activeCol = m_xmbCols[m_xmbCol];
+    if (m_xmbItem < 0 || m_xmbItem >= static_cast<int>(activeCol.size()))
+        m_xmbItem = 0;
+
+    // The games column was just rebuilt from the current model and may be
+    // shorter than it was, so the remembered row is re-clamped here -- at the
+    // one place its bound can change -- rather than at each use site.
+    m_xmbGamesRow = m_xmbCols.size() > 4
+        ? std::clamp(m_xmbGamesRow, 0, std::max(0, static_cast<int>(m_xmbCols[4].size()) - 1))
+        : 0;
+    if (m_xmbCol == 4)
+        m_xmbGamesRow = m_xmbItem;
+
+    m_xmbColScroll = static_cast<float>(m_xmbCol);
+    m_xmbItemScroll = static_cast<float>(m_xmbItem);
+
+    // Every icon in the tree keeps whatever rect the previous view left on it,
+    // and renderXmb draws from its own maths instead of those rects. The
+    // selection ring, the spatial focus search and touch hit-testing all read
+    // Widget::focusRect(), so without this pass they were working against the
+    // paged grid's geometry: the ring framed a cell that is not on screen in
+    // this view -- which is what read as "focus jumped to the whole screen" --
+    // and d-pad LEFT/RIGHT resolved against those stale rects instead of the
+    // columns. Placing every icon where XMB actually draws it makes all three
+    // agree with the picture.
+    syncXmbChildRects();
+
+    if (!activeCol.empty()) {
+        m_focus.setFocus(activeCol[m_xmbItem]);
+        if (m_onFocusChanged)
+            m_onFocusChanged(activeCol[m_xmbItem]);
+    }
+}
+
+// The single source of truth for where an XMB icon *is*. renderXmb() draws the
+// same rects from the same constants; keeping the placement here means focus,
+// touch and the cursor cannot drift away from what the player sees.
+void IconGrid::syncXmbChildRects() {
+    if (m_layoutMode != AppLayoutMode::Xmb || m_xmbCols.empty())
+        return;
+
+    // Off-view icons are parked far outside the screen AND made non-focusable
+    // rather than left at their old rect: the spatial search in FocusManager
+    // walks every focusable widget in the tree, so an inactive column's icons
+    // sitting at grid coordinates would win the nearest-neighbour test and
+    // steal LEFT/RIGHT. Only the active column takes part in navigation.
+    for (size_t c = 0; c < m_xmbCols.size(); ++c) {
+        const bool active = (static_cast<int>(c) == m_xmbCol);
+        auto& col = m_xmbCols[c];
+        for (size_t i = 0; i < col.size(); ++i) {
+            GlossyIcon* item = col[i];
+            if (!item) continue;
+            if (!active) {
+                item->setFocusable(false);
+                item->setRect({-4000.f, -4000.f, kXmbIconBase, kXmbIconBase});
+                continue;
+            }
+            item->setFocusable(true);
+            item->setRect(xmbItemRect(static_cast<int>(i)));
+        }
+    }
+}
+
+nxui::Rect IconGrid::xmbItemRect(int itemIndex) const {
+    const float d = static_cast<float>(itemIndex) - m_xmbItemScroll;
+    const float prox = std::max(0.0f, 1.0f - std::abs(d));
+    const float zoom = kXmbZoomPassive + (kXmbZoomActive - kXmbZoomPassive) * prox;
+    const float sz = kXmbIconBase * zoom;
+    const float cy = kXmbMarginTop + kXmbIconBase * 0.5f + xmbRowOffset(d);
+    return {kXmbAnchorX - sz * 0.5f, cy - sz * 0.5f, sz, sz};
+}
+
+void IconGrid::renderXmb(nxui::Renderer& ren) {
+    if (m_xmbCols.empty()) return;
+    ren.pushClipRect(m_rect);
+
+    constexpr float kXmbAlphaActive = 1.0f;
+    constexpr float kXmbAlphaPassive = 0.65f;
+    constexpr float kXmbLabelLeft = 57.f;
+    constexpr float kXmbFadeEnd = 60.f;
+    constexpr float kXmbFadeStart = 181.f;
+    constexpr float kXmbFadeBotEnd = 700.f;
+    constexpr float kXmbFadeBotStart = 580.f;
+
+    // 1. Draw Category Header (Screen Title at top-left)
+    if (m_xmbContext.fontNormal && m_xmbCol >= 0 && m_xmbCol < static_cast<int>(m_xmbColNames.size())) {
+        const std::string& catName = m_xmbColNames[m_xmbCol];
+        ren.drawText(catName, {88.f, 92.f}, m_xmbContext.fontNormal, nxui::Color(1.f, 1.f, 1.f, 0.95f), 1.15f);
+
+        if (m_xmbContext.fontSmall && !m_xmbCols[m_xmbCol].empty()) {
+            char countBuf[64];
+            std::snprintf(countBuf, sizeof(countBuf), "%zu items", m_xmbCols[m_xmbCol].size());
+            ren.drawText(countBuf, {88.f, 132.f}, m_xmbContext.fontSmall, nxui::Color(0.72f, 0.75f, 0.82f, 0.75f), 0.68f);
+        }
+    }
+
+    // 2. Category Row (Horizontal)
+    for (size_t c = 0; c < m_xmbCols.size(); ++c) {
+        float d = static_cast<float>(c) - m_xmbColScroll;
+        float cx = kXmbAnchorX + d * kXmbSpacingH;
+        if (cx < -100.f || cx > 1280.f + 100.f) continue;
+
+        float prox = std::max(0.0f, 1.0f - std::abs(d));
+        float zoom = kXmbZoomPassive + (kXmbZoomActive - kXmbZoomPassive) * prox;
+        float alpha = 0.50f + 0.50f * prox;
+        const nxui::Rect iconRect = xmbCategoryRect(static_cast<int>(c));
+
+        if (prox > 0.6f) {
+            float glowA = (prox - 0.6f) / 0.4f * 0.40f;
+            ren.drawRoundedRect(iconRect.expanded(10.f * prox), nxui::Color(0.20f, 0.55f, 0.95f, glowA), 18.f);
+        }
+
+        nxui::Texture* catTex = (c < m_xmbColIcons.size()) ? m_xmbColIcons[c] : nullptr;
+        if (catTex && catTex->valid()) {
+            ren.drawTextureRounded(catTex, iconRect, 10.f * zoom, nxui::Color::white().withAlpha(alpha));
+        } else {
+            ren.drawRoundedRect(iconRect, nxui::Color(0.2f, 0.25f, 0.35f, alpha * 0.8f), 10.f * zoom);
+        }
+    }
+
+    // 3. Entry Column (Vertical)
+    if (m_xmbCol >= 0 && m_xmbCol < static_cast<int>(m_xmbCols.size())) {
+        auto& col = m_xmbCols[m_xmbCol];
+        const int count = static_cast<int>(col.size());
+        const int firstv = std::max(0, static_cast<int>(m_xmbItemScroll) - 4);
+        const int lastv = std::min(count - 1, static_cast<int>(m_xmbItemScroll) + 8);
+        const float textX = kXmbAnchorX + kXmbIconBase * 0.5f + kXmbLabelLeft;
+
+        for (int i = firstv; i <= lastv; ++i) {
+            float d = static_cast<float>(i) - m_xmbItemScroll;
+            float cy = kXmbMarginTop + kXmbIconBase * 0.5f + xmbRowOffset(d);
+            if (cy >= kXmbFadeBotEnd) break;
+            if (cy < kXmbFadeEnd) continue;
+
+            float fade = 1.0f;
+            if (cy < kXmbFadeStart) {
+                fade = (cy - kXmbFadeEnd) / (kXmbFadeStart - kXmbFadeEnd);
+            } else if (cy > kXmbFadeBotStart) {
+                fade = (kXmbFadeBotEnd - cy) / (kXmbFadeBotEnd - kXmbFadeBotStart);
+            }
+            fade = std::clamp(fade, 0.f, 1.f);
+
+            bool sel = (i == m_xmbItem && std::abs(d) < 0.5f);
+            float prox = std::max(0.0f, 1.0f - std::abs(d));
+            float zoom = kXmbZoomPassive + (kXmbZoomActive - kXmbZoomPassive) * prox;
+            float al = kXmbAlphaPassive + (kXmbAlphaActive - kXmbAlphaPassive) * prox;
+            float a = fade * al;
+            float sz = kXmbIconBase * zoom;
+
+            // Same rect the focus ring and touch use: xmbItemRect() is the one
+            // definition, so the picture and the hit box cannot disagree.
+            const nxui::Rect itemRect = xmbItemRect(i);
+
+            GlossyIcon* item = col[i];
+            nxui::Texture* tex = item ? item->texture() : nullptr;
+            if (item && item->entryKind() == GridEntryKind::Folder) {
+                GlossyIcon::drawFolderContent(ren, itemRect, item->folderPreview(),
+                                              item->folderPreviewCount(), item->folderColorIndex(),
+                                              a, nullptr, "");
+            } else if (tex && tex->valid()) {
+                ren.drawTextureRounded(tex, itemRect, 14.f * zoom, nxui::Color::white().withAlpha(a));
+            } else {
+                ren.drawRoundedRect(itemRect, nxui::Color(0.25f, 0.30f, 0.40f, a * 0.7f), 14.f * zoom);
+            }
+
+            if (item && item->isSuspended()) {
+                nxui::Rect badgeRect{itemRect.x + itemRect.width - 10.f, itemRect.y - 2.f, 9.f, 9.f};
+                ren.drawRoundedRect(badgeRect, nxui::Color(0.20f, 0.85f, 0.45f, a), 4.5f);
+            }
+
+            if (item && item->isGameCard()) {
+                nxui::Rect gcRect{itemRect.x - 2.f, itemRect.y - 2.f, 9.f, 9.f};
+                ren.drawRoundedRect(gcRect, nxui::Color(0.95f, 0.35f, 0.25f, a), 3.f);
+            }
+
+            if (m_xmbContext.fontNormal && item) {
+                const std::string& title = item->title();
+                nxui::Color titleColor = sel ? nxui::Color(1.0f, 1.0f, 1.0f, a)
+                                             : nxui::Color(0.74f, 0.76f, 0.82f, a * 0.85f);
+                float fontScale = sel ? 0.86f : 0.65f;
+                ren.drawText(title, {textX, cy - 8.f}, m_xmbContext.fontNormal, titleColor, fontScale);
+            }
+
+            if (sel && item && m_xmbContext.fontSmall) {
+                std::string sublabel = item->playtimeBadge();
+                if (item->isSuspended()) {
+                    sublabel = "Running";
+                } else if (item->isGameCard() && sublabel.empty()) {
+                    sublabel = "Game Card";
+                } else if (sublabel.empty() && item->accessibilityHint().length() > 0) {
+                    sublabel = item->accessibilityHint();
+                }
+
+                if (!sublabel.empty()) {
+                    nxui::Color subColor(0.70f, 0.74f, 0.82f, a * 0.80f);
+                    ren.drawText(sublabel, {textX, cy + 18.f}, m_xmbContext.fontSmall, subColor, 0.58f);
+                }
+            }
+        }
+    }
+
+    ren.popClipRect();
+}
+
+nxui::Rect IconGrid::listIconRect(int idx) const {
+    if (idx < 0 || idx >= static_cast<int>(m_allIcons.size()))
+        return {};
+    const float d = static_cast<float>(idx) - m_listScrollOffset;
+    const float rowCenterY = kListCenterY + d * kListRowHeight;
+    return {kListLeft, rowCenterY - kListRowHeight * 0.5f, kListWidth, kListRowHeight};
+}
+
+void IconGrid::layoutList() {
+    clearChildren();
+
+    std::vector<std::shared_ptr<GlossyIcon>> focusableItems;
+    focusableItems.reserve(m_allIcons.size());
+
+    for (size_t i = 0; i < m_allIcons.size(); ++i) {
+        auto& icon = m_allIcons[i];
+        if (!icon) continue;
+        if (icon->entryKind() == GridEntryKind::WidgetContinuation ||
+            icon->entryKind() == GridEntryKind::Empty) {
+            icon->setFocusable(false);
+            continue;
+        }
+        icon->setFocusable(true);
+        focusableItems.push_back(icon);
+    }
+
+    const auto nearestSideTarget = [](const GlossyIcon& source,
+                                      const std::vector<nxui::Widget*>& targets) -> nxui::Widget* {
+        nxui::Widget* best = nullptr;
+        float bestDistance = std::numeric_limits<float>::max();
+        const float sourceY = source.focusRect().y + source.focusRect().height * 0.5f;
+        for (auto* target : targets) {
+            if (!target || !target->isVisible() || !target->isFocusable()) continue;
+            const auto rect = target->focusRect();
+            const float distance = std::abs(rect.y + rect.height * 0.5f - sourceY);
+            if (distance < bestDistance) {
+                best = target;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    };
+
+    for (size_t i = 0; i < focusableItems.size(); ++i) {
+        auto& icon = focusableItems[i];
+        nxui::Widget* up = (i > 0) ? focusableItems[i - 1].get() : m_lineUpTarget;
+        nxui::Widget* down = (i + 1 < focusableItems.size()) ? focusableItems[i + 1].get() : nullptr;
+
+        icon->setCustomNavigation(nxui::FocusDirection::UP, up);
+        icon->setCustomNavigation(nxui::FocusDirection::DOWN, down);
+
+        nxui::Widget* left = nearestSideTarget(*icon, m_gridLeftTargets);
+        nxui::Widget* right = nearestSideTarget(*icon, m_gridRightTargets);
+        icon->setCustomNavigation(nxui::FocusDirection::LEFT, left);
+        icon->setCustomNavigation(nxui::FocusDirection::RIGHT, right);
+
+        addChild(icon);
+    }
+}
+
+void IconGrid::syncListChildRects() {
+    if (m_layoutMode != AppLayoutMode::List)
+        return;
+    for (int i = 0; i < static_cast<int>(m_allIcons.size()); ++i) {
+        auto& icon = m_allIcons[i];
+        if (!icon) continue;
+        const nxui::Rect r = listIconRect(i);
+        icon->setRect(r);
+        icon->setFocusable(icon->entryKind() != GridEntryKind::WidgetContinuation &&
+                           icon->entryKind() != GridEntryKind::Empty);
+    }
+}
+
+void IconGrid::renderList(nxui::Renderer& ren) {
+    if (m_allIcons.empty()) return;
+    ren.pushClipRect(m_rect);
+
+    // Same rule Metro uses: while a HUD/sidebar button holds focus the hero
+    // card must not keep presenting the last game as the selection.
+    const int focusedIndex = m_metroFocused ? focusedGlobalIndex() : -1;
+    nxui::Font* fontNormal = m_listContext.fontNormal ? m_listContext.fontNormal : m_xmbContext.fontNormal;
+    nxui::Font* fontSmall = m_listContext.fontSmall ? m_listContext.fontSmall : m_xmbContext.fontSmall;
+
+    // 1. Right Detail/Hero Panel for the focused game
+    if (focusedIndex >= 0 && focusedIndex < static_cast<int>(m_allIcons.size())) {
+        auto* activeIcon = m_allIcons[focusedIndex].get();
+        if (activeIcon) {
+            const nxui::Rect heroPanelRect{696.f, 116.f, 484.f, 508.f};
+
+            // Background card (frosted glass)
+            ren.drawFrostedInset(heroPanelRect,
+                                 nxui::Color(0.04f, 0.06f, 0.11f, 0.65f),
+                                 nxui::Color(0.24f, 0.35f, 0.52f, 0.40f),
+                                 nxui::Color(1.f, 1.f, 1.f, 0.18f),
+                                 18.f);
+
+            // Index counter top-left: e.g. "05 / 24"
+            if (fontSmall) {
+                char counterBuf[32];
+                std::snprintf(counterBuf, sizeof(counterBuf), "%02d / %02d",
+                              focusedIndex + 1, static_cast<int>(m_allIcons.size()));
+                ren.drawText(counterBuf, {heroPanelRect.x + 28.f, heroPanelRect.y + 24.f},
+                             fontSmall, nxui::Color(0.65f, 0.72f, 0.85f, 0.75f), 0.72f);
+            }
+
+            // Running badge top-right if suspended
+            if (activeIcon->isSuspended() && fontSmall) {
+                const nxui::Rect runPill{heroPanelRect.right() - 110.f, heroPanelRect.y + 20.f, 82.f, 22.f};
+                ren.drawRoundedRect(runPill, nxui::Color(0.15f, 0.75f, 0.35f, 0.85f), 6.f);
+                ren.drawText("RUNNING", {runPill.x + 10.f, runPill.y + 4.f}, fontSmall, nxui::Color::white(), 0.55f);
+            }
+
+            // Big Artwork / Icon
+            constexpr float kArtSize = 200.f;
+            const float artX = heroPanelRect.x + (heroPanelRect.width - kArtSize) * 0.5f;
+            const float artY = heroPanelRect.y + 38.f;
+            const nxui::Rect artRect{artX, artY, kArtSize, kArtSize};
+
+            // Subtle drop shadow / border
+            ren.drawRoundedRect(artRect.expanded(3.f), nxui::Color(0.f, 0.f, 0.f, 0.45f), 16.f);
+            ren.drawRoundedRectOutline(artRect.expanded(1.f), nxui::Color(1.f, 1.f, 1.f, 0.22f), 15.f, 1.5f);
+
+            if (activeIcon->entryKind() == GridEntryKind::Folder) {
+                GlossyIcon::drawFolderContent(ren, artRect, activeIcon->folderPreview(),
+                                              activeIcon->folderPreviewCount(), activeIcon->folderColorIndex(),
+                                              1.0f, nullptr, "");
+            } else if (activeIcon->texture() && activeIcon->texture()->valid()) {
+                ren.drawTextureRounded(activeIcon->texture(), artRect, 14.f);
+            } else {
+                ren.drawRoundedRect(artRect, nxui::Color(0.20f, 0.24f, 0.32f, 0.85f), 14.f);
+            }
+
+            // Game Card badge on art
+            if (activeIcon->isGameCard() && activeIcon->gameCardTexture() && activeIcon->gameCardTexture()->valid()) {
+                ren.drawTextureRounded(activeIcon->gameCardTexture(),
+                                       {artRect.x + 8.f, artRect.y + 8.f, 28.f, 28.f}, 4.f);
+            }
+
+            // Title
+            float currentY = artRect.bottom() + 14.f;
+            if (fontNormal) {
+                std::string titleStr = activeIcon->title();
+                if (titleStr.empty()) titleStr = (activeIcon->entryKind() == GridEntryKind::Folder ? "Folder" : "Application");
+                constexpr float maxTitleW = 428.f;
+                while (titleStr.length() > 3 && fontNormal->measure(titleStr).x * 1.0f > maxTitleW) {
+                    titleStr.pop_back();
+                }
+                if (titleStr != activeIcon->title() && titleStr.length() > 3) {
+                    titleStr += "...";
+                }
+                ren.drawText(titleStr, {heroPanelRect.x + 28.f, currentY},
+                             fontNormal, nxui::Color::white(), 1.0f);
+                currentY += 28.f;
+            }
+
+            // Query Rich Details from provider
+            GameDetailInfo details;
+            if (m_gameDetailProvider && activeIcon->titleId() != 0) {
+                details = m_gameDetailProvider(activeIcon->titleId());
+            }
+
+            if (activeIcon->entryKind() == GridEntryKind::Folder) {
+                if (fontSmall) {
+                    ren.drawText("Game Folder", {heroPanelRect.x + 28.f, currentY},
+                                 fontSmall, nxui::Color(0.40f, 0.82f, 1.0f, 0.90f), 0.82f);
+                }
+            } else if (fontSmall) {
+                // Row 1: Frosted Meta Tag Badges (Publisher, Version, Storage)
+                float pillX = heroPanelRect.x + 28.f;
+                const float pillY = currentY + 2.f;
+                const float pillH = 20.f;
+
+                auto drawTagPill = [&](const std::string& text, const nxui::Color& bgCol, const nxui::Color& textCol) {
+                    if (text.empty()) return;
+                    const float textW = fontSmall->measure(text).x * 0.62f;
+                    const float pillW = textW + 16.f;
+                    const nxui::Rect pillR{pillX, pillY, pillW, pillH};
+                    ren.drawRoundedRect(pillR, bgCol, 5.f);
+                    ren.drawText(text, {pillX + 8.f, pillY + 3.f}, fontSmall, textCol, 0.62f);
+                    pillX += pillW + 8.f;
+                };
+
+                if (!details.publisher.empty()) {
+                    drawTagPill(details.publisher, nxui::Color(0.12f, 0.45f, 0.85f, 0.35f), nxui::Color(0.80f, 0.90f, 1.0f, 0.95f));
+                }
+                if (!details.version.empty()) {
+                    drawTagPill(details.version, nxui::Color(1.f, 1.f, 1.f, 0.12f), nxui::Color(0.85f, 0.88f, 0.95f, 0.85f));
+                }
+                if (!details.storage.empty()) {
+                    drawTagPill(details.storage, nxui::Color(1.f, 1.f, 1.f, 0.08f), nxui::Color(0.75f, 0.80f, 0.90f, 0.75f));
+                }
+
+                currentY += 28.f;
+
+                // Row 2: Playtime & Play count stats
+                std::string statsLine;
+                if (!details.playtime.empty()) {
+                    statsLine = "Playtime: " + details.playtime;
+                    if (!details.playCount.empty()) {
+                        statsLine += "  (" + details.playCount + ")";
+                    }
+                } else if (!activeIcon->playtimeBadge().empty()) {
+                    statsLine = activeIcon->playtimeBadge();
+                }
+
+                if (!statsLine.empty()) {
+                    ren.drawText(statsLine, {heroPanelRect.x + 28.f, currentY},
+                                 fontSmall, nxui::Color(0.35f, 0.82f, 1.0f, 0.92f), 0.74f);
+                    currentY += 20.f;
+                } else if (!details.lastPlayed.empty()) {
+                    ren.drawText("Last played: " + details.lastPlayed, {heroPanelRect.x + 28.f, currentY},
+                                 fontSmall, nxui::Color(0.70f, 0.76f, 0.88f, 0.80f), 0.70f);
+                    currentY += 20.f;
+                }
+
+                // Row 3: Synopsis / Summary Text (word-wrapped)
+                if (!details.summary.empty()) {
+                    currentY += 4.f;
+                    constexpr float maxSummaryW = 428.f;
+                    std::vector<std::string> words;
+                    std::string word;
+                    std::istringstream iss(details.summary);
+                    while (iss >> word) words.push_back(word);
+
+                    std::string line;
+                    int lineCount = 0;
+                    constexpr int maxLines = 3;
+
+                    for (size_t wi = 0; wi < words.size(); ++wi) {
+                        std::string test = line.empty() ? words[wi] : line + " " + words[wi];
+                        if (fontSmall->measure(test).x * 0.68f > maxSummaryW) {
+                            if (!line.empty()) {
+                                ren.drawText(line, {heroPanelRect.x + 28.f, currentY},
+                                             fontSmall, nxui::Color(0.82f, 0.86f, 0.94f, 0.82f), 0.68f);
+                                currentY += 19.f;
+                                ++lineCount;
+                                if (lineCount >= maxLines - 1) {
+                                    line = words[wi];
+                                    while (wi + 1 < words.size()) {
+                                        std::string nextTest = line + " " + words[wi + 1];
+                                        if (fontSmall->measure(nextTest + "...").x * 0.68f > maxSummaryW) break;
+                                        line = nextTest;
+                                        ++wi;
+                                    }
+                                    if (wi + 1 < words.size()) line += "...";
+                                    ren.drawText(line, {heroPanelRect.x + 28.f, currentY},
+                                                 fontSmall, nxui::Color(0.82f, 0.86f, 0.94f, 0.82f), 0.68f);
+                                    line.clear();
+                                    break;
+                                }
+                                line = words[wi];
+                            } else {
+                                ren.drawText(test, {heroPanelRect.x + 28.f, currentY},
+                                             fontSmall, nxui::Color(0.82f, 0.86f, 0.94f, 0.82f), 0.68f);
+                                currentY += 19.f;
+                                ++lineCount;
+                                line.clear();
+                            }
+                        } else {
+                            line = test;
+                        }
+                    }
+                    if (!line.empty() && lineCount < maxLines) {
+                        ren.drawText(line, {heroPanelRect.x + 28.f, currentY},
+                                     fontSmall, nxui::Color(0.82f, 0.86f, 0.94f, 0.82f), 0.68f);
+                    }
+                }
+            }
+
+            // Divider line
+            const float divY = heroPanelRect.bottom() - 44.f;
+            ren.drawLine({heroPanelRect.x + 24.f, divY},
+                         {heroPanelRect.right() - 24.f, divY},
+                         nxui::Color(1.f, 1.f, 1.f, 0.15f), 1.f);
+
+            // Action hints at the bottom of the card
+            if (fontSmall) {
+                const std::string actionHint = activeIcon->entryKind() == GridEntryKind::Folder
+                    ? "A  Open Folder    +  Options"
+                    : "A  Launch    +  Options";
+                ren.drawText(actionHint, {heroPanelRect.x + 28.f, divY + 12.f},
+                             fontSmall, nxui::Color(0.72f, 0.78f, 0.88f, 0.80f), 0.72f);
+            }
+        }
+    }
+
+    // 2. Left Niagara List Column
+    const int count = static_cast<int>(m_allIcons.size());
+    const int firstv = std::max(0, static_cast<int>(m_listScrollOffset) - 7);
+    const int lastv = std::min(count - 1, static_cast<int>(m_listScrollOffset) + 7);
+
+    for (int i = firstv; i <= lastv; ++i) {
+        auto* icon = m_allIcons[i].get();
+        if (!icon) continue;
+
+        const float d = static_cast<float>(i) - m_listScrollOffset;
+        const float absD = std::abs(d);
+        if (absD > 6.0f) continue;
+
+        const float rowCenterY = kListCenterY + d * kListRowHeight;
+        if (rowCenterY < 80.f || rowCenterY > 640.f) continue;
+
+        // Smooth fade at the top and bottom edges
+        float edgeFade = 1.0f;
+        if (rowCenterY < 160.f) {
+            edgeFade = std::clamp((rowCenterY - 90.f) / 70.f, 0.f, 1.f);
+        } else if (rowCenterY > 560.f) {
+            edgeFade = std::clamp((630.f - rowCenterY) / 70.f, 0.f, 1.f);
+        }
+
+        // The grid keeps its own focus on the last game after the HUD takes
+        // focus, so focusedIndex alone says "a game is remembered", not "the
+        // game is selected". m_metroFocused is the flag the app clears when
+        // focus leaves the tiles; without it the row stayed lit next to the
+        // shared cursor on the HUD button (two selections on screen).
+        const bool isSelected = (focusedIndex >= 0 && i == focusedIndex);
+        const float prox = std::max(0.0f, 1.0f - absD * 0.45f);
+        const float zoom = 0.90f + 0.18f * prox;
+        const float alpha = std::clamp((0.35f + 0.65f * prox) * edgeFade, 0.f, 1.f);
+
+        const float rowH = kListRowHeight * zoom;
+        const nxui::Rect rowRect{kListLeft, rowCenterY - rowH * 0.5f, kListWidth, rowH};
+
+        // The selection frame is the shared SelectionCursor, the same ring
+        // every other view uses (updateCursor() frames this row through
+        // focusedDisplayRect()). Drawing a second, differently styled pill
+        // here is what made the List highlight look unlike the default one.
+        if (!isSelected && prox > 0.6f) {
+            ren.drawRoundedRect(rowRect, nxui::Color(1.f, 1.f, 1.f, 0.05f * prox * edgeFade), 10.f);
+        }
+
+        // Small thumbnail / Icon on the left
+        const float iconSz = 38.f * zoom;
+        const nxui::Rect iconRect{rowRect.x + 12.f, rowCenterY - iconSz * 0.5f, iconSz, iconSz};
+
+        if (icon->entryKind() == GridEntryKind::Folder) {
+            GlossyIcon::drawFolderContent(ren, iconRect, icon->folderPreview(),
+                                          icon->folderPreviewCount(), icon->folderColorIndex(),
+                                          alpha, nullptr, "");
+        } else if (icon->texture() && icon->texture()->valid()) {
+            ren.drawTextureRounded(icon->texture(), iconRect, 8.f, nxui::Color::white().withAlpha(alpha));
+        } else {
+            ren.drawRoundedRect(iconRect, nxui::Color(0.25f, 0.30f, 0.40f, 0.6f * alpha), 8.f);
+        }
+
+        // Running indicator dot
+        if (icon->isSuspended()) {
+            ren.drawCircle({iconRect.right() - 4.f, iconRect.bottom() - 4.f}, 4.f,
+                           nxui::Color(0.2f, 0.9f, 0.4f, alpha));
+        }
+
+        // Title text
+        if (fontNormal) {
+            const float textX = iconRect.right() + 14.f;
+            const float textY = rowCenterY - 10.f * zoom;
+            std::string label = icon->isFavorite() ? ("* " + icon->title()) : icon->title();
+            if (label.empty()) label = (icon->entryKind() == GridEntryKind::Folder ? "Folder" : "Application");
+
+            constexpr float maxRowTextW = 440.f;
+            while (label.length() > 3 && fontNormal->measure(label).x * (0.90f * zoom) > maxRowTextW) {
+                label.pop_back();
+            }
+            if (label != icon->title() && label.length() > 3) {
+                label += "...";
+            }
+
+            const nxui::Color textCol = isSelected
+                ? nxui::Color::white().withAlpha(alpha)
+                : nxui::Color(0.85f, 0.88f, 0.95f, alpha * 0.85f);
+
+            ren.drawText(label, {textX, textY}, fontNormal, textCol, 0.90f * zoom);
+        }
+    }
+
+    ren.popClipRect();
+}
+
+static float metroTileUnit() {
+    const float aw = 1280.f - IconGrid::kMetroWallMargin * 2.f;
+    const float ah = IconGrid::kMetroWallBot - IconGrid::kMetroWallTop;
+    const float by_w = (aw - (IconGrid::kMetroCols - 1) * IconGrid::kMetroGridGap) / static_cast<float>(IconGrid::kMetroCols);
+    const float by_h = (ah - (IconGrid::kMetroRowsVis - 1) * IconGrid::kMetroGridGap) / static_cast<float>(IconGrid::kMetroRowsVis);
+    return std::max(24.f, std::min(by_w, by_h));
+}
+
+static float metroTilePitch() {
+    return metroTileUnit() + IconGrid::kMetroGridGap;
+}
+
+static float metroTileLeft() {
+    const float wall = IconGrid::kMetroCols * metroTileUnit() + (IconGrid::kMetroCols - 1) * IconGrid::kMetroGridGap;
+    return (1280.f - wall) * 0.5f;
+}
+
+static float metroTileTop() {
+    const float wall = IconGrid::kMetroRowsVis * metroTileUnit() + (IconGrid::kMetroRowsVis - 1) * IconGrid::kMetroGridGap;
+    return IconGrid::kMetroWallTop + ((IconGrid::kMetroWallBot - IconGrid::kMetroWallTop) - wall) * 0.5f;
+}
+
+void IconGrid::setupMetroSystemIcons() {
+    if (m_metroSystemIcons.empty()) {
+        m_metroSystemIcons.resize(6);
+        for (auto& sys : m_metroSystemIcons) {
+            sys = std::make_shared<GlossyIcon>();
+            sys->setTag("glossy_icon");
+            sys->setFocusable(true);
+            sys->setVisible(true);
+            sys->setCornerRadius(4.f);
+        }
+    }
+
+    auto bindSysTile = [](const std::shared_ptr<GlossyIcon>& icon,
+                          std::uint64_t fakeTitleId,
+                          const std::string& title,
+                          nxui::Texture* tex,
+                          std::function<void()> act) {
+        icon->setTitleId(fakeTitleId);
+        icon->setTitle(title);
+        icon->setTexture(tex);
+        icon->clearActions();
+        icon->setOnActivate(act);
+        if (act) {
+            icon->addAction(static_cast<uint64_t>(nxui::Button::A), act);
+        }
+    };
+
+    const auto& xmb = m_xmbContext;
+    const auto& metro = m_metroContext;
+    bindSysTile(m_metroSystemIcons[0], 0xF000000000000001ULL, "Themes", metro.texThemes ? metro.texThemes : xmb.texThemes, xmb.onOpenThemeShop);
+    bindSysTile(m_metroSystemIcons[1], 0xF000000000000002ULL, "Controllers", metro.texControllers ? metro.texControllers : xmb.texControllers, xmb.onOpenControllers);
+    bindSysTile(m_metroSystemIcons[2], 0xF000000000000003ULL, "Album", metro.texAlbum ? metro.texAlbum : xmb.texAlbum, xmb.onOpenAlbum);
+    bindSysTile(m_metroSystemIcons[3], 0xF000000000000004ULL, "Music", metro.texMusic ? metro.texMusic : xmb.texMediaCenter, xmb.onOpenMediaCenter);
+    bindSysTile(m_metroSystemIcons[4], 0xF000000000000005ULL, "Settings", metro.texSettings ? metro.texSettings : xmb.texSettings, xmb.onOpenSettings);
+    bindSysTile(m_metroSystemIcons[5], 0xF000000000000006ULL, "Homebrew", metro.texHomebrew ? metro.texHomebrew : (xmb.texHomebrew ? xmb.texHomebrew : xmb.texSettings), xmb.onOpenHbMenu);
+}
+
+std::shared_ptr<GlossyIcon> IconGrid::metroSharedIconAt(int globalIndex) const {
+    if (globalIndex >= 0 && globalIndex < 6) {
+        if (globalIndex < static_cast<int>(m_metroSystemIcons.size()))
+            return m_metroSystemIcons[globalIndex];
+        return nullptr;
+    }
+    const int gameIndex = globalIndex - 6;
+    if (gameIndex >= 0 && gameIndex < static_cast<int>(m_allIcons.size())) {
+        return m_allIcons[gameIndex];
+    }
+    return nullptr;
+}
+
+GlossyIcon* IconGrid::metroIconAt(int globalIndex) const {
+    auto sh = metroSharedIconAt(globalIndex);
+    return sh ? sh.get() : nullptr;
+}
+
+int IconGrid::metroTotalCount() const {
+    return 6 + static_cast<int>(m_allIcons.size());
+}
+
+void IconGrid::buildMetroTiles(std::vector<MetroTileRect>& out) const {
+    out.clear();
+    const int total = metroTotalCount();
+    if (total <= 0) return;
+
+    std::vector<int> validIndices;
+    validIndices.reserve(total);
+    for (int i = 0; i < total; ++i) {
+        auto* icon = metroIconAt(i);
+        if (!icon) continue;
+        if (icon->entryKind() == GridEntryKind::WidgetContinuation ||
+            icon->entryKind() == GridEntryKind::Empty)
+            continue;
+        validIndices.push_back(i);
+    }
+    if (validIndices.empty()) return;
+
+    const float unit = metroTileUnit();
+    const float pitch = metroTilePitch();
+    const float left = metroTileLeft();
+    const float top = metroTileTop();
+    const int cols = kMetroCols;
+
+    std::vector<std::vector<int>> occ(1024, std::vector<int>(cols, 0));
+    int scan = 0;
+
+    for (int idx : validIndices) {
+        auto* icon = metroIconAt(idx);
+        int sw = 1;
+        int sh = 1;
+        auto it = m_metroTileSpans.find(icon->titleId());
+        if (it != m_metroTileSpans.end() && it->second.first > 0 && it->second.second > 0) {
+            sw = it->second.first;
+            sh = it->second.second;
+        }
+        sw = std::clamp(sw, 1, cols);
+        sh = std::clamp(sh, 1, kMetroRowsVis);
+
+        int placeRow = -1, placeCol = -1;
+        for (int r = scan; r < 1000; ++r) {
+            for (int c = 0; c <= cols - sw; ++c) {
+                bool fits = true;
+                for (int y = 0; y < sh && fits; ++y) {
+                    for (int x = 0; x < sw && fits; ++x) {
+                        if (occ[r + y][c + x] != 0) {
+                            fits = false;
+                        }
+                    }
+                }
+                if (fits) {
+                    placeRow = r;
+                    placeCol = c;
+                    break;
+                }
+            }
+            if (placeRow >= 0) break;
+        }
+
+        if (placeRow < 0) {
+            placeRow = scan;
+            placeCol = 0;
+        }
+
+        for (int y = 0; y < sh; ++y) {
+            for (int x = 0; x < sw; ++x) {
+                occ[placeRow + y][placeCol + x] = 1;
+            }
+        }
+        scan = placeRow;
+
+        MetroTileRect tr;
+        tr.itemIndex = idx;
+        tr.spanW = sw;
+        tr.spanH = sh;
+        tr.row = placeRow;
+        tr.col = placeCol;
+        tr.x = left + placeCol * pitch;
+        tr.y = top + placeRow * pitch;
+        tr.w = sw * unit + (sw - 1) * kMetroGridGap;
+        tr.h = sh * unit + (sh - 1) * kMetroGridGap;
+        out.push_back(tr);
+    }
+}
+
+int IconGrid::metroTileNeighbour(int currentGlobalIndex, int dir) const {
+    if (m_metroTiles.empty()) return currentGlobalIndex;
+
+    int cur = -1;
+    for (int i = 0; i < static_cast<int>(m_metroTiles.size()); ++i) {
+        if (m_metroTiles[i].itemIndex == currentGlobalIndex) {
+            cur = i;
+            break;
+        }
+    }
+    if (cur < 0) return currentGlobalIndex;
+
+    const MetroTileRect& c = m_metroTiles[cur];
+    const int c_r0 = c.row;
+    const int c_r1 = c.row + c.spanH;
+    const int c_c0 = c.col;
+    const int c_c1 = c.col + c.spanW;
+
+    if (dir == 0 || dir == 1) { // 0 = Left, 1 = Right
+        const bool right = (dir == 1);
+        int best = -1;
+        float best_dx = 1e9f;
+        int best_dr = 1000;
+        for (int i = 0; i < static_cast<int>(m_metroTiles.size()); ++i) {
+            if (i == cur) continue;
+            const auto& t = m_metroTiles[i];
+            const int t_r0 = t.row;
+            const int t_r1 = t.row + t.spanH;
+            if (t_r1 <= c_r0 || t_r0 >= c_r1) continue;
+            if (right ? (t.x <= c.x) : (t.x >= c.x)) continue;
+            const float dx = std::abs(t.x - c.x);
+            const int dr = std::abs(t_r0 - c_r0);
+            if (dx < best_dx || (std::abs(dx - best_dx) < 1.f && dr < best_dr)) {
+                best_dx = dx;
+                best_dr = dr;
+                best = i;
+            }
+        }
+        if (best >= 0) return m_metroTiles[best].itemIndex;
+
+        // Wrap to adjacent line
+        if (right) {
+            int nextLineBest = -1;
+            int minRow = 10000;
+            float minX = 1e9f;
+            for (int i = 0; i < static_cast<int>(m_metroTiles.size()); ++i) {
+                const auto& t = m_metroTiles[i];
+                if (t.row >= c_r1) {
+                    if (t.row < minRow || (t.row == minRow && t.x < minX)) {
+                        minRow = t.row;
+                        minX = t.x;
+                        nextLineBest = i;
+                    }
+                }
+            }
+            if (nextLineBest >= 0) return m_metroTiles[nextLineBest].itemIndex;
+        } else {
+            int prevLineBest = -1;
+            int maxRow = -1;
+            float maxX = -1e9f;
+            for (int i = 0; i < static_cast<int>(m_metroTiles.size()); ++i) {
+                const auto& t = m_metroTiles[i];
+                if (t.row + t.spanH <= c_r0) {
+                    if (t.row > maxRow || (t.row == maxRow && t.x > maxX)) {
+                        maxRow = t.row;
+                        maxX = t.x;
+                        prevLineBest = i;
+                    }
+                }
+            }
+            if (prevLineBest >= 0) return m_metroTiles[prevLineBest].itemIndex;
+        }
+        return currentGlobalIndex;
+    }
+
+    if (dir == 2 || dir == 3) { // 2 = Up, 3 = Down
+        const bool down = (dir == 3);
+        int best = -1;
+        float best_dy = 1e9f;
+        float best_overlap = -1.f;
+        for (int i = 0; i < static_cast<int>(m_metroTiles.size()); ++i) {
+            if (i == cur) continue;
+            const auto& t = m_metroTiles[i];
+            if (down ? (t.y <= c.y) : (t.y >= c.y)) continue;
+            const int t_c0 = t.col;
+            const int t_c1 = t.col + t.spanW;
+            const int overlap = std::max(0, std::min(c_c1, t_c1) - std::max(c_c0, t_c0));
+            const float dy = std::abs(t.y - c.y);
+            if (overlap > 0) {
+                if (dy < best_dy || (std::abs(dy - best_dy) < 1.f && overlap > best_overlap)) {
+                    best_dy = dy;
+                    best_overlap = static_cast<float>(overlap);
+                    best = i;
+                }
+            }
+        }
+        if (best >= 0) return m_metroTiles[best].itemIndex;
+
+        for (int i = 0; i < static_cast<int>(m_metroTiles.size()); ++i) {
+            if (i == cur) continue;
+            const auto& t = m_metroTiles[i];
+            if (down ? (t.y <= c.y) : (t.y >= c.y)) continue;
+            const float dy = std::abs(t.y - c.y);
+            if (dy < best_dy) {
+                best_dy = dy;
+                best = i;
+            }
+        }
+        if (best >= 0) return m_metroTiles[best].itemIndex;
+        return currentGlobalIndex;
+    }
+
+    return currentGlobalIndex;
+}
+
+void IconGrid::layoutMetro() {
+    clearChildren();
+    setupMetroSystemIcons();
+    buildMetroTiles(m_metroTiles);
+    if (m_metroTiles.empty()) return;
+
+    for (const auto& tile : m_metroTiles) {
+        auto icon = metroSharedIconAt(tile.itemIndex);
+        if (!icon) continue;
+
+        icon->setFocusable(true);
+
+        const int upIdx = metroTileNeighbour(tile.itemIndex, 2);
+        const int downIdx = metroTileNeighbour(tile.itemIndex, 3);
+        const int leftIdx = metroTileNeighbour(tile.itemIndex, 0);
+        const int rightIdx = metroTileNeighbour(tile.itemIndex, 1);
+
+        nxui::Widget* up = (tile.row == 0) ? m_metroUpTarget
+            : ((upIdx != tile.itemIndex) ? metroIconAt(upIdx) : nullptr);
+
+        nxui::Widget* down = (downIdx != tile.itemIndex)
+            ? metroIconAt(downIdx) : nullptr;
+
+        nxui::Widget* left = (leftIdx != tile.itemIndex)
+            ? metroIconAt(leftIdx) : nullptr;
+
+        nxui::Widget* right = (rightIdx != tile.itemIndex)
+            ? metroIconAt(rightIdx) : nullptr;
+
+        icon->setCustomNavigation(nxui::FocusDirection::UP, up);
+        icon->setCustomNavigation(nxui::FocusDirection::DOWN, down);
+        icon->setCustomNavigation(nxui::FocusDirection::LEFT, left);
+        icon->setCustomNavigation(nxui::FocusDirection::RIGHT, right);
+
+        addChild(icon);
+    }
+    syncMetroChildRects();
+}
+
+void IconGrid::setMetroUpTarget(nxui::Widget* target) {
+    m_metroUpTarget = target;
+    if (m_layoutMode != AppLayoutMode::Metro) return;
+    for (const auto& tile : m_metroTiles) {
+        if (tile.row != 0) continue;
+        if (auto icon = metroSharedIconAt(tile.itemIndex))
+            icon->setCustomNavigation(nxui::FocusDirection::UP, target);
+    }
+}
+
+void IconGrid::syncMetroChildRects() {
+    if (m_layoutMode != AppLayoutMode::Metro) return;
+    for (const auto& t : m_metroTiles) {
+        auto icon = metroSharedIconAt(t.itemIndex);
+        if (icon) {
+            icon->setRect({t.x, t.y - m_metroScrollY, t.w, t.h});
+            icon->setFocusable(icon->entryKind() != GridEntryKind::WidgetContinuation &&
+                               icon->entryKind() != GridEntryKind::Empty);
+        }
+    }
+}
+
+void IconGrid::cycleMetroTileSize(int globalIndex) {
+    auto icon = metroSharedIconAt(globalIndex);
+    if (!icon) return;
+
+    int w = 1, h = 1;
+    auto it = m_metroTileSpans.find(icon->titleId());
+    if (it != m_metroTileSpans.end()) {
+        w = it->second.first;
+        h = it->second.second;
+    }
+
+    if (w == 1 && h == 1) {
+        w = 2; h = 1;
+    } else if (w == 2 && h == 1) {
+        w = 2; h = 2;
+    } else {
+        w = 1; h = 1;
+    }
+
+    m_metroTileSpans[icon->titleId()] = {w, h};
+    if (m_onMetroTileSpanChanged) {
+        m_onMetroTileSpanChanged(icon->titleId(), w, h);
+    }
+
+    layoutMetro();
+    syncMetroChildRects();
+    m_focus.setFocus(icon.get());
+}
+
+static nxui::Rect centeredCoverSource(const nxui::Texture& texture,
+                                      const nxui::Rect& destination) {
+    const float sourceWidth = static_cast<float>(texture.width());
+    const float sourceHeight = static_cast<float>(texture.height());
+    if (sourceWidth <= 0.f || sourceHeight <= 0.f ||
+        destination.width <= 0.f || destination.height <= 0.f)
+        return {0.f, 0.f, sourceWidth, sourceHeight};
+
+    const float sourceAspect = sourceWidth / sourceHeight;
+    const float targetAspect = destination.width / destination.height;
+    if (sourceAspect > targetAspect) {
+        const float croppedWidth = sourceHeight * targetAspect;
+        return {(sourceWidth - croppedWidth) * 0.5f, 0.f,
+                croppedWidth, sourceHeight};
+    }
+    const float croppedHeight = sourceWidth / targetAspect;
+    return {0.f, (sourceHeight - croppedHeight) * 0.5f,
+            sourceWidth, croppedHeight};
+}
+
+void IconGrid::renderMetro(nxui::Renderer& ren) {
+    const int total = metroTotalCount();
+    if (total <= 0) return;
+
+    // 1. Full solid black background (pure Windows Phone / sLaunch style)
+    ren.drawRect({0.f, 0.f, 1280.f, 720.f}, nxui::Color(0.f, 0.f, 0.f, 1.f));
+
+    nxui::Font* fontNormal = m_metroContext.fontNormal ? m_metroContext.fontNormal : m_listContext.fontNormal;
+    nxui::Font* fontSmall = m_metroContext.fontSmall ? m_metroContext.fontSmall : m_listContext.fontSmall;
+
+    // 2. Top status line: Left date/clock, Right user & battery
+    time_t now = time(nullptr);
+    struct tm tm_now;
+    localtime_r(&now, &tm_now);
+    char clockBuf[64];
+    strftime(clockBuf, sizeof(clockBuf), "%H:%M   %a %b %d", &tm_now);
+
+    u32 charge = 100;
+    bool isCharging = false;
+#ifdef __SWITCH__
+    psmGetBatteryChargePercentage(&charge);
+    PsmChargerType charger = PsmChargerType_Unconnected;
+    if (R_SUCCEEDED(psmGetChargerType(&charger))) {
+        isCharging = (charger != PsmChargerType_Unconnected);
+    }
+#endif
+    char battBuf[32];
+    std::snprintf(battBuf, sizeof(battBuf), isCharging ? "+%u%%" : "%u%%", static_cast<unsigned int>(charge));
+
+    if (fontSmall) {
+        ren.drawText(clockBuf, {kMetroWallMargin, 18.f}, fontSmall, nxui::Color(0.70f, 0.75f, 0.85f, 0.85f), 0.82f);
+        std::string rightStr = m_metroContext.username.empty() ? battBuf : (m_metroContext.username + "   " + battBuf);
+        const float rightW = fontSmall->measure(rightStr).x * 0.82f;
+        ren.drawText(rightStr, {1280.f - kMetroWallMargin - rightW, 18.f}, fontSmall, nxui::Color(0.70f, 0.75f, 0.85f, 0.85f), 0.82f);
+    }
+
+    const int focusedIndex = m_metroFocused ? focusedGlobalIndex() : -1;
+
+    // 3. Top large game title
+    auto* activeIcon = (focusedIndex >= 0) ? metroIconAt(focusedIndex) : nullptr;
+    if (activeIcon && fontNormal) {
+        std::string mainTitle = activeIcon->title();
+        if (mainTitle.empty()) {
+            mainTitle = (activeIcon->entryKind() == GridEntryKind::Folder ? "Folder" : "Application");
+        }
+        ren.drawText(mainTitle, {kMetroWallMargin, 56.f}, fontNormal, nxui::Color::white(), 1.30f);
+    }
+
+    // 4. Viewport clip for tiles
+    ren.pushClipRect({0.f, kMetroWallTop - 10.f, 1280.f, kMetroWallBot - kMetroWallTop + 20.f});
+
+    for (const auto& t : m_metroTiles) {
+        auto* icon = metroIconAt(t.itemIndex);
+        if (!icon) continue;
+
+        const float drawY = t.y - m_metroScrollY;
+        if (drawY + t.h < kMetroWallTop - 40.f || drawY > kMetroWallBot + 40.f) continue;
+
+        float alpha = 1.0f;
+        if (drawY < kMetroWallTop) {
+            alpha = std::clamp((drawY + t.h - kMetroWallTop) / t.h, 0.f, 1.f);
+        } else if (drawY + t.h > kMetroWallBot) {
+            alpha = std::clamp((kMetroWallBot - drawY) / t.h, 0.f, 1.f);
+        }
+        if (alpha <= 0.02f) continue;
+
+        const nxui::Rect tileRect{t.x, drawY, t.w, t.h};
+        const bool isFocused = (focusedIndex >= 0 && t.itemIndex == focusedIndex);
+        const bool isSysTile = (t.itemIndex < 6);
+
+        // Windows 10 Mobile style accent (#0078D7) for system tiles, deep slate for games
+        nxui::Color tileBg = isSysTile
+            ? nxui::Color(0.f, 0.47f, 0.84f, alpha)
+            : nxui::Color(0.08f, 0.11f, 0.16f, alpha * 0.95f);
+
+        // Card background
+        ren.drawRoundedRect(tileRect, tileBg, 4.f);
+
+        if (isSysTile) {
+            // System glyph in center
+            if (icon->texture() && icon->texture()->valid()) {
+                const float glyphSize = std::round(std::min(tileRect.width, tileRect.height) * 0.48f);
+                const nxui::Rect glyphRect{tileRect.x + (tileRect.width - glyphSize) * 0.5f,
+                                           tileRect.y + (tileRect.height - 22.f - glyphSize) * 0.5f,
+                                           glyphSize, glyphSize};
+                ren.drawTexture(icon->texture(), glyphRect, nxui::Color::white().withAlpha(alpha));
+            }
+            if (fontSmall) {
+                ren.drawText(icon->title(), {tileRect.x + 8.f, tileRect.bottom() - 20.f},
+                             fontSmall, nxui::Color::white().withAlpha(alpha), 0.78f);
+            }
+        } else {
+            // Artwork texture: wide banner (2x1) or large square (2x2) if available, or unstretched square icon
+            const bool isWide = (t.spanW == 2 && t.spanH == 1);
+            const bool isLarge = (t.spanW == 2 && t.spanH == 2);
+            if ((isWide || isLarge) && icon->wideGameHero() && icon->wideGameHero()->valid()) {
+                ren.drawTextureSubRounded(
+                    icon->wideGameHero(), centeredCoverSource(*icon->wideGameHero(), tileRect), tileRect,
+                    4.f, nxui::Color::white().withAlpha(alpha));
+                if (icon->wideGameLogo() && icon->wideGameLogo()->valid()) {
+                    const float maxLogoW = isLarge ? std::min(260.f, tileRect.width * 0.75f) : std::min(240.f, tileRect.width * 0.70f);
+                    const float maxLogoH = isLarge ? std::min(130.f, tileRect.height * 0.45f) : std::min(70.f, tileRect.height * 0.45f);
+                    const float logoAspect = static_cast<float>(icon->wideGameLogo()->width()) /
+                                             static_cast<float>(std::max(1, icon->wideGameLogo()->height()));
+                    float logoW = maxLogoW;
+                    float logoH = maxLogoW / std::max(0.01f, logoAspect);
+                    if (logoH > maxLogoH) {
+                        logoH = maxLogoH;
+                        logoW = maxLogoH * logoAspect;
+                    }
+                    const float logoCenterY = isLarge ? (tileRect.y + tileRect.height * 0.42f) : (tileRect.y + (tileRect.height - logoH) * 0.40f);
+                    const nxui::Rect logoRect{tileRect.x + (tileRect.width - logoW) * 0.5f,
+                                              isLarge ? (logoCenterY - logoH * 0.5f) : logoCenterY,
+                                              logoW, logoH};
+                    ren.drawTexture(icon->wideGameLogo(), logoRect, nxui::Color::white().withAlpha(alpha));
+                }
+            } else if (icon->entryKind() == GridEntryKind::Folder) {
+                GlossyIcon::drawFolderContent(ren, tileRect, icon->folderPreview(),
+                                              icon->folderPreviewCount(), icon->folderColorIndex(),
+                                              alpha, nullptr, "");
+            } else if (icon->texture() && icon->texture()->valid()) {
+                if (isWide) {
+                    const float sqSize = tileRect.height - 12.f;
+                    const nxui::Rect sqRect{tileRect.x + (tileRect.width - sqSize) * 0.5f,
+                                            tileRect.y + 6.f, sqSize, sqSize};
+                    ren.drawTextureRounded(icon->texture(), sqRect, 4.f, nxui::Color::white().withAlpha(alpha));
+                } else {
+                    ren.drawTextureRounded(icon->texture(), tileRect, 4.f, nxui::Color::white().withAlpha(alpha));
+                }
+            }
+
+            // Bottom title scrim
+            const float scrimH = 30.f;
+            const nxui::Rect scrimRect{tileRect.x, tileRect.bottom() - scrimH, tileRect.width, scrimH};
+            ren.drawGradientRect(scrimRect, nxui::Color(0.f, 0.f, 0.f, 0.f),
+                                 nxui::Color(0.f, 0.f, 0.f, 0.76f * alpha));
+
+            // Bottom label inside tile
+            if (fontSmall) {
+                std::string label = icon->title();
+                if (label.empty()) label = (icon->entryKind() == GridEntryKind::Folder ? "Folder" : "Application");
+                const float maxTextW = tileRect.width - 14.f;
+                while (label.length() > 3 && fontSmall->measure(label).x * 0.80f > maxTextW) {
+                    label.pop_back();
+                }
+                if (label != icon->title() && label.length() > 3) {
+                    label += "...";
+                }
+                ren.drawText(label, {tileRect.x + 8.f, tileRect.bottom() - 20.f},
+                             fontSmall, nxui::Color::white().withAlpha(alpha), 0.80f);
+            }
+        }
+
+        // Focused tile highlight frame: 3px white outline directly on the tile boundary with 4px radius
+        if (isFocused) {
+            ren.drawRoundedRectOutline(tileRect,
+                                       nxui::Color::white().withAlpha(alpha), 4.f, 3.f);
+        }
+    }
+
+    ren.popClipRect();
+}
+
 void IconGrid::render(nxui::Renderer& ren) {
     if (!m_visible || m_opacity <= 0.f) return;
 
-    if (!m_children.empty() && ren.gpu().offscreenReady())
-        ren.captureToOffscreen(true);
-
+    // The grid<->line morph (PoloNX #106) draws both arrangements blended; it
+    // only ever runs between those two modes.
     if (m_layoutMorphing) {
         renderLayoutMorph(ren);
+        return;
+    }
+
+    if (m_layoutMode == AppLayoutMode::List) {
+        renderList(ren);
+        return;
+    }
+
+    if (m_layoutMode == AppLayoutMode::Metro) {
+        renderMetro(ren);
         return;
     }
 
@@ -905,6 +4469,34 @@ void IconGrid::render(nxui::Renderer& ren) {
         renderDynamicLine(ren);
         return;
     }
+
+    if (m_layoutMode == AppLayoutMode::Flow) {
+        renderFlow(ren);
+        return;
+    }
+
+    if (m_layoutMode == AppLayoutMode::Shelf) {
+        renderShelf(ren);
+        return;
+    }
+
+    if (m_layoutMode == AppLayoutMode::Deck) {
+        renderDeck(ren);
+        return;
+    }
+
+    if (m_layoutMode == AppLayoutMode::Cover) {
+        renderCover(ren);
+        return;
+    }
+
+    if (m_layoutMode == AppLayoutMode::Xmb) {
+        renderXmb(ren);
+        return;
+    }
+
+    if (!m_children.empty() && ren.gpu().offscreenReady())
+        ren.captureToOffscreen(true);
 
     if (m_sliding || m_bumping) {
         ren.pushClipRect(m_rect);
