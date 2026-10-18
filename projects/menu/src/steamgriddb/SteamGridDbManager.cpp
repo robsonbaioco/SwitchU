@@ -882,10 +882,20 @@ void SteamGridDbManager::scrape(std::string apiKey, std::vector<AppEntry> apps) 
         const bool topUpCover = hasArtwork(app.titleId)
             && !std::filesystem::exists(coverPath(app.titleId), coverEc)
             && !artworkWasChosenByHand(app.titleId);
+        // hasArtwork() is satisfied by a logo alone, so a title whose earlier
+        // scan saved the logo but not the hero (a dropped connection, or a
+        // search under the hex id) was skipped on every later scan and never
+        // got its backdrop. Reported for the downgraded Zelda: hero=0 logo=1
+        // on every boot, while the scan matched it at score 1.00 and only
+        // fetched the cover. Top the hero up like the logo and the cover.
+        std::error_code heroEc;
+        const bool topUpHero = hasArtwork(app.titleId)
+            && !std::filesystem::exists(heroPath(app.titleId), heroEc)
+            && !artworkWasChosenByHand(app.titleId);
         // The global Settings scan is incremental: once an application has a
         // trusted hero, logo, or cover, leave its manual/default choices untouched.
         // Per-title browsing is the explicit path for replacing artwork.
-        if (hasArtwork(app.titleId) && !topUpLogo && !topUpCover) {
+        if (hasArtwork(app.titleId) && !topUpLogo && !topUpCover && !topUpHero) {
             updateStatus([](Status& s) {
                 ++s.completed;
                 ++s.matched;
@@ -897,7 +907,7 @@ void SteamGridDbManager::scrape(std::string apiKey, std::vector<AppEntry> apps) 
 
         // Version 1 accepted the first autocomplete result as a fallback. Its
         // cached files cannot be trusted (for example Nintendo Labo -> Land).
-        if (!topUpLogo && !topUpCover)
+        if (!topUpLogo && !topUpCover && !topUpHero)
             removeCachedArtwork(app.titleId);
 
         try {
@@ -983,20 +993,22 @@ void SteamGridDbManager::scrape(std::string apiKey, std::vector<AppEntry> apps) 
             // On a logo top-up the hero on disk is the one already chosen for
             // this title; downloading it again would spend the bandwidth to
             // replace a file with itself, and could land on a different image.
-            std::error_code heroEc;
-            const bool heroOk = (topUpLogo || topUpCover)
-                ? std::filesystem::exists(heroPath(app.titleId), heroEc)
+            std::error_code heroExistEc;
+            const bool heroOk = (!topUpHero && (topUpLogo || topUpCover))
+                ? std::filesystem::exists(heroPath(app.titleId), heroExistEc)
                 : fetchArtwork("heroes", false,
                                ArtworkKind::Hero, heroPath(app.titleId),
                                0.10f, 0.25f);
             std::error_code logoExistEc;
-            const bool logoOk = (topUpCover && std::filesystem::exists(logoPath(app.titleId), logoExistEc))
+            const bool logoOk = ((topUpCover || topUpHero)
+                                 && std::filesystem::exists(logoPath(app.titleId), logoExistEc))
                 ? true
                 : fetchArtwork("logos", false,
                                ArtworkKind::Logo, logoPath(app.titleId),
                                0.35f, 0.25f);
             std::error_code coverExistEc;
-            const bool coverOk = (topUpLogo && std::filesystem::exists(coverPath(app.titleId), coverExistEc))
+            const bool coverOk = ((topUpLogo || topUpHero)
+                                  && std::filesystem::exists(coverPath(app.titleId), coverExistEc))
                 ? true
                 : fetchArtwork("grids", true,
                                ArtworkKind::Cover, coverPath(app.titleId),
@@ -1020,7 +1032,7 @@ void SteamGridDbManager::scrape(std::string apiKey, std::vector<AppEntry> apps) 
             DebugLog::log("[steamgriddb] '%s' failed: %s", app.title.c_str(), ex.what());
             // The cache was left intact for a top-up, so the title still has the
             // artwork it had before and must not be reported as missing.
-            if (topUpLogo)
+            if (topUpLogo || topUpCover || topUpHero)
                 matched = true;
             const std::string error = ex.what();
             if (error.find("HTTP error 401") != std::string::npos
