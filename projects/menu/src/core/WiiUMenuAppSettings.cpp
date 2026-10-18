@@ -8,6 +8,7 @@
 #include <switchu/fs_remove.hpp>
 #include <switchu/sd_commit.hpp>
 #include <switchu/self_uninstall.hpp>
+#include <switchu/offline_titles.hpp>
 
 #include <nxui/core/I18n.hpp>
 #include <fmt/format.h>
@@ -2002,6 +2003,26 @@ void WiiUMenuApp::createGameDetails() {
                 if (m_grid && m_openFolderId == 0)
                     applyDisplayModel(buildRootFolderModel(), titleId, false);
             });
+    });
+    m_gameDetails->onTogglePlayOffline([this]() {
+        if (!m_gameDetails) return;
+        const std::uint64_t titleId = m_gameDetails->titleId();
+        auto ids = switchu::offline_titles::load();
+        const auto it = std::find(ids.begin(), ids.end(), titleId);
+        const bool offline = it == ids.end();
+        if (offline)
+            ids.push_back(titleId);
+        else
+            ids.erase(it);
+        std::error_code ec;
+        std::filesystem::create_directories("sdmc:/config/SwitchU", ec);
+        const bool saved = switchu::offline_titles::save(ids);
+        switchu::commitSdCard("offline titles");
+        DebugLog::log("[offline] title=%016llX offline=%d saved=%d count=%zu",
+                      (unsigned long long)titleId, offline ? 1 : 0, saved ? 1 : 0, ids.size());
+        if (!saved) return;
+        m_gameDetails->setPlayOffline(offline);
+        m_audio.playSfx(offline ? Sfx::ConfirmPositive : Sfx::ToggleOff);
     });
     m_gameDetails->onToggleFavorite([this]() {
         if (!m_gameDetails) return;

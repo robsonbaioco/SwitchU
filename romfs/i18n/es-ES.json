@@ -1024,6 +1024,8 @@
     "details_mods_detected": "Detectados",
     "details_rename": "Renombrar",
     "details_rename_guide": "Escribe un nombre. Déjalo vacío para usar el original.",
+    "details_offline_on": "Jugar sin internet: Sí",
+    "details_offline_off": "Jugar sin internet: No",
     "details_manage_mods": "Gestionar mods",
     "mods_title": "Mods",
     "mods_hint": "A activa/desactiva  •  X elimina  •  B vuelve",

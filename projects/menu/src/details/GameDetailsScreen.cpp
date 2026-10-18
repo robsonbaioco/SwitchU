@@ -456,6 +456,10 @@ std::vector<GameDetailsScreen::RailAction> GameDetailsScreen::railActions() cons
     actions.push_back({i18n.tr("dialog.details_cheats", "Cheats"), m_cheatsCb});
     if (!m_isGamePort) {
         actions.push_back({i18n.tr("dialog.details_rename", "Rename"), m_renameCb});
+        actions.push_back({m_playOffline
+                               ? i18n.tr("dialog.details_offline_on", "Play offline: On")
+                               : i18n.tr("dialog.details_offline_off", "Play offline: Off"),
+                           m_togglePlayOfflineCb});
     }
     if (m_isGamePort) {
         actions.push_back({i18n.tr("dialog.port_options", "Port options"), m_portOptionsCb});

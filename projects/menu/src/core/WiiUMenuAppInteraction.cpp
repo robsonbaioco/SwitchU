@@ -5,6 +5,7 @@
 #include "DebugLog.hpp"
 #include "NsService.hpp"
 #include "core/PlayTime.hpp"
+#include <switchu/offline_titles.hpp>
 #include <switchu/title_footprint.hpp>
 #include <switchu/sd_commit.hpp>
 
@@ -2120,6 +2121,7 @@ void WiiUMenuApp::showGameDetails(std::uint64_t titleId, const std::string& titl
                                 installedPlayTime(titleId), metadataPlatform,
                                 m_config.isGamePort(titleId),
                                 m_config.isFavorite(titleId));
+    m_gameDetails->setPlayOffline(switchu::offline_titles::contains(titleId));
     // Game Details is persistent and may already sit below an overlay created
     // later (notably Activity Log). Opening it changed visibility and focus but
     // did not change sibling draw order, so selecting an activity row left the

@@ -75,6 +75,11 @@ public:
     // platform.
     void onEditSearchTitle(ActionCb cb) { m_editSearchTitleCb = std::move(cb); }
     void onRename(ActionCb cb) { m_renameCb = std::move(cb); }
+    // "Play offline": the daemon turns the console's internet off while this
+    // title runs. The owner sets the current state before opening and again
+    // after toggling, since the label shows it.
+    void onTogglePlayOffline(ActionCb cb) { m_togglePlayOfflineCb = std::move(cb); }
+    void setPlayOffline(bool offline) { m_playOffline = offline; }
     void onPortOptions(ActionCb cb) { m_portOptionsCb = std::move(cb); }
     // The name shown in the header, after the owner renames the game.
     void updateTitle(std::string title) { m_title = std::move(title); }
@@ -168,6 +173,8 @@ private:
     ActionCb m_markAsGamePortCb;
     ActionCb m_editSearchTitleCb;
     ActionCb m_renameCb;
+    ActionCb m_togglePlayOfflineCb;
+    bool m_playOffline = false;
     ActionCb m_portOptionsCb;
     std::string m_folderActionLabel;
     ActionCb m_openGalleryCb;

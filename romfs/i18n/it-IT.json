@@ -1008,6 +1008,8 @@
     "details_mods_detected": "Rilevati",
     "details_rename": "Rinomina",
     "details_rename_guide": "Inserisci un nome. Lascia vuoto per usare l'originale.",
+    "details_offline_on": "Gioca offline: Sì",
+    "details_offline_off": "Gioca offline: No",
     "details_manage_mods": "Gestisci mod",
     "mods_title": "Mod",
     "mods_hint": "A abilita/disabilita  •  X rimuove  •  B indietro",

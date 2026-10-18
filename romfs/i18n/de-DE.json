@@ -1008,6 +1008,8 @@
     "details_mods_detected": "Erkannt",
     "details_rename": "Umbenennen",
     "details_rename_guide": "Gib einen Namen ein. Leer lassen für den Originalnamen.",
+    "details_offline_on": "Offline spielen: An",
+    "details_offline_off": "Offline spielen: Aus",
     "details_manage_mods": "Mods verwalten",
     "mods_title": "Mods",
     "mods_hint": "A aktiviert/deaktiviert  •  X entfernt  •  B zurück",

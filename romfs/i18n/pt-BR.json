@@ -1090,6 +1090,8 @@
     "details_mods_detected": "Detectados",
     "details_rename": "Renomear",
     "details_rename_guide": "Digite um nome. Deixe vazio para usar o original.",
+    "details_offline_on": "Jogar sem internet: Sim",
+    "details_offline_off": "Jogar sem internet: Não",
     "details_manage_mods": "Gerenciar mods",
     "mods_title": "Mods",
     "mods_hint": "A habilita/desabilita  •  X remove  •  B volta",

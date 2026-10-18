@@ -1008,6 +1008,8 @@
     "details_mods_detected": "Обнаружено",
     "details_rename": "Переименовать",
     "details_rename_guide": "Введите имя. Оставьте пустым, чтобы вернуть исходное.",
+    "details_offline_on": "Играть без интернета: Да",
+    "details_offline_off": "Играть без интернета: Нет",
     "details_manage_mods": "Управление модами",
     "mods_title": "Моды",
     "mods_hint": "A включает/выключает  •  X удаляет  •  B назад",

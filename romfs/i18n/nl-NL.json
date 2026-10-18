@@ -1008,6 +1008,8 @@
     "details_mods_detected": "Gevonden",
     "details_rename": "Hernoemen",
     "details_rename_guide": "Voer een naam in. Laat leeg voor de originele naam.",
+    "details_offline_on": "Offline spelen: Aan",
+    "details_offline_off": "Offline spelen: Uit",
     "details_manage_mods": "Mods beheren",
     "mods_title": "Mods",
     "mods_hint": "A in-/uitschakelen  •  X verwijderen  •  B terug",
