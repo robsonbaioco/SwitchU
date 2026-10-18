@@ -307,7 +307,7 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.13.0. Each one is tracked as an issue with what is known so far and what
+As of 2.13.1. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
 
 - **2.11.0 and 2.12.0 cannot update themselves.** Their menu lost
@@ -315,7 +315,7 @@ it would take to close it.
   holding the socket service; 2.12.1 fixed that, but the broken updater cannot
   fetch the fix. Update from SwitchU Manager in the Homebrew Menu, or copy the
   zip to the SD card.
-- **Most of 2.11.0 to 2.13.0 is still untested on a console.** The first
+- **Most of 2.11.0 to 2.13.1 is still untested on a console.** The first
   console logs of 2.12.0 show the menu starting, the clock sync and the
   connection applet working; the nine launcher views, safe mode, the update
   rollback, the new Settings (timezone, console language, live audio,
@@ -342,12 +342,10 @@ it would take to close it.
   Forty-four samples from a console over two days, docked and handheld, with and
   without a game running, put it at that same figure every time. So this is not
   something the menu can fix by using less; what is in SwitchU's hands is the
-  daemon, which holds twelve of those megabytes -- eight of them a heap that
-  read as nothing allocated in all forty-four samples. Quiet moments are not
-  proof that the eight are spare, so 2.5.6 logs the heap's high-water mark as
-  well, including right after an update is unpacked. The first sample from
-  2.12.0 read a peak of 8 KB after a menu relaunch; one taken after a game
-  launch is still wanted before the reservation shrinks. Meanwhile the System tab shows the
+  daemon. Its heap's high-water mark, logged since 2.5.6, never passed 8 KB in
+  45 samples from 2.13.0, game launches and an update install included, so
+  2.13.1 cuts the heap from 8 MB to 1 MB and gives 7 MB back to that pool.
+  Meanwhile the System tab shows the
   pool's free space and the sysmodules started at boot, which is the place to
   look when a game fails to start.
 - **Half of a Joy-Con pair cannot press anything.** A Joy-Con the console

@@ -1,16 +1,20 @@
-Play offline
-- New in the game dossier: Play offline. A marked game starts with the console's internet off and the internet comes back when it closes. Bluetooth stays on, so controllers keep working.
+Quick Settings
+- New Vibration switch. L3 now opens Quick Settings even after returning from a game left focus outside the menu.
 
-Fixes
-- Vibration in Settings > Controllers follows the console's own on/off switch.
-- Rename now always changes the SteamGridDB search term.
-- The Theme Shop reads ncarvalho99's GitHub mirror (8 themes that download) instead of his server, which refuses downloads.
+Artwork
+- The SteamGridDB scan now fills in a missing backdrop for games that only had a logo. Run the scan once in SwitchU Menu > SteamGridDB.
+- Restore default says when there is no custom Gallery artwork to restore.
+
+Memory
+- The daemon's heap goes from 8 MB to 1 MB, giving 7 MB back to the pool games share with the system.
 --pt-BR--
 
-Jogar sem internet
-- Novo no dossiê do jogo: Jogar sem internet. Um jogo marcado abre com a internet do console desligada, e a internet volta quando ele fecha. O Bluetooth continua ligado, então os controles funcionam.
+Configurações rápidas
+- Novo interruptor de Vibração. O L3 agora abre as Configurações rápidas mesmo quando voltar de um jogo deixou o foco fora do menu.
 
-Correções
-- A Vibração em Configurações > Controles segue o interruptor liga/desliga do próprio console.
-- Renomear agora sempre muda o termo de busca do SteamGridDB.
-- A Loja de Temas lê o espelho do ncarvalho99 no GitHub (8 temas que baixam) em vez do servidor dele, que recusa downloads.
+Artes
+- A busca do SteamGridDB agora completa o fundo que falta em jogos que só tinham logo. Rode a busca uma vez em Menu SwitchU > SteamGridDB.
+- Restaurar padrão avisa quando não há arte personalizada da Galeria para restaurar.
+
+Memória
+- O heap do daemon passa de 8 MB para 1 MB, devolvendo 7 MB ao pool que os jogos dividem com o sistema.

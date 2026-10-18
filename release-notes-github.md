@@ -1,37 +1,39 @@
-# SwitchU 2.13.0
+# SwitchU 2.13.1
 
-Play a single game with the internet off, without putting the whole console in Airplane Mode. Also: the Vibration setting shows the console's real switch, renaming a game steers its SteamGridDB search, and the Theme Shop stops offering themes that could never download.
+Vibration joins Quick Settings, a game whose SteamGridDB scan saved only a logo now gets its backdrop, "Restore default" says when there is nothing to restore, and the daemon gives 7 MB back to the memory pool games share with the system.
 
 ## English
 
-### Play offline
+### Quick Settings
 
-- New in the game dossier: **Play offline: On/Off**. When a marked game starts, SwitchU switches the console's internet off; when it closes (or another game starts), the internet comes back.
-- Only the internet goes off — the network half of Airplane Mode. Bluetooth and NFC stay on, so wireless controllers keep working. A wired connection through the dock is not affected.
-- If Airplane Mode was already on, nothing changes and nothing is turned back on afterwards. If the console loses power mid-game, the internet is restored on the next boot.
-- While the game is suspended in the background, the menu is offline too (Theme Shop, artwork, update check).
+- New **Vibration** switch, the same setting as Settings > Controllers > Vibration.
+- L3 opens Quick Settings even when focus was left outside the menu tree after returning from a game (the same fix Plus already had). Every L3 press is now logged with where focus was and what, if anything, blocked it, for the cases where it still does not open.
 
-### Fixes
+### Artwork
 
-- **Vibration** in Settings > Controllers is now an on/off switch tied to the console's own "Controller Vibration" setting. It used to show the vibration volume, which stays at 100% when vibration is turned off, so it read "on" while no game vibrated.
-- **Rename** now always changes the SteamGridDB search term. Before, it only did when the console reported no name at all, so a game SteamGridDB could not find under its reported name stayed without artwork. Each artwork search in the picker also writes what it found to the log.
-- **Theme Shop**: ncarvalho99's server lists about sixty themes but refuses every download from this fork (HTTP 403). The shop now reads his public GitHub mirror instead — 8 themes, all installable — alongside PoloNX's catalogue.
+- The SteamGridDB scan treated a game with only a logo as done, so a backdrop missing from an earlier attempt never arrived. Seen on a downgraded Zelda: it matched at full score but stayed with no backdrop. The scan now tops up a missing backdrop like it already did for logos and covers. Run SwitchU Menu > SteamGridDB > scan once to fill them in.
+- **Restore default** (Customize / Active artwork, and inside the Gallery) now says when the game has no custom cover or background from the Gallery, instead of reporting a restore that changed nothing. SteamGridDB artwork is changed in its own picker.
+
+### Memory (issue #2)
+
+- The daemon's heap goes from 8 MB to 1 MB. Its high-water mark never passed 8 KB in 45 samples from a console, including game launches and an update install. Those 7 MB come out of the System pool, the one every sysmodule shares with the services a game starts.
 
 ---
 
 ## Português
 
-Jogue um único jogo sem internet, sem colocar o console inteiro em modo avião. Também: a opção Vibração mostra o interruptor real do console, renomear um jogo muda a busca do SteamGridDB, e a Loja de Temas para de oferecer temas que nunca baixavam.
+A Vibração entra nas Configurações rápidas, um jogo cuja busca do SteamGridDB salvou só o logo agora recebe o fundo, o "Restaurar padrão" avisa quando não há nada para restaurar, e o daemon devolve 7 MB ao pool de memória que os jogos dividem com o sistema.
 
-### Jogar sem internet
+### Configurações rápidas
 
-- Novo no dossiê do jogo: **Jogar sem internet: Sim/Não**. Quando um jogo marcado abre, o SwitchU desliga a internet do console; quando ele fecha (ou outro jogo abre), a internet volta.
-- Só a internet desliga — a parte de rede do modo avião. Bluetooth e NFC continuam ligados, então os controles sem fio funcionam. Cabo de rede no dock não é afetado.
-- Se o modo avião já estava ligado, nada muda e nada é religado depois. Se o console desligar no meio do jogo, a internet volta no próximo boot.
-- Enquanto o jogo estiver suspenso em segundo plano, o menu também fica sem internet (Loja de Temas, artes, busca de atualização).
+- Novo interruptor de **Vibração**, a mesma opção de Configurações > Controles > Vibração.
+- O L3 abre as Configurações rápidas mesmo quando o foco ficou fora do menu depois de voltar de um jogo (a mesma correção que o + já tinha). Todo aperto do L3 agora vai para o log, com onde estava o foco e o que bloqueou, se algo bloqueou, para os casos em que ainda não abrir.
 
-### Correções
+### Artes
 
-- **Vibração** em Configurações > Controles agora é um interruptor liga/desliga ligado à opção "Vibração dos controles" do próprio console. Antes mostrava o volume de vibração, que fica em 100% com a vibração desligada, então aparecia "ligada" enquanto nenhum jogo vibrava.
-- **Renomear** agora sempre muda o termo de busca do SteamGridDB. Antes só mudava quando o console não informava nome nenhum, então um jogo que o SteamGridDB não achava pelo nome informado ficava sem arte. Cada busca de arte no seletor também grava no log o que encontrou.
-- **Loja de Temas**: o servidor do ncarvalho99 lista uns sessenta temas mas recusa todo download deste fork (HTTP 403). A loja agora lê o espelho público dele no GitHub — 8 temas, todos instaláveis — junto com o catálogo do PoloNX.
+- A busca do SteamGridDB considerava pronto um jogo só com logo, então um fundo que faltou numa tentativa anterior nunca chegava. Visto num Zelda com downgrade: casava com nota máxima e continuava sem fundo. A busca agora completa o fundo que falta, como já fazia com logo e capa. Rode a busca em Menu SwitchU > SteamGridDB uma vez para preencher.
+- **Restaurar padrão** (Personalizar / Arte ativa, e dentro da Galeria) agora avisa quando o jogo não tem capa ou fundo personalizado da Galeria, em vez de dizer que restaurou sem mudar nada. A arte do SteamGridDB se troca no seletor dela.
+
+### Memória (issue #2)
+
+- O heap do daemon passa de 8 MB para 1 MB. O pico de uso nunca passou de 8 KB em 45 medições de um console, incluindo lançamentos de jogos e a instalação de uma atualização. Esses 7 MB saem do pool System, o que todos os sysmodules dividem com os serviços que um jogo inicia.
