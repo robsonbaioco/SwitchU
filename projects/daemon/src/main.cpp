@@ -72,7 +72,12 @@ extern "C" {
     // always set this (to time:a) and has always had real timestamps.
     TimeServiceType __nx_time_service_type = TimeServiceType_System;
 
-    size_t __nx_heap_size = 0x800000;
+    // 1 MB, down from 8 (issue #2). The heap is mapped from the System pool,
+    // which every sysmodule shares with the services a game starts. The
+    // mem_probe high-water mark (malloc's arena, which never shrinks) read
+    // 8 KB at most across 45 samples from a console on 2.13.0, eighteen of
+    // them at game launches and after unpacking an update: 128x headroom.
+    size_t __nx_heap_size = 0x100000;
 }
 
 // The controller applet is handed the npad configuration of whoever launches
