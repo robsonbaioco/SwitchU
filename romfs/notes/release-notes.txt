@@ -1,20 +1,6 @@
-Quick Settings
-- New Vibration switch. L3 now opens Quick Settings even after returning from a game left focus outside the menu.
-
-Artwork
-- The SteamGridDB scan now fills in a missing backdrop for games that only had a logo. Run the scan once in SwitchU Menu > SteamGridDB.
-- Restore default says when there is no custom Gallery artwork to restore.
-
-Memory
-- The daemon's heap goes from 8 MB to 1 MB, giving 7 MB back to the pool games share with the system.
+Fix
+- 2.13.1 did not boot (error 2128-0100): the daemon's heap must be a multiple of 2 MB. 2.13.2 uses 2 MB, still 6 MB less than before 2.13.1, and keeps everything else from 2.13.1.
 --pt-BR--
 
-Configurações rápidas
-- Novo interruptor de Vibração. O L3 agora abre as Configurações rápidas mesmo quando voltar de um jogo deixou o foco fora do menu.
-
-Artes
-- A busca do SteamGridDB agora completa o fundo que falta em jogos que só tinham logo. Rode a busca uma vez em Menu SwitchU > SteamGridDB.
-- Restaurar padrão avisa quando não há arte personalizada da Galeria para restaurar.
-
-Memória
-- O heap do daemon passa de 8 MB para 1 MB, devolvendo 7 MB ao pool que os jogos dividem com o sistema.
+Correção
+- A 2.13.1 não iniciava (erro 2128-0100): o heap do daemon precisa ser múltiplo de 2 MB. A 2.13.2 usa 2 MB, ainda 6 MB a menos que antes da 2.13.1, e mantém todo o resto da 2.13.1.

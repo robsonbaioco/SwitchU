@@ -307,7 +307,7 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.13.1. Each one is tracked as an issue with what is known so far and what
+As of 2.13.2. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
 
 - **2.11.0 and 2.12.0 cannot update themselves.** Their menu lost
@@ -315,7 +315,7 @@ it would take to close it.
   holding the socket service; 2.12.1 fixed that, but the broken updater cannot
   fetch the fix. Update from SwitchU Manager in the Homebrew Menu, or copy the
   zip to the SD card.
-- **Most of 2.11.0 to 2.13.1 is still untested on a console.** The first
+- **Most of 2.11.0 to 2.13.2 is still untested on a console.** The first
   console logs of 2.12.0 show the menu starting, the clock sync and the
   connection applet working; the nine launcher views, safe mode, the update
   rollback, the new Settings (timezone, console language, live audio,
@@ -344,7 +344,7 @@ it would take to close it.
   something the menu can fix by using less; what is in SwitchU's hands is the
   daemon. Its heap's high-water mark, logged since 2.5.6, never passed 8 KB in
   45 samples from 2.13.0, game launches and an update install included, so
-  2.13.1 cuts the heap from 8 MB to 1 MB and gives 7 MB back to that pool.
+  2.13.2 cuts the heap from 8 MB to 2 MB (the smallest size Horizon accepts above zero is one 2 MB step; 2.13.1 tried 1 MB and did not boot) and gives 6 MB back to that pool.
   Meanwhile the System tab shows the
   pool's free space and the sysmodules started at boot, which is the place to
   look when a game fails to start.
