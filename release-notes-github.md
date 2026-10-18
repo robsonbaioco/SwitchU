@@ -15,6 +15,7 @@ The console cannot reach SwitchU or the Homebrew Menu, so the files go onto the 
 ### What is in 2.13.2
 
 - Daemon heap: 2 MB (was 8 MB up to 2.13.0, 1 MB in the broken 2.13.1).
+- New **Test Vibration** in Settings > Controllers: every connected controller vibrates for half a second, a message lists the players that accepted the command, and the log records each controller's answer. A controller listed there that did not move ignores the command itself — some third-party pads have their own vibration switch or intensity setting.
 - From 2.13.1: Vibration in Quick Settings, L3 fallback and logging, SteamGridDB backdrop top-up, the "Restore default" notice.
 
 ---
@@ -34,4 +35,5 @@ O console não chega ao SwitchU nem ao Homebrew Menu, então os arquivos vão pa
 ### O que tem na 2.13.2
 
 - Heap do daemon: 2 MB (era 8 MB até a 2.13.0, 1 MB na 2.13.1 quebrada).
+- Novo **Testar vibração** em Configurações > Controles: cada controle conectado vibra por meio segundo, uma mensagem lista os jogadores que aceitaram o comando, e o log registra a resposta de cada controle. Um controle que aparece na lista e não mexeu ignora o comando por conta própria — alguns controles de terceiros têm o próprio liga/desliga ou ajuste de intensidade da vibração.
 - Da 2.13.1: Vibração nas configurações rápidas, contorno e logs do L3, fundo do SteamGridDB completado, aviso do "Restaurar padrão".
