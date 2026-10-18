@@ -66,7 +66,13 @@ public:
     //
     // Every path in the catalog resolves against the directory this URL sits
     // in, so the tree works the same served from a domain root or a subfolder.
-    static constexpr const char* kDefaultCatalogUrl = "https://themes.nclabs.dev/index.json";
+    //
+    // The fork reads the GitHub mirror, not themes.nclabs.dev: since
+    // 2026-09-21 that host lists every theme but answers 403 to package
+    // downloads from any build but his, so the shop showed ~60 themes that
+    // could never install. The mirror holds fewer (8 as of 2026-10-18), all
+    // installable through the same GitHub tree path as PoloNX's catalogue.
+    static constexpr const char* kDefaultCatalogUrl = "https://raw.githubusercontent.com/ncarvalho99/SwitchU-themes/main/index.json";
 
     // PoloNX's catalogue is read alongside ours rather than replaced by it: his
     // themes work here, and there is no reason to offer fewer of them. Ours is
