@@ -1,12 +1,6 @@
-Fix
-- 2.13.1 did not boot (error 2128-0100): the daemon's heap must be a multiple of 2 MB. 2.13.2 uses 2 MB, still 6 MB less than before 2.13.1, and keeps everything else from 2.13.1.
-
-Controllers
-- New Test Vibration in Settings > Controllers: every connected controller vibrates for half a second and the message lists the players that accepted the command.
+Internet
+- The console now reconnects to the internet by itself after the connection drops, like the stock HOME menu: SwitchU keeps a persistent network request open. Drops and reconnections are logged.
 --pt-BR--
 
-Correção
-- A 2.13.1 não iniciava (erro 2128-0100): o heap do daemon precisa ser múltiplo de 2 MB. A 2.13.2 usa 2 MB, ainda 6 MB a menos que antes da 2.13.1, e mantém todo o resto da 2.13.1.
-
-Controles
-- Novo Testar vibração em Configurações > Controles: cada controle conectado vibra por meio segundo e a mensagem lista os jogadores que aceitaram o comando.
+Internet
+- O console agora reconecta à internet sozinho depois que a conexão cai, como o menu HOME original: o SwitchU mantém um pedido de rede persistente aberto. Quedas e reconexões vão para o log.

@@ -307,7 +307,7 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.13.2. Each one is tracked as an issue with what is known so far and what
+As of 2.13.3. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
 
 - **2.11.0 and 2.12.0 cannot update themselves.** Their menu lost
@@ -315,7 +315,7 @@ it would take to close it.
   holding the socket service; 2.12.1 fixed that, but the broken updater cannot
   fetch the fix. Update from SwitchU Manager in the Homebrew Menu, or copy the
   zip to the SD card.
-- **Most of 2.11.0 to 2.13.2 is still untested on a console.** The first
+- **Most of 2.11.0 to 2.13.3 is still untested on a console.** The first
   console logs of 2.12.0 show the menu starting, the clock sync and the
   connection applet working; the nine launcher views, safe mode, the update
   rollback, the new Settings (timezone, console language, live audio,
