@@ -1,6 +1,7 @@
 #include "ThemeHttp.hpp"
 
 #include "core/DebugLog.hpp"
+#include "services/SocketRuntime.hpp"
 
 #include <curl/curl.h>
 #include <switch.h>
@@ -37,7 +38,7 @@ void shutdownRuntimeLocked() {
         g_curlInitialized = false;
     }
     if (g_socketInitialized) {
-        socketExit();
+        switchu::services::releaseSocketRuntime();
         g_socketInitialized = false;
     }
     if (g_nifmInitialized) {
@@ -61,7 +62,7 @@ bool initializeRuntimeLocked() {
     }
 
     if (!g_socketInitialized) {
-        Result rc = socketInitializeDefault();
+        Result rc = switchu::services::acquireSocketRuntime();
         if (R_FAILED(rc)) {
             DebugLog::log("[themeshop] socketInitializeDefault failed: %s", resultToString(rc).c_str());
             shutdownRuntimeLocked();

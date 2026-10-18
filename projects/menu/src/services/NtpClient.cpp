@@ -1,4 +1,5 @@
 #include "NtpClient.hpp"
+#include "SocketRuntime.hpp"
 #include "smi_commands.hpp"
 #include <switchu/file_log.hpp>
 #include <switch.h>
@@ -48,23 +49,6 @@ const std::vector<std::string> s_ntpServers = {
     "time.google.com",
     "time.cloudflare.com",
 };
-
-static std::mutex s_socketMutex;
-static bool s_socketInitialized = false;
-
-bool ensureNetworkInitialized() {
-    std::lock_guard<std::mutex> lock(s_socketMutex);
-    if (s_socketInitialized) return true;
-
-    nifmInitialize(NifmServiceType_User);
-    Result rc = socketInitializeDefault();
-    if (R_SUCCEEDED(rc) || rc == MAKERESULT(Module_Libnx, LibnxError_AlreadyInitialized)) {
-        s_socketInitialized = true;
-        return true;
-    }
-    switchu::FileLog::log("[ntp] socketInitializeDefault failed: 0x%X", rc);
-    return false;
-}
 
 uint64_t queryServer(const std::string& host, int timeoutSec) {
     struct addrinfo hints{};
@@ -151,17 +135,28 @@ const std::vector<std::string>& NtpClient::serverList() {
 }
 
 uint64_t NtpClient::queryNetworkTime(int timeoutSeconds) {
-    if (!ensureNetworkInitialized()) {
+    // Holds nifm and the shared socket runtime only for the query, so the HTTP
+    // runtime can still come up (or stay up) around it; see SocketRuntime.hpp.
+    // Both used to stay initialised for the rest of the process.
+    const bool nifmOpened = R_SUCCEEDED(nifmInitialize(NifmServiceType_User));
+    Result rc = acquireSocketRuntime();
+    if (R_FAILED(rc)) {
+        switchu::FileLog::log("[ntp] socketInitializeDefault failed: 0x%X", rc);
+        if (nifmOpened) nifmExit();
         return 0;
     }
 
+    uint64_t result = 0;
     for (const auto& server : s_ntpServers) {
         uint64_t t = queryServer(server, timeoutSeconds);
         if (t > 0) {
-            return t;
+            result = t;
+            break;
         }
     }
-    return 0;
+    releaseSocketRuntime();
+    if (nifmOpened) nifmExit();
+    return result;
 }
 
 void NtpClient::syncAsync(SyncCallback callback) {
