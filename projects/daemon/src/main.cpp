@@ -20,6 +20,7 @@
 #include "library_applet_runner.hpp"
 #include "system_action_queue.hpp"
 #include "offline_play.hpp"
+#include "net_keepalive.hpp"
 #include <ctime>
 #include <cstdio>
 #include <cstring>
@@ -2597,6 +2598,7 @@ static void mainLoop() {
         didWork = true;
     }
     guardHealthTick();
+    switchu::daemon::net_keepalive::tick();
 
     if (daemon::app::pollTerminate()) {
         routeFinishedApplication("terminate");
@@ -2980,6 +2982,9 @@ int main(int argc, char* argv[]) {
     // A game played offline when the console lost power still has the
     // wireless switched off; give it back before anything wants the network.
     switchu::daemon::offline_play::restore("boot");
+    // After the wireless is back on: hold the network the way qlaunch does,
+    // so a dropped connection comes back without the owner reconnecting.
+    switchu::daemon::net_keepalive::start();
 
     // Apply removal before the catalogue workers or an external menu start. A
     // request that cannot be applied blocks staged updates so they cannot
