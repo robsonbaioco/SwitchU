@@ -307,14 +307,20 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.12.0. Each one is tracked as an issue with what is known so far and what
+As of 2.12.1. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
 
-- **Nothing from 2.11.0 or 2.12.0 has been tested on a console yet.** The nine
-  launcher views, the full-screen image when docked, safe mode, the update
+- **2.11.0 and 2.12.0 cannot update themselves to 2.12.1.** Their menu lost
+  internet access (Theme Shop, update check, Send logs) to the clock sync
+  holding the socket service; 2.12.1 fixes that, but the broken updater cannot
+  fetch the fix. Update from SwitchU Manager in the Homebrew Menu, or copy the
+  zip to the SD card.
+- **Most of 2.11.0 and 2.12.0 is still untested on a console.** The first
+  console logs of 2.12.0 show the menu starting, the clock sync and the
+  connection applet working; the nine launcher views, safe mode, the update
   rollback, the new Settings (timezone, console language, live audio,
   underscan), the theme cleanup and the memory work all compile and follow the
-  sources they were ported from, but none of it has run on hardware. The Grid
+  sources they were ported from, but have not been exercised yet. The Grid
   view is always one Minus press away if a view misbehaves, and safe mode
   itself is the recovery if the menu stops starting. Wi-Fi, auto-sleep and the
   old-theme case log everything they need
@@ -339,8 +345,9 @@ it would take to close it.
   daemon, which holds twelve of those megabytes -- eight of them a heap that
   read as nothing allocated in all forty-four samples. Quiet moments are not
   proof that the eight are spare, so 2.5.6 logs the heap's high-water mark as
-  well, including right after an update is unpacked. Sizing the reservation
-  against that figure is the next step. Meanwhile the System tab shows the
+  well, including right after an update is unpacked. The first sample from
+  2.12.0 read a peak of 8 KB after a menu relaunch; one taken after a game
+  launch is still wanted before the reservation shrinks. Meanwhile the System tab shows the
   pool's free space and the sysmodules started at boot, which is the place to
   look when a game fails to start.
 - **Half of a Joy-Con pair cannot press anything.** A Joy-Con the console

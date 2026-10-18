@@ -1,28 +1,12 @@
-Settings
-- Console Language has a Change button: the console's own list in the searchable picker, confirmed before writing; applies at the next restart.
-- Speaker Auto-Mute and the TV Audio Output now also apply immediately (audctl), besides being saved.
-- TV Screen Size (underscan) is a live slider.
+Internet in the menu works again
+- Since 2.11.0 the automatic clock sync held the console's socket service, so the Theme Shop, the update check, SteamGridDB and Send logs all failed with "no connection" while Wi-Fi itself worked. Both now share one socket runtime.
 
-Clean up theme files
-- New in Settings > Storage: offers only folders with no readable theme.json, shows names and total size, deletes after a confirmation. Valid themes, the active one and the built-ins cannot be touched.
-
-Memory
-- The wallpaper's frames share 8 MB GPU blocks instead of one block each; the five overlay render targets only exist after an overlay opens (~18 MB); the menu asks for at most 384 MB of heap; the daemon's stack and service heap shrank; sounds decode when first played.
-
-Logs for the open questions
-- Wi-Fi, auto-sleep and the old-theme case now write everything they need into the logs. After testing, use Settings > System > Send logs to the developer.
+Icon
+- The SwitchU Menu entry uses the color-palette icon again.
 --pt-BR--
 
-Configurações
-- O idioma do console ganhou um botão Alterar: a lista do próprio console no seletor com busca, com confirmação; vale após o próximo reinício.
-- O auto-mute do alto-falante e a saída de áudio da TV agora também aplicam na hora (audctl), além de salvar.
-- O tamanho da tela (underscan) virou um slider de verdade.
+A internet do menu volta a funcionar
+- Desde a 2.11.0 a sincronização automática do relógio segurava o serviço de sockets do console, então a Loja de Temas, a busca de atualização, o SteamGridDB e o Enviar logs falhavam com "sem conexão" enquanto o Wi-Fi funcionava. Os dois agora dividem um único runtime de sockets.
 
-Limpar arquivos de tema
-- Novo em Configurações > Armazenamento: oferece só pastas sem um theme.json legível, mostra nomes e tamanho total, apaga depois de confirmar. Temas válidos, o ativo e os embutidos são intocáveis.
-
-Memória
-- Os quadros do papel de parede dividem blocos de GPU de 8 MB em vez de um bloco cada; os cinco alvos de overlay só existem depois que um overlay abre (~18 MB); o menu pede no máximo 384 MB de heap; o stack e o heap de serviço do daemon encolheram; os sons decodificam no primeiro uso.
-
-Logs para as perguntas abertas
-- Wi-Fi, suspensão automática e o caso do tema antigo agora escrevem tudo o que precisam nos logs. Depois de testar, use Configurações > Sistema > Enviar logs para o desenvolvedor.
+Ícone
+- A entrada SwitchU Menu voltou a usar o ícone da paleta de cores.
