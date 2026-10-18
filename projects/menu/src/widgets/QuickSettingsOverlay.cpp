@@ -221,6 +221,9 @@ void QuickSettingsOverlay::setupNavigationActions() {
             case ItemIndex::Wifi:
                 toggleItem(ItemIndex::Wifi);
                 break;
+            case ItemIndex::Vibration:
+                toggleItem(ItemIndex::Vibration);
+                break;
             case ItemIndex::PowerActions: {
                 int p = static_cast<int>(m_selectedPower) - 1;
                 if (p < 0) p = static_cast<int>(PowerAction::Count) - 1;
@@ -252,6 +255,9 @@ void QuickSettingsOverlay::setupNavigationActions() {
             case ItemIndex::Wifi:
                 toggleItem(ItemIndex::Wifi);
                 break;
+            case ItemIndex::Vibration:
+                toggleItem(ItemIndex::Vibration);
+                break;
             case ItemIndex::PowerActions: {
                 int p = static_cast<int>(m_selectedPower) + 1;
                 if (p >= static_cast<int>(PowerAction::Count)) p = 0;
@@ -274,6 +280,9 @@ void QuickSettingsOverlay::setupNavigationActions() {
                 break;
             case ItemIndex::Wifi:
                 toggleItem(ItemIndex::Wifi);
+                break;
+            case ItemIndex::Vibration:
+                toggleItem(ItemIndex::Vibration);
                 break;
             case ItemIndex::ActivityLog:
                 if (m_callbacks.onActivateSfx) m_callbacks.onActivateSfx();
@@ -365,6 +374,12 @@ void QuickSettingsOverlay::refreshHardwareStatus() {
     bool wf = true;
     if (R_SUCCEEDED(setsysGetWirelessLanEnableFlag(&wf))) {
         m_wifiEnabled = wf;
+    }
+
+    // The console's "Controller Vibration" switch, as in Settings > Controllers.
+    bool vib = true;
+    if (R_SUCCEEDED(hidIsVibrationPermitted(&vib))) {
+        m_vibrationEnabled = vib;
     }
 
     // Query battery if needed
@@ -490,6 +505,29 @@ void QuickSettingsOverlay::toggleItem(ItemIndex item) {
         } else {
             if (m_callbacks.onToggleOffSfx) m_callbacks.onToggleOffSfx();
         }
+    } else if (item == ItemIndex::Vibration) {
+        const bool wanted = !m_vibrationEnabled;
+#ifdef __SWITCH__
+        // Same write as Settings > Controllers > Vibration: hid's permission,
+        // plus the master volume raised from 0 so "on" can be heard.
+        Result rc = hidPermitVibration(wanted);
+        float volume = 1.f;
+        if (R_SUCCEEDED(rc) && wanted
+            && R_SUCCEEDED(setsysGetVibrationMasterVolume(&volume)) && volume <= 0.f)
+            setsysSetVibrationMasterVolume(1.f);
+        bool now = wanted;
+        hidIsVibrationPermitted(&now);
+        DebugLog::log("[quicksettings] vibration set=%d rc=0x%X now=%d",
+                      wanted ? 1 : 0, rc, now ? 1 : 0);
+        m_vibrationEnabled = now;
+#else
+        m_vibrationEnabled = wanted;
+#endif
+        if (m_vibrationEnabled) {
+            if (m_callbacks.onActivateSfx) m_callbacks.onActivateSfx();
+        } else {
+            if (m_callbacks.onToggleOffSfx) m_callbacks.onToggleOffSfx();
+        }
     }
 }
 
@@ -533,8 +571,10 @@ nxui::Rect QuickSettingsOverlay::computeItemRect(ItemIndex item) const {
             return {cx - 4.f, panel.y + 328.f, cw + 8.f, 42.f};
         case ItemIndex::Wifi:
             return {cx - 4.f, panel.y + 378.f, cw + 8.f, 42.f};
-        case ItemIndex::ActivityLog:
+        case ItemIndex::Vibration:
             return {cx - 4.f, panel.y + 428.f, cw + 8.f, 42.f};
+        case ItemIndex::ActivityLog:
+            return {cx - 4.f, panel.y + 478.f, cw + 8.f, 42.f};
         case ItemIndex::PowerActions:
             return computePowerButtonRect(m_selectedPower);
         default:
@@ -546,7 +586,7 @@ nxui::Rect QuickSettingsOverlay::computePowerButtonRect(PowerAction action) cons
     nxui::Rect panel = computePanelRect();
     float cx = panel.x + 22.f;
     float btnW = (panel.width - 44.f - 20.f) / 3.f; // ~125px
-    float by = panel.y + 514.f;
+    float by = panel.y + 564.f;
 
     int idx = static_cast<int>(action);
     float bx = cx + idx * (btnW + 10.f);
@@ -662,6 +702,14 @@ void QuickSettingsOverlay::handleTouch(nxui::Input& input) {
         if (wfRect.contains(tx, ty)) {
             m_selectedItem = ItemIndex::Wifi;
             toggleItem(ItemIndex::Wifi);
+            updateCursorTarget();
+            return;
+        }
+
+        nxui::Rect vibRect = computeItemRect(ItemIndex::Vibration);
+        if (vibRect.contains(tx, ty)) {
+            m_selectedItem = ItemIndex::Vibration;
+            toggleItem(ItemIndex::Vibration);
             updateCursorTarget();
             return;
         }
@@ -936,6 +984,9 @@ void QuickSettingsOverlay::render(nxui::Renderer& ren) {
     drawToggle(ItemIndex::Wifi, i18n.tr("quicksettings.wifi", "Wi-Fi"),
                m_wifiEnabled);
 
+    drawToggle(ItemIndex::Vibration, i18n.tr("quicksettings.vibration", "Vibration"),
+               m_vibrationEnabled);
+
     // 5. Activity Log Button
     nxui::Rect actCard = computeItemRect(ItemIndex::ActivityLog);
     bool isActSelected = (m_selectedItem == ItemIndex::ActivityLog);
@@ -959,7 +1010,7 @@ void QuickSettingsOverlay::render(nxui::Renderer& ren) {
     // 6. Power Options Section
     if (m_smallFont) {
         ren.drawText(i18n.tr("quicksettings.power_options", "OPÇÕES DE ENERGIA"),
-                     {cx, panel.y + 490.f}, m_smallFont,
+                     {cx, panel.y + 540.f}, m_smallFont,
                      nxui::Color(0.65f, 0.72f, 0.82f, alpha), 0.72f);
     }
 

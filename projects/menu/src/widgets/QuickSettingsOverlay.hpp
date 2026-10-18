@@ -24,6 +24,7 @@ public:
         SfxVolume,
         AirplaneMode,
         Wifi,
+        Vibration,
         ActivityLog,
         PowerActions,
         Count
@@ -116,6 +117,7 @@ private:
     float m_sfxVolume = 0.5f;
     bool  m_airplaneMode = false;
     bool  m_wifiEnabled = true;
+    bool  m_vibrationEnabled = true;
 
     // Real-time battery & thermal status
     int   m_batteryPercent = -1;

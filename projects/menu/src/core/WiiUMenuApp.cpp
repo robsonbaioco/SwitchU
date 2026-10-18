@@ -9020,6 +9020,40 @@ void WiiUMenuApp::onUpdate(float dt) {
     pollAutoNtpSync(dt);
 #endif
 
+    // L3 opens Quick Settings through an action on the root box, which only
+    // fires while the focused widget's parent chain reaches that box. After
+    // some game returns the grid is rebuilt and focus can sit on a widget that
+    // is gone from the tree (or on nothing), and L3 then did nothing at all,
+    // with nothing logged -- reported as "does not open, depending on the
+    // game". Log every press with where focus was, and when the root action
+    // cannot fire, open from frame input instead, as Plus already does.
+    if (app().input().isDown(nxui::Button::LStick)) {
+        nxui::Widget* focused = focusManager().current();
+        bool underRoot = false;
+        for (nxui::Widget* w = focused; w; w = w->parent()) {
+            if (w == &rootBox()) { underRoot = true; break; }
+        }
+        // focusRoot() returning nothing blocks every button; say which gate.
+        const char* inputGate =
+            m_leaveCaptureDeferred ? "leaveCaptureDeferred" :
+            m_leaveCapturePending ? "leaveCapturePending" :
+            leaveSplashActive() ? "leaveSplash" :
+            (m_launchAnim && m_launchAnim->isPlaying()) ? "launchAnim" :
+            (m_folderCaptureRequested || m_folderClosing) ? "folderTransition" : "none";
+        DebugLog::log("[quicksettings] L3 down focus=%p underRoot=%d focusRoot=%d gate=%s lock=%d route=%d qs=%d",
+                      static_cast<void*>(focused), underRoot ? 1 : 0,
+                      focusRoot() == &rootBox() ? 1 : 0, inputGate, lockScreenUp ? 1 : 0,
+                      static_cast<int>(m_navigator.route()),
+                      (m_quickSettings && m_quickSettings->isActive()) ? 1 : 0);
+        if (!underRoot && !lockScreenUp && !m_editMode &&
+            m_navigator.route() == switchu::navigation::Route::Home &&
+            !(m_quickSettings && m_quickSettings->isActive()) &&
+            focusRoot() == &rootBox()) {
+            DebugLog::log("[quicksettings] L3 focus outside the root; opening from frame input");
+            openQuickSettings();
+        }
+    }
+
     if (!app().input().isHeld(nxui::Button::Plus) || !app().input().isHeld(nxui::Button::Minus))
         m_accessibilityToggleComboHeld = false;
 

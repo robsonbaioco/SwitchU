@@ -812,11 +812,16 @@ void WiiUMenuApp::createQuickSettings() {
 
 void WiiUMenuApp::openQuickSettings() {
     createQuickSettings();
-    if (!m_quickSettings || m_quickSettings->isActive()) return;
-
-    if (m_editMode) return;
-    if (m_dialog && m_dialog->isActive()) return;
-    if (m_userSelect && m_userSelect->isActive()) return;
+    const char* refused =
+        !m_quickSettings ? "not created" :
+        m_quickSettings->isActive() ? "already active" :
+        m_editMode ? "edit mode" :
+        (m_dialog && m_dialog->isActive()) ? "dialog active" :
+        (m_userSelect && m_userSelect->isActive()) ? "user select active" : nullptr;
+    if (refused) {
+        DebugLog::log("[quicksettings] open refused: %s", refused);
+        return;
+    }
 
     m_dialogReturnFocus = focusManager().current();
 

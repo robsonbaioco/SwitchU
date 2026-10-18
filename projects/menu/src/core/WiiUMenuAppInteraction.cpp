@@ -1312,26 +1312,35 @@ void WiiUMenuApp::wireGlobalActions() {
     });
 
     root.addAction(static_cast<uint64_t>(nxui::Button::LStick), [this]() {
-        if (m_editMode) return;
+        if (m_editMode) {
+            DebugLog::log("[quicksettings] L3 ignored: edit mode");
+            return;
+        }
         if (m_quickSettings && m_quickSettings->isActive()) {
             closeQuickSettings();
             return;
         }
-        if ((m_dialog && m_dialog->isActive()) ||
-            (m_contextMenu && m_contextMenu->isActive()) ||
-            (m_themeShop && m_themeShop->isActive()) ||
-            (m_gameGallery && m_gameGallery->isActive()) ||
-            (m_gameMods && m_gameMods->isActive()) ||
-            (m_gameCheats && m_gameCheats->isActive()) ||
-            (m_gameDetails && m_gameDetails->isActive()) ||
-            (m_settings && m_settings->isActive()) ||
-            (m_steamGridDbPicker && m_steamGridDbPicker->isActive()) ||
-        (m_mediaCenterScreen && m_mediaCenterScreen->isActive()) ||
-            (m_platformPicker && m_platformPicker->isActive()) ||
-            (m_gameOptions && m_gameOptions->isActive()) ||
-            (m_folderOptions && m_folderOptions->isActive()) ||
-            (m_controllerTest && m_controllerTest->isActive()) ||
-            (m_userSelect && m_userSelect->isActive())) {
+        // Reported as "does not open, depending on the game" with nothing in
+        // the log. Name the overlay that blocks it: one left active but
+        // invisible would block it for the rest of the session.
+        const char* blocker =
+            (m_dialog && m_dialog->isActive()) ? "dialog" :
+            (m_contextMenu && m_contextMenu->isActive()) ? "contextMenu" :
+            (m_themeShop && m_themeShop->isActive()) ? "themeShop" :
+            (m_gameGallery && m_gameGallery->isActive()) ? "gameGallery" :
+            (m_gameMods && m_gameMods->isActive()) ? "gameMods" :
+            (m_gameCheats && m_gameCheats->isActive()) ? "gameCheats" :
+            (m_gameDetails && m_gameDetails->isActive()) ? "gameDetails" :
+            (m_settings && m_settings->isActive()) ? "settings" :
+            (m_steamGridDbPicker && m_steamGridDbPicker->isActive()) ? "steamGridDbPicker" :
+            (m_mediaCenterScreen && m_mediaCenterScreen->isActive()) ? "mediaCenter" :
+            (m_platformPicker && m_platformPicker->isActive()) ? "platformPicker" :
+            (m_gameOptions && m_gameOptions->isActive()) ? "gameOptions" :
+            (m_folderOptions && m_folderOptions->isActive()) ? "folderOptions" :
+            (m_controllerTest && m_controllerTest->isActive()) ? "controllerTest" :
+            (m_userSelect && m_userSelect->isActive()) ? "userSelect" : nullptr;
+        if (blocker) {
+            DebugLog::log("[quicksettings] L3 blocked by %s", blocker);
             return;
         }
         openQuickSettings();
@@ -2054,8 +2063,32 @@ void WiiUMenuApp::restoreGameArtworkFromOptions(
 #ifdef SWITCHU_MENU
     if (!m_dialog)
         return;
-    const auto result = gallery::GameArtworkStore::restoreDefault(titleId, kind);
     const bool cover = kind == gallery::ArtworkKind::Cover;
+    auto& i18n = nxui::I18n::instance();
+    auto returnToDetails = [this]() {
+        if (m_gameDetails && m_gameDetails->isActive())
+            focusManager().setFocus(m_gameDetails.get());
+    };
+    // Nothing chosen in the Gallery for this slot: say so instead of reporting
+    // a restore that changed nothing. SteamGridDB artwork lives elsewhere and
+    // is not what this action resets, which is exactly the confusion this
+    // message heads off.
+    if (gallery::GameArtworkStore::pathFor(titleId, kind).empty()) {
+        DebugLog::log("[gallery] options restore %s: title=%016llX nothing custom",
+                      cover ? "cover" : "background", static_cast<unsigned long long>(titleId));
+        m_dialog->show(i18n.tr("dialog.customize_restore_default", "Restore default"),
+                       title + "\n\n" + i18n.tr(
+                           cover ? "dialog.customize_restore_nothing_cover"
+                                 : "dialog.customize_restore_nothing_background",
+                           cover ? "This game has no custom cover from the Gallery. SteamGridDB artwork is changed in its own picker."
+                                 : "This game has no custom background from the Gallery. SteamGridDB artwork is changed in its own picker."),
+                       {{i18n.tr("button.ok", "OK"), returnToDetails, true}},
+                       0,
+                       returnToDetails);
+        focusManager().setFocus(m_dialog.get());
+        return;
+    }
+    const auto result = gallery::GameArtworkStore::restoreDefault(titleId, kind);
     if (result.ok && cover && m_grid) {
         const StreamPump pump = gridStreamPump();
         m_iconStreamer.forceReload(pump.page, pump.perPage,
@@ -2064,17 +2097,12 @@ void WiiUMenuApp::restoreGameArtworkFromOptions(
     DebugLog::log("[gallery] options restore %s: title=%016llX ok=%d error=%s",
                   cover ? "cover" : "background", static_cast<unsigned long long>(titleId),
                   result.ok ? 1 : 0, result.error.c_str());
-    auto& i18n = nxui::I18n::instance();
     const char* messageKey = result.ok
         ? (cover ? "dialog.gallery_restored_cover" : "dialog.gallery_restored_background")
         : "dialog.gallery_save_failed";
     const char* fallback = result.ok
         ? (cover ? "Default cover restored." : "Default background restored.")
         : "Could not save image.";
-    auto returnToDetails = [this]() {
-        if (m_gameDetails && m_gameDetails->isActive())
-            focusManager().setFocus(m_gameDetails.get());
-    };
     m_dialog->show(i18n.tr("dialog.customize_restore_default", "Restore default"),
                    title + "\n\n" + i18n.tr(messageKey, fallback),
                    {{i18n.tr("button.ok", "OK"), returnToDetails, true}},
@@ -2359,6 +2387,16 @@ void WiiUMenuApp::startGameArtworkRestore(
     }
     const auto kind = category == GameGalleryClient::Category::Grids
         ? gallery::ArtworkKind::Cover : gallery::ArtworkKind::Background;
+    if (gallery::GameArtworkStore::pathFor(titleId, kind).empty()) {
+        const bool cover = kind == gallery::ArtworkKind::Cover;
+        m_gameGallery->requestToast(nxui::I18n::instance().tr(
+            cover ? "dialog.customize_restore_nothing_cover"
+                  : "dialog.customize_restore_nothing_background",
+            cover ? "This game has no custom cover from the Gallery. SteamGridDB artwork is changed in its own picker."
+                  : "This game has no custom background from the Gallery. SteamGridDB artwork is changed in its own picker."),
+            3.5f);
+        return;
+    }
     auto shared = std::make_shared<GameArtworkSaveShared>();
     shared->result.kind = kind;
     shared->result.titleId = titleId;
