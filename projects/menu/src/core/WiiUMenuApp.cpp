@@ -2588,7 +2588,8 @@ void WiiUMenuApp::composeRootPending(std::vector<PendingApp>& apps) {
         if (pending.titleId == 0)
             continue;
         std::string chosen;
-        if (m_config.hasCustomTitle(pending.titleId))
+        const bool typedByOwner = m_config.hasCustomTitle(pending.titleId);
+        if (typedByOwner)
             chosen = m_config.customTitle(pending.titleId, pending.title);
         else if (OnlineTitleNames::isTitleIdFallback(pending.title, pending.titleId))
             chosen = m_titleNames.name(pending.titleId);
@@ -2596,8 +2597,11 @@ void WiiUMenuApp::composeRootPending(std::vector<PendingApp>& apps) {
             continue;
         // The artwork lookup searches englishTitle, and a title with no usable
         // name of its own carries the hex id there too -- which never matches
-        // anything. A name the owner typed is a better search term than that.
-        if (pending.englishTitle.empty() || pending.englishTitle == pending.title)
+        // anything. A name the owner typed always becomes the search term:
+        // Rename is the one lever they have when SteamGridDB finds nothing for
+        // the name the console reports, so it must not depend on that name
+        // being the hex fallback.
+        if (typedByOwner || pending.englishTitle.empty() || pending.englishTitle == pending.title)
             pending.englishTitle = chosen;
         pending.title = chosen;
     }

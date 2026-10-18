@@ -1987,8 +1987,9 @@ void WiiUMenuApp::createGameDetails() {
                     // out here, a title with no name of its own kept its hex id
                     // as the SteamGridDB search term until the menu restarted,
                     // so renaming it and fetching artwork straight away found
-                    // nothing.
-                    if (app.englishTitle.empty() || app.englishTitle == previous)
+                    // nothing. A typed name always becomes the search term,
+                    // as it does there.
+                    if (!custom.empty() || app.englishTitle.empty() || app.englishTitle == previous)
                         app.englishTitle = app.title;
                     break;
                 }

@@ -560,6 +560,10 @@ SteamGridDbManager::BrowseResult SteamGridDbManager::browse(
         if (result.candidates.empty()) {
             throw std::runtime_error("No artwork available for '" + result.query + "'");
         }
+        DebugLog::log("[steamgriddb] browse '%s' games=%d best='%s' score=%.2f candidates=%d",
+                      result.query.c_str(), static_cast<int>(scored.size()),
+                      result.gameName.c_str(), result.matchScore,
+                      static_cast<int>(result.candidates.size()));
         result.success = true;
     } catch (const std::exception& ex) {
         result.error = friendlySteamGridDbTransportError(ex.what() ? ex.what() : "");
