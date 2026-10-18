@@ -1,4 +1,5 @@
 #include "TabBuilders.hpp"
+#include "core/DebugLog.hpp"
 #include <nxui/core/I18n.hpp>
 #include <switch.h>
 #include <algorithm>
@@ -58,13 +59,33 @@ SettingsScreen::Tab settings::tabs::ControllersTab::build(SettingsScreen& screen
     }
 
     {
-        SettingItem it; it.label = i18n.tr("settings.controllers.vibration", "Vibration"); it.type = ItemType::Slider;
+        // The console's own "Controller Vibration" switch is hid's vibration
+        // permission, not the setsys master volume this used to show: the
+        // volume stays at 1.0 when vibration is switched off elsewhere, so the
+        // launcher said "on" while no game could vibrate. Read and write the
+        // permission; the volume is only raised from 0 so that switching on
+        // here can never leave the motors silent.
+        SettingItem it; it.label = i18n.tr("settings.controllers.vibration", "Vibration"); it.type = ItemType::Toggle;
+        bool permitted = true;
+        const Result permittedRc = hidIsVibrationPermitted(&permitted);
         float vol = 1.f;
         setsysGetVibrationMasterVolume(&vol);
-        it.floatVal = vol;
-        it.anim01 = std::clamp(vol, 0.f, 1.f);
+        DebugLog::log("[settings-vibration] permitted=%d rc=0x%X masterVolume=%.2f",
+                      permitted ? 1 : 0, permittedRc, vol);
+        it.boolVal = permitted;
+        it.anim01 = permitted ? 1.f : 0.f;
         it.onChange = [](SettingItem& self) {
-            setsysSetVibrationMasterVolume(self.floatVal);
+            Result rc = hidPermitVibration(self.boolVal);
+            float volume = 1.f;
+            if (R_SUCCEEDED(rc) && self.boolVal
+                && R_SUCCEEDED(setsysGetVibrationMasterVolume(&volume)) && volume <= 0.f)
+                setsysSetVibrationMasterVolume(1.f);
+            bool after = self.boolVal;
+            hidIsVibrationPermitted(&after);
+            DebugLog::log("[settings-vibration] set=%d rc=0x%X now=%d",
+                          self.boolVal ? 1 : 0, rc, after ? 1 : 0);
+            if (R_FAILED(rc))
+                self.boolVal = !self.boolVal;
         };
         t.items.push_back(std::move(it));
     }
