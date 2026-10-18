@@ -72,12 +72,18 @@ extern "C" {
     // always set this (to time:a) and has always had real timestamps.
     TimeServiceType __nx_time_service_type = TimeServiceType_System;
 
-    // 1 MB, down from 8 (issue #2). The heap is mapped from the System pool,
+    // 2 MB, down from 8 (issue #2). The heap is mapped from the System pool,
     // which every sysmodule shares with the services a game starts. The
     // mem_probe high-water mark (malloc's arena, which never shrinks) read
     // 8 KB at most across 45 samples from a console on 2.13.0, eighteen of
-    // them at game launches and after unpacking an update: 128x headroom.
-    size_t __nx_heap_size = 0x100000;
+    // them at game launches and after unpacking an update.
+    //
+    // It MUST stay a multiple of 2 MB: svcSetHeapSize rejects any other
+    // size, libnx aborts before main(), and since this process is the
+    // system applet, am takes the console down with it (2128-0100 at every
+    // boot). 2.13.1 shipped 1 MB and did exactly that; the boot guard and
+    // safe mode live in main() and never got to run.
+    size_t __nx_heap_size = 0x200000;
 }
 
 // The controller applet is handed the npad configuration of whoever launches
