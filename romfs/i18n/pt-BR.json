@@ -434,6 +434,10 @@
       "remapping": "Alterar mapeamento de botões",
       "remapping_desc": "Abre a ferramenta do sistema para remapear botões.",
       "vibration": "Vibração",
+      "vibration_test": "Testar vibração",
+      "vibration_test_desc": "Vibra cada controle conectado por meio segundo. O que não mexer não tem motor ou ignora o comando.",
+      "vibration_test_none": "Nenhum controle aceitou o comando de vibração.",
+      "vibration_test_sent": "Vibração enviada aos jogadores: ",
       "usb_wired": "Comunicação por Cabo USB",
       "usb_wired_desc": "Usa o modo com fio USB para reduzir a latência em controles compatíveis.",
       "nfc": "NFC (amiibo)"

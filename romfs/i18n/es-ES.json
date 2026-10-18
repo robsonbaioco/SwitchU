@@ -425,6 +425,10 @@
       "remapping": "Cambiar asignación de botones",
       "remapping_desc": "Abre la herramienta del sistema para asignar botones de los mandos.",
       "vibration": "Vibración",
+      "vibration_test": "Probar vibración",
+      "vibration_test_desc": "Hace vibrar cada mando conectado durante medio segundo. El que no se mueva no tiene motor o ignora la orden.",
+      "vibration_test_none": "Ningún mando aceptó la orden de vibración.",
+      "vibration_test_sent": "Vibración enviada a los jugadores: ",
       "usb_wired": "Comunicación USB por cable",
       "usb_wired_desc": "Usa modo USB por cable para reducir latencia en mandos compatibles.",
       "nfc": "NFC (amiibo)"

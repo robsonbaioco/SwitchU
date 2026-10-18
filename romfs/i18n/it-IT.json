@@ -424,6 +424,10 @@
       "remapping": "Cambia mappatura pulsanti",
       "remapping_desc": "Apri lo strumento di sistema per la mappatura dei pulsanti.",
       "vibration": "Vibrazione",
+      "vibration_test": "Prova vibrazione",
+      "vibration_test_desc": "Fa vibrare ogni controller connesso per mezzo secondo. Quello che non si muove non ha motore o ignora il comando.",
+      "vibration_test_none": "Nessun controller ha accettato il comando di vibrazione.",
+      "vibration_test_sent": "Vibrazione inviata ai giocatori: ",
       "usb_wired": "Comunicazione USB cablata",
       "usb_wired_desc": "Usa la modalità cablata USB per ridurre la latenza sui controller compatibili.",
       "nfc": "NFC (amiibo)"

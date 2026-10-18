@@ -424,6 +424,10 @@
       "remapping": "Tastenbelegung ändern",
       "remapping_desc": "Öffnet das Systemwerkzeug für die Controller-Tastenbelegung.",
       "vibration": "Vibration",
+      "vibration_test": "Vibration testen",
+      "vibration_test_desc": "Lässt jeden verbundenen Controller eine halbe Sekunde vibrieren. Einer, der sich nicht rührt, hat keinen Motor oder ignoriert den Befehl.",
+      "vibration_test_none": "Kein Controller hat den Vibrationsbefehl angenommen.",
+      "vibration_test_sent": "Vibration gesendet an Spieler: ",
       "usb_wired": "Kabelgebundene Verbindung für Pro Controller",
       "usb_wired_desc": "Kabelgebundenen Modus nutzen, um die Latenz bei kompatiblen Controllern zu verringern.",
       "nfc": "NFC (Amiibo)"

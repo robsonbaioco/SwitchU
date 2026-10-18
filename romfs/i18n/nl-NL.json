@@ -424,6 +424,10 @@
       "remapping": "Knoptoewijzing wijzigen",
       "remapping_desc": "Open het systeemhulpprogramma voor controllerknoptoewijzing.",
       "vibration": "Trilling",
+      "vibration_test": "Trillen testen",
+      "vibration_test_desc": "Laat elke verbonden controller een halve seconde trillen. Een die niet beweegt heeft geen motor of negeert het commando.",
+      "vibration_test_none": "Geen enkele controller accepteerde het trilcommando.",
+      "vibration_test_sent": "Trilling verzonden naar spelers: ",
       "usb_wired": "USB-bedrade communicatie",
       "usb_wired_desc": "Gebruik USB-bedrade modus om latentie te verminderen bij compatibele controllers.",
       "nfc": "NFC (amiibo)"

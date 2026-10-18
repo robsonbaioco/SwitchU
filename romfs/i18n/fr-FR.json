@@ -424,6 +424,10 @@
       "remapping": "Modifier les boutons",
       "remapping_desc": "Ouvre l'outil système de remappage des boutons.",
       "vibration": "Vibration",
+      "vibration_test": "Tester la vibration",
+      "vibration_test_desc": "Fait vibrer chaque manette connectée une demi-seconde. Celle qui ne bouge pas n'a pas de moteur ou ignore la commande.",
+      "vibration_test_none": "Aucune manette n'a accepté la commande de vibration.",
+      "vibration_test_sent": "Vibration envoyée aux joueurs : ",
       "usb_wired": "Communication USB filaire",
       "usb_wired_desc": "Utilise l'USB filaire pour réduire la latence des manettes compatibles.",
       "nfc": "NFC (amiibo)"
