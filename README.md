@@ -307,19 +307,19 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.12.1. Each one is tracked as an issue with what is known so far and what
+As of 2.13.0. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
 
-- **2.11.0 and 2.12.0 cannot update themselves to 2.12.1.** Their menu lost
+- **2.11.0 and 2.12.0 cannot update themselves.** Their menu lost
   internet access (Theme Shop, update check, Send logs) to the clock sync
-  holding the socket service; 2.12.1 fixes that, but the broken updater cannot
+  holding the socket service; 2.12.1 fixed that, but the broken updater cannot
   fetch the fix. Update from SwitchU Manager in the Homebrew Menu, or copy the
   zip to the SD card.
-- **Most of 2.11.0 and 2.12.0 is still untested on a console.** The first
+- **Most of 2.11.0 to 2.13.0 is still untested on a console.** The first
   console logs of 2.12.0 show the menu starting, the clock sync and the
   connection applet working; the nine launcher views, safe mode, the update
   rollback, the new Settings (timezone, console language, live audio,
-  underscan), the theme cleanup and the memory work all compile and follow the
+  underscan), the theme cleanup, the memory work and offline play all compile and follow the
   sources they were ported from, but have not been exercised yet. The Grid
   view is always one Minus press away if a view misbehaves, and safe mode
   itself is the recovery if the menu stops starting. Wi-Fi, auto-sleep and the
@@ -370,9 +370,10 @@ it would take to close it.
   **metascore** (RAWG) and **time to beat** (IGDB) need keys of your own, set
   in the SwitchU menu > SteamGridDB > Game details (under Settings before
   2.9.0). There is no user score any more.
-  The dossier's **Gallery** tab, theme packages from his catalogue (they list
-  and preview, but downloads are refused) and SteamGridDB **without** a
-  personal key still depend on him and do not work. The music shop searches
+  The dossier's **Gallery** tab and SteamGridDB **without** a
+  personal key still depend on him and do not work. From 2.13.0 the Theme Shop
+  reads his public GitHub mirror (8 themes) instead of his server, which lists
+  about sixty but refuses every download. The music shop searches
   and downloads through public YouTube fallbacks, which can break without
   notice; `tools/switchu_ytdl_service.py` can be self-hosted and set as
   `ytdlBackendUrl` in `config/SwitchU/config.json`.

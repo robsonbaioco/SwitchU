@@ -18,7 +18,7 @@ add_rules("mode.debug", "mode.release")
 --
 -- What it is built from has its own line on the About screen, fed by
 -- upstream_version below, which is where that belongs.
-local version = "2.12.1"
+local version = "2.13.0"
 -- The PoloNX release this fork descends from. Shown as "Based on", never as
 -- our own version.
 local upstream_version = "1.2.0"

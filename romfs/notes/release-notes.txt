@@ -1,12 +1,16 @@
-Internet in the menu works again
-- Since 2.11.0 the automatic clock sync held the console's socket service, so the Theme Shop, the update check, SteamGridDB and Send logs all failed with "no connection" while Wi-Fi itself worked. Both now share one socket runtime.
+Play offline
+- New in the game dossier: Play offline. A marked game starts with the console's internet off and the internet comes back when it closes. Bluetooth stays on, so controllers keep working.
 
-Icon
-- The SwitchU Menu entry uses the color-palette icon again.
+Fixes
+- Vibration in Settings > Controllers follows the console's own on/off switch.
+- Rename now always changes the SteamGridDB search term.
+- The Theme Shop reads ncarvalho99's GitHub mirror (8 themes that download) instead of his server, which refuses downloads.
 --pt-BR--
 
-A internet do menu volta a funcionar
-- Desde a 2.11.0 a sincronização automática do relógio segurava o serviço de sockets do console, então a Loja de Temas, a busca de atualização, o SteamGridDB e o Enviar logs falhavam com "sem conexão" enquanto o Wi-Fi funcionava. Os dois agora dividem um único runtime de sockets.
+Jogar sem internet
+- Novo no dossiê do jogo: Jogar sem internet. Um jogo marcado abre com a internet do console desligada, e a internet volta quando ele fecha. O Bluetooth continua ligado, então os controles funcionam.
 
-Ícone
-- A entrada SwitchU Menu voltou a usar o ícone da paleta de cores.
+Correções
+- A Vibração em Configurações > Controles segue o interruptor liga/desliga do próprio console.
+- Renomear agora sempre muda o termo de busca do SteamGridDB.
+- A Loja de Temas lê o espelho do ncarvalho99 no GitHub (8 temas que baixam) em vez do servidor dele, que recusa downloads.
