@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <functional>
 #include <filesystem>
 #include <list>
 #include <system_error>
@@ -29,6 +30,24 @@ namespace {
 // practice; when it does not, the oldest are the ones left out.
 constexpr std::size_t kMaxZipBytes = 2800u * 1024u;
 constexpr std::uintmax_t kMaxLogBytes = 8u * 1024u * 1024u;
+
+// Atmosphère's own reports of a crashed process or a fatal error. They name
+// the program and the faulting address, which the logs cannot: a process that
+// dies mid-frame leaves its log a few seconds short and nothing more. Only the
+// newest few go, under their folder name, and they get a slice of the archive
+// of their own so the logs are never pushed out by an old crash.
+struct ReportDir {
+    const char* path;
+    const char* zipFolder;
+    const char* extension;
+    std::size_t maxFiles;
+};
+constexpr ReportDir kReportDirs[] = {
+    {"sdmc:/atmosphere/crash_reports", "crash_reports", ".log", 6},
+    {"sdmc:/atmosphere/fatal_reports", "fatal_reports", ".bin", 4},
+};
+constexpr std::uintmax_t kMaxReportBytes = 1024u * 1024u;
+constexpr std::size_t kMaxReportZipBytes = 900u * 1024u;
 
 struct ZipEntry {
     std::string name;
@@ -182,21 +201,39 @@ std::vector<std::string> archivedLogNames() {
     return names;
 }
 
+// Both name their files <posix time>_<program id>, so by name is newest first.
+std::vector<std::string> reportNames(const ReportDir& dir) {
+    std::vector<std::string> names;
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::directory_iterator(dir.path, ec)) {
+        if (ec)
+            break;
+        if (!entry.is_regular_file(ec) || entry.path().extension() != dir.extension)
+            continue;
+        names.push_back(entry.path().filename().string());
+    }
+    std::sort(names.begin(), names.end(), std::greater<>());
+    if (names.size() > dir.maxFiles)
+        names.resize(dir.maxFiles);
+    return names;
+}
+
 std::string buildArchive(Outcome& outcome) {
     std::string zip;
     std::vector<ZipEntry> entries;
     std::string raw;
     std::string packed;
-    for (const auto& name : archivedLogNames()) {
-        const std::string path = std::string(FileLog::LOG_DIR) + "/" + name;
+    // False once the archive is full, so the caller stops offering files.
+    const auto add = [&](const std::string& path, const std::string& name,
+                         std::uintmax_t maxBytes, std::size_t zipLimit) {
         std::error_code ec;
         const std::uintmax_t size = std::filesystem::file_size(path, ec);
-        if (ec || size == 0 || size > kMaxLogBytes)
-            continue;
+        if (ec || size == 0 || size > maxBytes)
+            return true;
         if (!readFile(path, raw) || !deflateRaw(raw, packed))
-            continue;
-        if (zip.size() + packed.size() > kMaxZipBytes)
-            break;
+            return true;
+        if (zip.size() + packed.size() > zipLimit)
+            return false;
 
         ZipEntry entry;
         entry.name = name;
@@ -206,8 +243,25 @@ std::string buildArchive(Outcome& outcome) {
         entry.size = static_cast<std::uint32_t>(raw.size());
         appendLocalEntry(zip, entry, packed);
         entries.push_back(std::move(entry));
+        return true;
+    };
+
+    for (const auto& dir : kReportDirs) {
+        for (const auto& name : reportNames(dir)) {
+            if (!add(std::string(dir.path) + "/" + name,
+                     std::string(dir.zipFolder) + "/" + name, kMaxReportBytes,
+                     kMaxReportZipBytes))
+                break;
+            ++outcome.reports;
+        }
     }
-    if (entries.empty())
+    // Reports alone are not worth a mail; the logs say when they happened.
+    const std::size_t reportEntries = entries.size();
+    for (const auto& name : archivedLogNames()) {
+        if (!add(std::string(FileLog::LOG_DIR) + "/" + name, name, kMaxLogBytes, kMaxZipBytes))
+            break;
+    }
+    if (entries.size() == reportEntries)
         return {};
     appendDirectory(zip, entries);
     outcome.files = entries.size();
@@ -243,8 +297,8 @@ Outcome send() {
             return outcome;
         }
 
-        DebugLog::log("[log-upload] sending files=%zu zip=%zu body=%zu", outcome.files,
-                      outcome.zipBytes, body.size());
+        DebugLog::log("[log-upload] sending files=%zu reports=%zu zip=%zu body=%zu",
+                      outcome.files, outcome.reports, outcome.zipBytes, body.size());
         const std::list<std::string> headers = {
             std::string("X-SwitchU-Key: ") + SWITCHU_LOG_UPLOAD_KEY,
             std::string("X-SwitchU-Version: ") + SWITCHU_VERSION,

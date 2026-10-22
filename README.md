@@ -411,7 +411,7 @@ If you want to help, open an issue when you find a bug and open a pull request
 if you have a fix. Reports that come with the logs -- **Send logs to the
 developer** in Settings > System from 2.10.0 on, or the files from
 `config/SwitchU` -- and,
-when the console crashed, the files from `atmosphere/fatal_errors` and
+when the console crashed, the files from `atmosphere/fatal_reports` and
 `atmosphere/crash_reports`, are the ones that get fixed.
 
 ## Credits
