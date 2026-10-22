@@ -8898,6 +8898,10 @@ void WiiUMenuApp::onUpdate(float dt) {
                 // A console that just slept on its own is not still idle.
                 m_lockScreen.resetSleepCountdown();
                 m_lockScreenLowPowerPrimed = false;
+                // The swapchain does not survive sleep: presenting on the old
+                // one blocks in acquireImage and the menu freezes on wake.
+                app().gpu().recreateSwapchain();
+                DebugLog::log("[power] console awake: swapchain rebuilt");
                 app().setRenderEnabled(true);
                 // Time may have jumped across the day/night boundary while
                 // asleep (PoloNX #106 automatic theme): re-evaluate now.

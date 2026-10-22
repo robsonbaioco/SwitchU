@@ -103,6 +103,10 @@ public:
     int  beginFrame();
     void endFrame();
     void waitIdle();
+    // Rebuilds the swapchain against the current default window. The vi layer
+    // goes stale across a console sleep and acquireImage then blocks forever,
+    // freezing the menu on its last frame (PoloNX f39afda).
+    void recreateSwapchain();
 
     // Arms a lossless diagnostic capture of the next fully-rendered frame.
     // The GPU copies RGBA8 pixels into a CPU-visible block before present;

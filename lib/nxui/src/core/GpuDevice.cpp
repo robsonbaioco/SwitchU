@@ -567,6 +567,31 @@ void GpuDevice::waitIdle() {
     retireSubmittedUploads();
 }
 
+void GpuDevice::recreateSwapchain() {
+    if (!m_dev || !m_queue)
+        return;
+
+    // Let in-flight work finish, then drop the old swapchain so vi releases
+    // its buffers before the new one claims them.
+    waitIdle();
+    m_swapchain = {};
+
+    std::array<DkImage const*, NUM_FB> fbArray;
+    for (int i = 0; i < NUM_FB; ++i) fbArray[i] = &m_fbImages[i];
+    m_swapchain = dk::SwapchainMaker{m_dev, nwindowGetDefault(), fbArray}.create();
+
+    // The framebuffers still hold the last frame drawn before sleep; showing
+    // it right away keeps the wake from flashing black or garbage.
+    if (m_swapchain) {
+        const int slot = m_queue.acquireImage(m_swapchain);
+        if (slot >= 0)
+            m_queue.presentImage(m_swapchain, slot);
+    }
+    m_slot = -1;
+    std::printf("[GpuDevice] swapchain re-created after sleep (valid=%d)\n",
+                m_swapchain ? 1 : 0);
+}
+
 void GpuDevice::beginBulkTeardown() {
     if (m_bulkTeardown)
         return;
