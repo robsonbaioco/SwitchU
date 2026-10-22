@@ -1,6 +1,18 @@
-Internet
-- The console now reconnects to the internet by itself after the connection drops, like the stock HOME menu: SwitchU keeps a persistent network request open. Drops and reconnections are logged.
+Play offline
+- A game set to play offline no longer keeps the menu offline while it is suspended: HOME gives the wireless back and resuming the game turns it off again.
+
+Send logs
+- Now also sends the newest Atmosphère crash and fatal reports.
+
+Rendering
+- The text cache no longer stores each text twice, and the menu rebuilds its swapchain when the console wakes.
 --pt-BR--
 
-Internet
-- O console agora reconecta à internet sozinho depois que a conexão cai, como o menu HOME original: o SwitchU mantém um pedido de rede persistente aberto. Quedas e reconexões vão para o log.
+Jogar sem internet
+- Um jogo marcado para jogar sem internet não deixa mais o menu sem internet enquanto está suspenso: o HOME devolve o Wi-Fi e voltar ao jogo desliga de novo.
+
+Enviar logs
+- Agora também manda os relatórios de crash e de erro fatal mais recentes do Atmosphère.
+
+Renderização
+- O cache de textos não guarda mais cada texto duas vezes, e o menu recria a swapchain quando o console acorda.

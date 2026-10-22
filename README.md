@@ -307,7 +307,7 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.13.3. Each one is tracked as an issue with what is known so far and what
+As of 2.14.0. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
 
 - **2.11.0 and 2.12.0 cannot update themselves.** Their menu lost
@@ -315,9 +315,19 @@ it would take to close it.
   holding the socket service; 2.12.1 fixed that, but the broken updater cannot
   fetch the fix. Update from SwitchU Manager in the Homebrew Menu, or copy the
   zip to the SD card.
-- **Most of 2.11.0 to 2.13.3 is still untested on a console.** The first
+- **On 2.13.0 to 2.13.3, a game set to play offline keeps the menu offline
+  while it is suspended.** The wireless only came back when the game closed,
+  so the update check fails with it suspended. Close that game first, then
+  update; 2.14.0 gives the wireless back on HOME.
+- **The menu closed by itself three times in a row once** (2.13.2, a game
+  suspended, right after an overlay opened). Its log just stops, which points
+  at the GPU, and Atmosphère's own reports are the evidence that is missing:
+  from 2.14.0 Send logs includes the newest of them. If it happens to you,
+  send the logs.
+- **Most of 2.11.0 to 2.14.0 is still untested on a console.** The first
   console logs of 2.12.0 show the menu starting, the clock sync and the
-  connection applet working; the nine launcher views, safe mode, the update
+  connection applet working, and those of 2.13.2 waking from sleep, the
+  vibration test and offline play switching the wireless; the nine launcher views, safe mode, the update
   rollback, the new Settings (timezone, console language, live audio,
   underscan), the theme cleanup, the memory work and offline play all compile and follow the
   sources they were ported from, but have not been exercised yet. The Grid
@@ -344,7 +354,7 @@ it would take to close it.
   something the menu can fix by using less; what is in SwitchU's hands is the
   daemon. Its heap's high-water mark, logged since 2.5.6, never passed 8 KB in
   45 samples from 2.13.0, game launches and an update install included, so
-  2.13.2 cuts the heap from 8 MB to 2 MB (the smallest size Horizon accepts above zero is one 2 MB step; 2.13.1 tried 1 MB and did not boot) and gives 6 MB back to that pool.
+  2.13.2 cuts the heap from 8 MB to 2 MB (the smallest size Horizon accepts above zero is one 2 MB step; 2.13.1 tried 1 MB and did not boot) and gives 6 MB back to that pool. Four days of 2.13.2 logs put the high-water mark at 8 KB of those 2 MB, so the daemon is as small as Horizon allows.
   Meanwhile the System tab shows the
   pool's free space and the sysmodules started at boot, which is the place to
   look when a game fails to start.
