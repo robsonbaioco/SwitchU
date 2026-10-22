@@ -4,6 +4,7 @@
 #include <switchu/offline_titles.hpp>
 #include <switchu/sd_commit.hpp>
 #include <cstdio>
+#include <cstring>
 
 // Per-title "play offline": the daemon switches NIFM's wireless communication
 // off before a listed title gets its process and back on when it exits or
@@ -14,6 +15,11 @@
 // already had Airplane Mode on, the launch changes nothing and the exit leaves
 // it alone. The marker file carries that across a crash or power loss mid
 // game, and the daemon restores it on its next boot.
+//
+// Offline is for while the title is played, not while it sits suspended under
+// the menu: HOME turns the wireless back on and resuming turns it off again.
+// A game left suspended for days otherwise kept the menu offline for days --
+// updates, the theme shop and Send logs all failed on 2.13.2.
 namespace switchu::daemon::offline_play {
 
 inline constexpr const char* kMarkerPath = "sdmc:/config/SwitchU/offline_session.state";
@@ -70,6 +76,28 @@ inline bool markerExists() {
     return true;
 }
 
+// The marker holds the title and, on a second line, "paused" while the title
+// is suspended and the wireless was handed back.
+inline bool readMarker(u64* titleId, bool* paused) {
+    FILE* f = std::fopen(kMarkerPath, "r");
+    if (!f) return false;
+    unsigned long id = 0;
+    char state[16] = {};
+    const int got = std::fscanf(f, "%lx %15s", &id, state);
+    std::fclose(f);
+    if (titleId) *titleId = got >= 1 ? id : 0;
+    if (paused) *paused = got >= 2 && std::strcmp(state, "paused") == 0;
+    return true;
+}
+
+inline void writeMarker(u64 titleId, bool paused, const char* reason) {
+    if (FILE* f = std::fopen(kMarkerPath, "w")) {
+        std::fprintf(f, "%016lX\n%s", titleId, paused ? "paused\n" : "");
+        std::fclose(f);
+        switchu::commitSdCard(reason);
+    }
+}
+
 // Turns the wireless back on if this module turned it off.
 inline void restore(const char* reason) {
     if (!markerExists()) return;
@@ -91,7 +119,8 @@ inline void beforeLaunch(u64 titleId) {
         restore("unlisted launch");
         return;
     }
-    if (markerExists()) {
+    bool paused = false;
+    if (readMarker(nullptr, &paused) && !paused) {
         switchu::FileLog::log("[offline] title=0x%016lX already offline", titleId);
         return;
     }
@@ -107,15 +136,56 @@ inline void beforeLaunch(u64 titleId) {
     }
     // Marker first: a power cut between the two writes must still be undone
     // at the next boot, and restoring an untouched switch is harmless.
-    if (FILE* f = std::fopen(kMarkerPath, "w")) {
-        std::fprintf(f, "%016lX\n", titleId);
-        std::fclose(f);
-        switchu::commitSdCard("offline marker");
-    }
+    writeMarker(titleId, false, "offline marker");
     rc = session.setEnabled(false);
     switchu::FileLog::log("[offline] title=0x%016lX wireless off rc=0x%X", titleId, rc);
     if (R_FAILED(rc))
         std::remove(kMarkerPath);
+}
+
+// HOME (or a power action) took the foreground from a title played offline:
+// give the wireless back while it waits under the menu.
+inline void onSuspend() {
+    u64 titleId = 0;
+    bool paused = false;
+    if (!readMarker(&titleId, &paused) || paused) return;
+    NifmSystemSession session;
+    Result rc = session.open();
+    if (R_SUCCEEDED(rc))
+        rc = session.setEnabled(true);
+    switchu::FileLog::log("[offline] title=0x%016lX suspended: wireless on rc=0x%X",
+                          titleId, rc);
+    if (R_SUCCEEDED(rc))
+        writeMarker(titleId, true, "offline pause");
+}
+
+// Called right before a suspended title gets the foreground back.
+inline void onResume() {
+    u64 titleId = 0;
+    bool paused = false;
+    if (!readMarker(&titleId, &paused) || !paused) return;
+    NifmSystemSession session;
+    bool enabled = false;
+    Result rc = session.open();
+    if (R_SUCCEEDED(rc))
+        rc = session.getEnabled(&enabled);
+    if (R_FAILED(rc) || !enabled) {
+        // The owner turned Airplane Mode on from the menu: that state is
+        // theirs now, so the exit must not turn the wireless back on.
+        switchu::FileLog::log("[offline] title=0x%016lX resume left as is: rc=0x%X wireless=%d",
+                              titleId, rc, enabled ? 1 : 0);
+        if (R_SUCCEEDED(rc)) {
+            std::remove(kMarkerPath);
+            switchu::commitSdCard("offline handed over");
+        }
+        return;
+    }
+    // Marker first, as in beforeLaunch.
+    writeMarker(titleId, false, "offline resume");
+    rc = session.setEnabled(false);
+    switchu::FileLog::log("[offline] title=0x%016lX resumed: wireless off rc=0x%X", titleId, rc);
+    if (R_FAILED(rc))
+        writeMarker(titleId, true, "offline resume failed");
 }
 
 } // namespace switchu::daemon::offline_play

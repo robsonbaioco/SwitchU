@@ -994,6 +994,7 @@ static bool takeForegroundFromRunningApp(const char* source) {
         return false;
 
     daemon::app::onHomeSuspend();
+    switchu::daemon::offline_play::onSuspend();
     return true;
 }
 
@@ -2108,6 +2109,7 @@ static bool handleAction(Action& action) {
         case ActionType::ResumeApplication: {
             const uint64_t holderFinishedTick = daemon::menu_la::lastFinishedTick();
             daemon::app::ResumeTiming timing{};
+            switchu::daemon::offline_play::onResume();
             Result rc = daemon::app::resume(&timing
 #ifdef SWITCHU_RESUME_FAILURE_TEST
                                             , action.injectResumeForegroundFailure
@@ -2116,6 +2118,7 @@ static bool handleAction(Action& action) {
             logApplicationResumeTrace(action, timing, holderFinishedTick);
             if (R_FAILED(rc)) {
                 switchu::FileLog::log("[action] resume FAIL: 0x%X", rc);
+                switchu::daemon::offline_play::onSuspend();
                 recoverMenuAfterApplicationHandoffFailure(
                     "resume", action.title_id, rc);
             }
