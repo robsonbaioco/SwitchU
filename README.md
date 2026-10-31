@@ -307,7 +307,7 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.14.0. Each one is tracked as an issue with what is known so far and what
+As of 2.15.0. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
 
 - **2.11.0 and 2.12.0 cannot update themselves.** Their menu lost
@@ -323,6 +323,12 @@ it would take to close it.
   suspended, right after an overlay opened). Its log just stops, which points
   at the GPU, and Atmosphère's own reports are the evidence that is missing:
   from 2.14.0 Send logs includes the newest of them. If it happens to you,
+  send the logs.
+- **The 2.15.0 port from PoloNX has not run on a console.** Posters in the
+  single row, folder previews, icon packs, the reorganized Theme Shop, the
+  new tile sizes and Battery Saver were merged by hand into the fork's own
+  code (both build variants compile). If HOME misbehaves, switch the posters
+  off in SwitchU Menu > SteamGridDB, press Minus to go back to the Grid, and
   send the logs.
 - **Most of 2.11.0 to 2.14.0 is still untested on a console.** The first
   console logs of 2.12.0 show the menu starting, the clock sync and the

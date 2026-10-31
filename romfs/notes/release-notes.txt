@@ -1,18 +1,24 @@
-Play offline
-- A game set to play offline no longer keeps the menu offline while it is suspended: HOME gives the wireless back and resuming the game turns it off again.
+Posters
+- Dynamic Line can show SteamGridDB posters with the game's logo; folders preview their games and can open as grid or single row.
 
-Send logs
-- Now also sends the newest Atmosphère crash and fatal reports.
+Tiles and icons
+- Tiles in 1x1, 2x1, 4x2, 2x2 and 2x3, with smarter moves. Icon packs with tint and an online shop.
 
-Rendering
-- The text cache no longer stores each text twice, and the menu rebuilds its swapchain when the console wakes.
+Theme Shop
+- Themes and Icons with Installed and Shop shelves, plus Sounds and Interface tabs.
+
+Battery Saver
+- A lighter HOME on demand, and less memory used all the time. Games that leave the CPU boost on no longer slow HOME down.
 --pt-BR--
 
-Jogar sem internet
-- Um jogo marcado para jogar sem internet não deixa mais o menu sem internet enquanto está suspenso: o HOME devolve o Wi-Fi e voltar ao jogo desliga de novo.
+Pôsteres
+- A Linha Dinâmica pode mostrar pôsteres do SteamGridDB com o logo do jogo; as pastas mostram prévia dos jogos e abrem em grade ou em linha.
 
-Enviar logs
-- Agora também manda os relatórios de crash e de erro fatal mais recentes do Atmosphère.
+Blocos e ícones
+- Blocos 1x1, 2x1, 4x2, 2x2 e 2x3, com movimentos mais espertos. Pacotes de ícones com tinta e loja online.
 
-Renderização
-- O cache de textos não guarda mais cada texto duas vezes, e o menu recria a swapchain quando o console acorda.
+Loja de Temas
+- Temas e Ícones com prateleiras de Instalados e Loja, mais as abas Sons e Interface.
+
+Economia de Bateria
+- Um HOME mais leve quando você quiser, e menos memória usada sempre. Jogos que deixam o boost de CPU ligado não deixam mais o HOME lento.

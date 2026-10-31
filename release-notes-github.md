@@ -1,47 +1,97 @@
-# SwitchU 2.14.0
+# SwitchU 2.15.0
 
-Play offline no longer keeps the menu offline while its game is suspended, Send logs now carries Atmosphère's crash reports, and two rendering fixes from upstream.
+A large port from PoloNX's SwitchU (up to 727435a, 2026-10-30): game posters in the single-row view, icon packs with an online shop, a reorganized Theme Shop, and a Battery Saver mode with a round of memory savings. Everything the fork already had stays.
 
 ## English
 
-### Play offline only while you play
+### Posters in the single-row view
 
-- A game set to play offline had the wireless turned off at launch and back on only when it **closed**. Left suspended under the menu, it kept the whole console offline: the update check, the Theme Shop and Send logs all failed for as long as it stayed suspended. That is why a console with such a game suspended for days never saw 2.13.3.
-- Now **HOME gives the wireless back** while the game waits under the menu, and **resuming the game turns it off again** before the game is on screen.
-- If you switch Airplane Mode on yourself from the menu in between, that choice is yours: the wireless stays off and closing the game will not turn it back on.
-- On 2.13.0 to 2.13.3, close a game set to play offline before updating.
+- **Dynamic Line** can show SteamGridDB's tall 2:3 posters with the game's logo, instead of square icons. Turn it on or off, and choose where SteamGridDB art appears (grid, single row, folders), in **SwitchU Menu > SteamGridDB**.
+- A poster is the same picture the fork already used as the **Cover** (same file in `config/SwitchU/covers`), so nothing is downloaded twice.
+- **Folders** show a preview of the games inside, or a custom icon or poster of their own (Folder Options). Each folder can open as Grid, Single row or Auto.
+- **ZL/ZR** jump between sections in the single row. Switching between grid and single row is animated.
 
-### Send logs includes crash reports
+### Tiles
 
-- **Settings > System > Send logs** now also sends the newest Atmosphère reports: up to 6 from `atmosphere/crash_reports` and 4 from `atmosphere/fatal_reports`. They name the program that crashed and where, which a log cut off mid-frame cannot. They have their own share of the archive, so the logs still fit.
-- The README named the fatal reports folder wrong (`fatal_errors`); it is `fatal_reports`.
+- Games can be **1x1, 2x1, 4x2, 2x2 or 2x3**. 2x1 and 4x2 use SteamGridDB's wide art, 2x3 uses the poster.
+- Moving a large tile onto others now trades places or packs them into the freed space, instead of refusing.
+- The launch zoom matches the tile's shape, and the blue selection fits posters and wide tiles.
+- Game Options can remove each kind of art (hero, logo, icon, poster, wide).
 
-### Rendering
+### Icon packs
 
-- **Text cache:** each new piece of text was stored twice, and once the cache was full it grew past its limit instead of reusing a slot. Each text now takes one slot and its memory is counted correctly. From ncarvalho99's OmniLaunch.
-- One redundant GPU queue flush per frame is gone.
-- **Waking from sleep:** the menu rebuilds its swapchain on wake, which PoloNX found going stale across sleep and freezing the menu on its last frame. The fork had not shown it yet; this keeps it that way. A `[power] console awake: swapchain rebuilt` line goes to the log.
+- **SwitchU Menu > Icons** switches the icons of the side bar and HOME buttons: Default, the new Atmos pack, packs that come with a theme, and packs from the online shop (saved in `switch/SwitchU/icons`).
+- Colour packs can be tinted (hue, saturation, lightness) per pack; icons can adapt their contrast to the theme.
+
+### Theme Shop
+
+- **Themes** and **Icons** each have an Installed shelf and a Shop shelf; options are split into **Sounds** and **Interface**.
+- The fork's Animated Themes, Music, SteamGridDB, Update and Uninstall tabs and its theme catalogues are all still there.
+- The catalogue is refreshed every time the shop opens (the SD copy is used offline).
+- A theme song that is really AAC renamed to `.mp3` is skipped instead of freezing the menu.
+
+### Battery Saver and memory
+
+- **Battery Saver** (Quick Settings or SwitchU Menu > Interface) runs HOME with fewer artworks loaded and less GPU memory.
+- Always on: the screen shown when you come back from a game is kept at half resolution and released after the fade; folder art and SteamGridDB caches are capped; the single-row background loads at 640x360.
+- The CPU boost some games leave on (FastLoad) is switched off when the game closes, so HOME no longer feels slow after them.
+- Frame Tap: when a Frame Tap viewer is connected, HOME switches to the light path by itself.
+
+### Optional MTP sysmodule
+
+- PoloNX's **SwitchU-MTP** (USB file transfer, based on Atmosphère's haze) is built as a separate optional package. It is **not** in the release zips and not part of the menu.
+
+### Not taken
+
+- PoloNX's limit on relaunching the menu after graphics failures (it would stop the fork's safe mode from engaging), the profile carousel, the Quick Settings music player, and the cursor-motion and page-transition options.
+
+None of this has run on a console yet. If a view misbehaves, Minus goes back to the Grid; Settings > System > Send logs sends what is needed.
 
 ---
 
 ## Português
 
-Jogar sem internet não deixa mais o menu sem internet enquanto o jogo está suspenso, o envio de logs passa a levar os relatórios de crash do Atmosphère, e duas correções de renderização vindas do upstream.
+Um porte grande do SwitchU do PoloNX (até o 727435a, 30/10/2026): pôsteres dos jogos na visualização em linha, pacotes de ícones com loja online, uma Loja de Temas reorganizada e um modo Economia de Bateria com várias economias de memória. Tudo o que o fork já tinha continua.
 
-### Sem internet só enquanto você joga
+### Pôsteres na visualização em linha
 
-- Um jogo marcado para jogar sem internet desligava o Wi-Fi ao abrir e só religava quando ele **fechava**. Suspenso debaixo do menu, deixava o console inteiro sem internet: a busca de atualização, a Loja de Temas e o envio de logs falhavam enquanto ele ficasse suspenso. Foi por isso que um console com um jogo assim suspenso por dias nunca viu a 2.13.3.
-- Agora o **HOME devolve o Wi-Fi** enquanto o jogo espera debaixo do menu, e **voltar ao jogo desliga de novo** antes de o jogo aparecer na tela.
-- Se você ligar o Modo Avião no menu nesse meio-tempo, a escolha é sua: o Wi-Fi fica desligado e fechar o jogo não religa.
-- Na 2.13.0 a 2.13.3, feche o jogo marcado para jogar sem internet antes de atualizar.
+- A **Linha Dinâmica** pode mostrar os pôsteres verticais 2:3 do SteamGridDB com o logo do jogo, no lugar dos ícones quadrados. Ligue ou desligue, e escolha onde a arte do SteamGridDB aparece (grade, linha, pastas), em **Menu SwitchU > SteamGridDB**.
+- O pôster é a mesma imagem que o fork já usava como **Capa** (mesmo arquivo em `config/SwitchU/covers`), então nada é baixado duas vezes.
+- As **pastas** mostram uma prévia dos jogos de dentro, ou um ícone ou pôster próprio (Opções da pasta). Cada pasta pode abrir em Grade, Linha ou Automático.
+- **ZL/ZR** pulam entre seções na linha. A troca entre grade e linha é animada.
 
-### O envio de logs leva os relatórios de crash
+### Blocos
 
-- **Configurações > Sistema > Enviar logs** agora também manda os relatórios mais recentes do Atmosphère: até 6 de `atmosphere/crash_reports` e 4 de `atmosphere/fatal_reports`. Eles dizem qual programa travou e onde, coisa que um log cortado no meio de um quadro não diz. Eles têm uma parte própria do arquivo, então os logs continuam cabendo.
-- O README dava o nome errado da pasta de relatórios fatais (`fatal_errors`); é `fatal_reports`.
+- Os jogos podem ter **1x1, 2x1, 4x2, 2x2 ou 2x3**. 2x1 e 4x2 usam a arte larga do SteamGridDB, 2x3 usa o pôster.
+- Mover um bloco grande para cima de outros agora troca de lugar ou acomoda os outros no espaço liberado, em vez de recusar.
+- O zoom ao abrir segue o formato do bloco, e a seleção azul se ajusta a pôsteres e blocos largos.
+- As Opções do jogo podem remover cada tipo de arte (fundo, logo, ícone, pôster, larga).
 
-### Renderização
+### Pacotes de ícones
 
-- **Cache de textos:** cada texto novo era guardado duas vezes, e com o cache cheio ele passava do limite em vez de reaproveitar uma vaga. Agora cada texto ocupa uma vaga e a memória dele é contada certo. Vem do OmniLaunch do ncarvalho99.
-- Saiu um envio repetido da fila da GPU a cada quadro.
-- **Ao acordar da suspensão:** o menu recria a swapchain ao acordar, que o PoloNX viu ficar inválida durante a suspensão e congelar o menu no último quadro. O fork ainda não tinha mostrado isso; assim continua. Uma linha `[power] console awake: swapchain rebuilt` vai para o log.
+- **Menu SwitchU > Ícones** troca os ícones da barra lateral e dos botões do HOME: Padrão, o novo pacote Atmos, pacotes que vêm com um tema e pacotes da loja online (salvos em `switch/SwitchU/icons`).
+- Pacotes coloridos podem ser tingidos (matiz, saturação, luminosidade) por pacote; os ícones podem ajustar o contraste ao tema.
+
+### Loja de Temas
+
+- **Temas** e **Ícones** têm cada um uma prateleira de Instalados e uma de Loja; as opções foram divididas em **Sons** e **Interface**.
+- As abas do fork (Temas Animados, Música, SteamGridDB, Atualizar e Desinstalar) e os catálogos de temas continuam todos lá.
+- O catálogo é atualizado toda vez que a loja abre (sem internet, usa a cópia do SD).
+- Uma música de tema que na verdade é AAC renomeado para `.mp3` é pulada em vez de travar o menu.
+
+### Economia de Bateria e memória
+
+- **Economia de Bateria** (Configurações rápidas ou Menu SwitchU > Interface) roda o HOME com menos artes carregadas e menos memória de GPU.
+- Sempre ativo: a tela mostrada na volta de um jogo fica em meia resolução e é liberada depois do fade; as artes de pasta e os caches do SteamGridDB têm limite; o fundo da linha carrega em 640x360.
+- O boost de CPU que alguns jogos deixam ligado (FastLoad) é desligado quando o jogo fecha, e o HOME não fica mais lento depois deles.
+- Frame Tap: com um visualizador do Frame Tap conectado, o HOME passa sozinho para o modo leve.
+
+### Sysmodule MTP opcional
+
+- O **SwitchU-MTP** do PoloNX (transferência de arquivos por USB, baseado no haze do Atmosphère) é compilado como pacote opcional à parte. Ele **não** está nos zips da release nem faz parte do menu.
+
+### O que ficou de fora
+
+- O limite do PoloNX para reabrir o menu depois de falhas gráficas (impediria o modo seguro do fork de entrar), o carrossel de perfis, o player de música das Configurações rápidas e as opções de movimento do cursor e transição de página.
+
+Nada disso rodou em console ainda. Se uma visualização se comportar mal, o Minus volta para a Grade; Configurações > Sistema > Enviar logs manda o que for preciso.
