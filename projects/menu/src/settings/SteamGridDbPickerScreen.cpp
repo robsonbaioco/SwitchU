@@ -13,10 +13,25 @@
 #include <cstring>
 
 namespace {
-constexpr int kColumns = 4;
-constexpr int kRows = 3;
-constexpr int kPerPage = kColumns * kRows;
+// Picker panel and gallery geometry (PoloNX zoomable gallery).
+constexpr float kPickerPanelX = 70.f;
+constexpr float kPickerPanelY = 38.f;
+constexpr float kPickerPanelW = 1140.f;
+constexpr float kPickerPanelH = 644.f;
+constexpr float kPickerGridPadX = 28.f;
+constexpr float kPickerGridTop = 220.f;
+constexpr float kPickerGridBottomPad = 58.f; // leave room for footer hints
+
+float zoomScale(int level) {
+    switch (std::clamp(level, 0, 4)) {
+    case 0: return 0.72f;
+    case 1: return 0.88f;
+    case 2: return 1.00f;
+    case 3: return 1.22f;
+    default: return 1.48f;
+    }
 }
+} // namespace
 
 SteamGridDbPickerScreen::SteamGridDbPickerScreen(nxui::GpuDevice& gpu,
                                                  nxui::Renderer& renderer,
@@ -45,6 +60,98 @@ SteamGridDbPickerScreen::SteamGridDbPickerScreen(nxui::GpuDevice& gpu,
         if (m_searchCb) m_searchCb();
     });
     addAction(static_cast<std::uint64_t>(nxui::Button::B), [this]() { hide(); });
+    addAction(static_cast<std::uint64_t>(nxui::Button::ZL), [this]() { adjustZoom(-1); });
+    addAction(static_cast<std::uint64_t>(nxui::Button::ZR), [this]() { adjustZoom(+1); });
+}
+
+void SteamGridDbPickerScreen::adjustZoom(int delta) {
+    if (m_loading) return;
+    const int previous = m_zoomLevel;
+    m_zoomLevel = std::clamp(m_zoomLevel + delta, 0, 4);
+    if (m_zoomLevel == previous) return;
+    // Redecode at the new canvas size so zoom-in stays sharp.
+    ++m_generation;
+    schedulePreviews();
+}
+
+void SteamGridDbPickerScreen::previewCanvasSize(int& outW, int& outH) const {
+    const float zoom = zoomScale(m_zoomLevel);
+    using Kind = SteamGridDbManager::ArtworkKind;
+    if (m_result.kind == Kind::Cover) { // == Poster
+        outW = std::max(96, (int)(180.f * zoom));
+        outH = std::max(144, (int)(270.f * zoom));
+    } else if (m_result.kind == Kind::Icon) {
+        outW = outH = std::max(96, (int)(180.f * zoom));
+    } else if (m_result.kind == Kind::Logo) {
+        outW = std::max(160, (int)(280.f * zoom));
+        outH = std::max(48, (int)(80.f * zoom));
+    } else {
+        outW = std::max(160, (int)(280.f * zoom));
+        outH = std::max(90, (int)(158.f * zoom));
+    }
+}
+
+void SteamGridDbPickerScreen::cardMetrics(float& outW, float& outH, float& outGapX,
+                                          float& outGapY, int& outColumns,
+                                          int& outRows) const {
+    const float zoom = zoomScale(m_zoomLevel);
+    using Kind = SteamGridDbManager::ArtworkKind;
+    outGapX = 14.f;
+    outGapY = 12.f;
+    if (m_result.kind == Kind::Cover) { // == Poster
+        outColumns = m_zoomLevel >= 4 ? 2 : (m_zoomLevel >= 3 ? 3 : 4);
+        outRows = m_zoomLevel >= 3 ? 1 : 2;
+        outW = 168.f * zoom;
+        outH = 252.f * zoom;
+    } else if (m_result.kind == Kind::Icon) {
+        outColumns = m_zoomLevel >= 4 ? 2 : (m_zoomLevel >= 3 ? 3 : 4);
+        outRows = m_zoomLevel >= 3 ? 2 : 3;
+        outW = outH = 168.f * zoom;
+    } else if (m_result.kind == Kind::Logo) {
+        outColumns = m_zoomLevel >= 4 ? 2 : (m_zoomLevel >= 3 ? 3 : 4);
+        outRows = m_zoomLevel >= 3 ? 2 : 3;
+        outW = 250.f * zoom;
+        outH = 110.f * zoom;
+    } else {
+        outColumns = m_zoomLevel >= 4 ? 2 : (m_zoomLevel >= 3 ? 3 : 4);
+        outRows = m_zoomLevel >= 3 ? 2 : 3;
+        outW = 250.f * zoom;
+        outH = 130.f * zoom;
+    }
+
+    // Fit inside the panel so zoom never spills past the rounded window.
+    const float availW = kPickerPanelW - kPickerGridPadX * 2.f;
+    const float availH = (kPickerPanelY + kPickerPanelH - kPickerGridBottomPad) - kPickerGridTop;
+    if (outColumns > 1)
+        outW = std::min(outW, (availW - outGapX * (outColumns - 1)) / outColumns);
+    else
+        outW = std::min(outW, availW);
+    if (outRows > 1)
+        outH = std::min(outH, (availH - outGapY * (outRows - 1)) / outRows);
+    else
+        outH = std::min(outH, availH);
+
+    if (m_result.kind == Kind::Cover) {
+        constexpr float kAspect = 2.f / 3.f; // w/h
+        if (outW / std::max(1.f, outH) > kAspect)
+            outW = outH * kAspect;
+        else
+            outH = outW / kAspect;
+    } else if (m_result.kind == Kind::Icon) {
+        const float side = std::min(outW, outH);
+        outW = outH = side;
+    }
+}
+
+int SteamGridDbPickerScreen::perPage() const {
+    float w, h, gx, gy;
+    int cols = 4, rows = 3;
+    cardMetrics(w, h, gx, gy, cols, rows);
+    return std::max(1, cols * rows);
+}
+
+int SteamGridDbPickerScreen::artworkCount() const {
+    return static_cast<int>(std::min(m_result.candidates.size(), m_slots.size()));
 }
 
 void SteamGridDbPickerScreen::showLoading(std::uint64_t titleId,
@@ -57,10 +164,14 @@ void SteamGridDbPickerScreen::showLoading(std::uint64_t titleId,
         slot.ready = false;
         slot.failed = false;
     }
+    // Keep the search string across a re-search so X Search and the header
+    // always show what was typed, even when a result payload omits it.
+    if (!query.empty())
+        m_searchQuery = query;
     m_result = {};
     m_result.titleId = titleId;
     m_result.title = title;
-    m_result.query = query;
+    m_result.query = m_searchQuery;
     m_result.kind = kind;
     m_selected = 0;
     m_loading = true;
@@ -71,7 +182,13 @@ void SteamGridDbPickerScreen::showLoading(std::uint64_t titleId,
 }
 
 void SteamGridDbPickerScreen::setResult(BrowseResult result) {
+    // Never drop the active search string when a payload omits it.
+    if (!result.query.empty())
+        m_searchQuery = result.query;
+    else
+        result.query = m_searchQuery;
     m_result = std::move(result);
+    m_result.query = m_searchQuery;
     m_loading = false;
     m_selected = 0;
     m_message = m_result.success
@@ -90,6 +207,7 @@ void SteamGridDbPickerScreen::hide() {
     if (!m_active) return;
     m_active = false;
     m_backdropCacheValid = false;
+    m_searchQuery.clear();
     setVisible(false);
     for (auto& slot : m_slots)
         if (slot.state) slot.state->cancelled.store(true);
@@ -107,9 +225,9 @@ void SteamGridDbPickerScreen::wait() {
 }
 
 SteamGridDbPickerScreen::DecodedImage SteamGridDbPickerScreen::decodePreview(
-    const std::vector<std::uint8_t>& bytes) {
+    const std::vector<std::uint8_t>& bytes, int maxW, int maxH) {
     DecodedImage out;
-    if (bytes.empty()) return out;
+    if (bytes.empty() || maxW <= 0 || maxH <= 0) return out;
     int width = 0, height = 0, channels = 0;
     stbi_uc* raw = stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()),
                                          &width, &height, &channels, 4);
@@ -117,11 +235,9 @@ SteamGridDbPickerScreen::DecodedImage SteamGridDbPickerScreen::decodePreview(
         if (raw) stbi_image_free(raw);
         return out;
     }
-    // Every preview uses the same small canvas. Slots can therefore reuse
-    // their GPU allocation across searches instead of freeing a variable-size
-    // texture (which requires a graphics lifetime synchronisation).
-    out.width = 240;
-    out.height = 112;
+    // Contain into a kind-sized canvas so posters stay portrait and fill the slot.
+    out.width = maxW;
+    out.height = maxH;
     out.rgba.assign(static_cast<std::size_t>(out.width) * out.height * 4, 0);
     const float scale = std::min(static_cast<float>(out.width) / width,
                                  static_cast<float>(out.height) / height);
@@ -166,12 +282,17 @@ void SteamGridDbPickerScreen::schedulePreview(std::size_t index) {
     slot.generation = m_generation;
     slot.state = std::make_shared<DecodeState>();
     auto state = slot.state;
+    // Always prefer SGDB thumbs for the gallery — full art is only fetched on Apply.
     const std::string url = slot.candidate.thumbnailUrl.empty()
-        ? slot.candidate.url : slot.candidate.thumbnailUrl;
-    slot.future = m_threadPool.submit([state, url]() {
+        ? slot.candidate.url
+        : slot.candidate.thumbnailUrl;
+    int canvasW = 240, canvasH = 112;
+    previewCanvasSize(canvasW, canvasH);
+    slot.future = m_threadPool.submit([state, url, canvasW, canvasH]() {
         try {
             if (!state->cancelled.load())
-                state->image = decodePreview(themeshop::http::getBytes(url));
+                state->image = decodePreview(themeshop::http::getBytes(url),
+                                             canvasW, canvasH);
         } catch (...) {
         }
     });
@@ -216,9 +337,10 @@ void SteamGridDbPickerScreen::onUpdate(float dt) {
     int activeJobs = 0;
     for (const auto& slot : m_slots)
         if (slot.future.valid()) ++activeJobs;
-    const int count = static_cast<int>(std::min(m_result.candidates.size(), m_slots.size()));
-    const int pageStart = count > 0 ? (m_selected / kPerPage) * kPerPage : 0;
-    for (int offset = 0; offset < kPerPage && activeJobs < 2; ++offset) {
+    const int count = artworkCount();
+    const int pageSize = perPage();
+    const int pageStart = count > 0 ? (m_selected / pageSize) * pageSize : 0;
+    for (int offset = 0; offset < pageSize && activeJobs < 2; ++offset) {
         const int index = pageStart + offset;
         if (index >= count) break;
         auto& slot = m_slots[(size_t)index];
@@ -241,7 +363,10 @@ nxui::Rect SteamGridDbPickerScreen::containRect(const nxui::Texture& texture,
 
 std::string SteamGridDbPickerScreen::kindLabel() const {
     return m_result.kind == SteamGridDbManager::ArtworkKind::Hero ? "Hero"
-         : m_result.kind == SteamGridDbManager::ArtworkKind::Logo ? "Logo" : "Icon";
+         : m_result.kind == SteamGridDbManager::ArtworkKind::Logo ? "Logo"
+         : m_result.kind == SteamGridDbManager::ArtworkKind::Cover ? "Cover" // == Poster
+         : m_result.kind == SteamGridDbManager::ArtworkKind::GridWide ? "Poster wide"
+         : "Icon";
 }
 
 void SteamGridDbPickerScreen::onRender(nxui::Renderer& renderer) {
@@ -312,7 +437,7 @@ void SteamGridDbPickerScreen::onRender(nxui::Renderer& renderer) {
     if (m_smallFont) {
         renderer.drawText(m_result.title, {108.f, 110.f}, m_smallFont,
                           m_theme->textSecondary, 0.78f);
-        renderer.drawText("Search: " + m_result.query + "   [X] Change name",
+        renderer.drawText("Search: " + m_searchQuery + "   [X] Change name",
                           {108.f, 139.f}, m_smallFont, m_theme->textSecondary, 0.72f);
         renderer.drawText(m_message, {108.f, 169.f}, m_smallFont,
                           m_theme->textPrimary, 0.72f);
@@ -325,24 +450,37 @@ void SteamGridDbPickerScreen::onRender(nxui::Renderer& renderer) {
         return;
     }
 
-    const int count = static_cast<int>(std::min(m_result.candidates.size(), m_slots.size()));
-    const int page = count > 0 ? m_selected / kPerPage : 0;
-    const int start = page * kPerPage;
-    constexpr float cardW = 250.f;
-    constexpr float cardH = 130.f;
-    constexpr float gapX = 20.f;
-    constexpr float gapY = 18.f;
-    for (int local = 0; local < kPerPage; ++local) {
+    const int count = artworkCount();
+    float cardW = 250.f, cardH = 130.f, gapX = 20.f, gapY = 18.f;
+    int columns = 4, rows = 3;
+    cardMetrics(cardW, cardH, gapX, gapY, columns, rows);
+    const int pageSize = std::max(1, columns * rows);
+    const int page = count > 0 ? m_selected / pageSize : 0;
+    const int start = page * pageSize;
+    const float gridW = columns * cardW + (columns - 1) * gapX;
+    const float gridLeft = kPickerPanelX + kPickerGridPadX;
+    const float gridAvailW = kPickerPanelW - kPickerGridPadX * 2.f;
+    const float originX = gridLeft + std::max(0.f, (gridAvailW - gridW) * 0.5f);
+    const float originY = kPickerGridTop;
+    // Mask the gallery to the panel interior (focus ring included).
+    const nxui::Rect clip{
+        kPickerPanelX + 12.f,
+        kPickerGridTop - 8.f,
+        kPickerPanelW - 24.f,
+        (kPickerPanelY + kPickerPanelH - kPickerGridBottomPad) - (kPickerGridTop - 8.f)};
+    renderer.pushClipRect(clip);
+    for (int local = 0; local < pageSize; ++local) {
         const int index = start + local;
-        const nxui::Rect card{105.f + (local % kColumns) * (cardW + gapX),
-                              210.f + (local / kColumns) * (cardH + gapY), cardW, cardH};
-        m_visibleRects[(size_t)local] = card;
+        const nxui::Rect card{originX + (local % columns) * (cardW + gapX),
+                              originY + (local / columns) * (cardH + gapY), cardW, cardH};
+        if (local < (int)m_visibleRects.size())
+            m_visibleRects[(size_t)local] = card;
         if (index >= count) continue;
         renderer.drawRoundedRect(card, m_theme->panelBorder.withAlpha(0.20f), 16.f);
         renderer.drawRoundedRectOutline(card, m_theme->panelBorder.withAlpha(0.35f), 16.f, 1.f);
         const auto& slot = m_slots[(size_t)index];
         if (slot.ready && slot.texture.valid()) {
-            const nxui::Rect imageArea = card.shrunk(8.f);
+            const nxui::Rect imageArea = card.shrunk(6.f);
             renderer.drawTextureRounded(&slot.texture, containRect(slot.texture, imageArea), 10.f,
                                  nxui::Color::white());
         } else {
@@ -353,18 +491,23 @@ void SteamGridDbPickerScreen::onRender(nxui::Renderer& renderer) {
             renderer.drawRoundedRectOutline(card.expanded(3.f), m_theme->cursorNormal,
                                             18.f, 3.f);
     }
+    renderer.popClipRect();
     if (m_smallFont && count > 0) {
-        const int pages = (count + kPerPage - 1) / kPerPage;
-        renderer.drawText("A Apply   B Back   X Search   Page " + std::to_string(page + 1)
-                          + "/" + std::to_string(pages),
+        const int pages = (count + pageSize - 1) / pageSize;
+        renderer.drawText("A Apply   B Back   X Search   ZL/ZR Zoom "
+                          + std::to_string(m_zoomLevel + 1) + "/5   Page "
+                          + std::to_string(page + 1) + "/" + std::to_string(pages),
                           {108.f, 651.f}, m_smallFont, m_theme->textSecondary, 0.72f);
     }
 }
 
 void SteamGridDbPickerScreen::moveSelection(int dx, int dy) {
-    const int count = static_cast<int>(std::min(m_result.candidates.size(), m_slots.size()));
+    const int count = artworkCount();
     if (count <= 0 || m_loading) return;
-    int target = m_selected + dx + dy * kColumns;
+    float cardW, cardH, gapX, gapY;
+    int columns = 4, rows = 3;
+    cardMetrics(cardW, cardH, gapX, gapY, columns, rows);
+    int target = m_selected + dx + dy * columns;
     if (target >= 0 && target < count) m_selected = target;
 }
 
@@ -378,11 +521,13 @@ void SteamGridDbPickerScreen::activateSelection() {
 
 void SteamGridDbPickerScreen::handleTouch(nxui::Input& input) {
     if (!m_active || m_loading || !input.touchUp()) return;
-    const int count = static_cast<int>(std::min(m_result.candidates.size(), m_slots.size()));
-    const int page = count > 0 ? m_selected / kPerPage : 0;
-    for (int local = 0; local < kPerPage; ++local) {
-        const int index = page * kPerPage + local;
-        if (index >= count || !m_visibleRects[(size_t)local].contains(input.touchX(), input.touchY()))
+    const int count = artworkCount();
+    const int pageSize = perPage();
+    const int page = count > 0 ? m_selected / pageSize : 0;
+    for (int local = 0; local < pageSize; ++local) {
+        const int index = page * pageSize + local;
+        if (index >= count || local >= (int)m_visibleRects.size()
+            || !m_visibleRects[(size_t)local].contains(input.touchX(), input.touchY()))
             continue;
         if (m_selected == index) activateSelection();
         else m_selected = index;

@@ -1,6 +1,9 @@
 #include "ThemeShopScreen.hpp"
 
+#include "ThemeShopLayout.hpp"
+#include "ThemeShopPreviewPipeline.hpp"
 #include "ThemeHttp.hpp"
+#include "widgets/AdaptiveIconLoad.hpp"
 
 #include "core/DebugLog.hpp"
 
@@ -8,6 +11,7 @@
 #include <nxui/core/I18n.hpp>
 #include <nxui/core/Renderer.hpp>
 #include <nxui/core/ThreadPool.hpp>
+#include <nxui/third_party/stb/stb_image.h>
 
 #include <curlpp/Easy.hpp>
 #include <curlpp/Infos.hpp>
@@ -19,38 +23,35 @@
 #include <array>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <filesystem>
 #include <stdexcept>
 #include <unordered_set>
 
 namespace {
 
-constexpr int kCommunityPreviewGridCols = 2;
-constexpr int kCommunityPreviewVisibleRows = 2;
-constexpr int kCommunityPreviewEntriesPerPage = kCommunityPreviewGridCols * kCommunityPreviewVisibleRows;
-constexpr int kMaxPreviewUploadsPerFrame = 1;
-constexpr int kMaxPreviewDownloadsInFlight = kCommunityPreviewEntriesPerPage;
-
-// Quantas previas guardam os bytes comprimidos depois de sair da tela. Cada
-// uma custa dezenas de kilobytes de RAM e evita uma requisicao de rede; a
-// textura decodificada, que custa cerca de um megabyte, e liberada de todo
-// jeito.
-constexpr int kMaxCachedPreviewBytesEntries = 64;
-// A previa era guardada com 960 de lado e desenhada num cartao de ~340: cada
-// pixel na tela lia texels espalhados, sem mipmap, e a loja gastava 20 ms de
-// GPU por quadro contra 10 na home. 640 continua acima do cartao e corta a
-// amostragem pela metade.
-constexpr int kCommunityPreviewMaxSide = 640;
+constexpr int kCommunityPreviewGridCols = themeshop::layout::kGridCols;
+constexpr int kCommunityPreviewVisibleRows = themeshop::layout::kVisibleRows;
+constexpr int kCommunityPreviewEntriesPerPage = themeshop::layout::kEntriesPerPage;
+// Fill a 3x2 shelf quickly; still capped so GPU/HTTP stay polite.
+constexpr int kMaxPreviewUploadsPerFrame = themeshop::preview::kMaxUploadsPerFrame;
+// Current + ±1 neighbor shelves in flight so the next ZL/ZR is already decoding.
+// Downloaded (awaiting GPU upload) must NOT count — that used to block prefetch.
+constexpr int kMaxPreviewDownloadsInFlight = kCommunityPreviewEntriesPerPage * 3;
+constexpr int kMaxInstalledPreviewDecodesInFlight = kCommunityPreviewEntriesPerPage * 2;
+constexpr int kCommunityPreviewGridMaxSide = themeshop::preview::kGridMaxSide;
+constexpr int kCommunityPreviewDetailMaxSide = themeshop::preview::kDetailMaxSide;
+constexpr int kCommunityPreviewMaxSide = kCommunityPreviewGridMaxSide; // legacy alias
+constexpr int kInstalledPreviewCachePages = 4; // current ± neighbors (2-row pages)
 
 // A folha e uma grade, nao uma foto: reduzi-la a 640 encolhe cada celula junto
 // e a tela cheia vira mosaico. Ela ja e gerada no tamanho certo, entao vai
 // inteira.
 constexpr int kPreviewSheetMaxSide = 2560;   // a folha HD tem 2560x1152
-
-// Covers come off the card, so nothing is gained by reading several at once,
-// and something is lost: each decode holds the image at its source size before
-// the downscale, and the menu has little heap to spare.
-constexpr int kMaxInstalledPreviewDecodesInFlight = 1;
 
 bool isPreviewSheetPath(const std::string& path) {
     return path.find("preview_sheet") != std::string::npos;
@@ -71,6 +72,65 @@ bool isBlockCompressedPath(const std::string& path) {
 
 bool startsWith(const std::string& value, const std::string& prefix) {
     return value.size() >= prefix.size() && value.compare(0, prefix.size(), prefix) == 0;
+}
+
+// Decode + downscale off the UI thread (Community used to stbi+upload on main).
+bool decodeCommunityCoverPixels(const std::vector<std::uint8_t>& bytes,
+                                int maxSide,
+                                std::vector<std::uint8_t>& outPixels,
+                                int& outW,
+                                int& outH) {
+    outPixels.clear();
+    outW = 0;
+    outH = 0;
+    if (bytes.empty())
+        return false;
+
+    int w = 0, h = 0, ch = 0;
+    std::uint8_t* pixels = stbi_load_from_memory(
+        bytes.data(), static_cast<int>(bytes.size()), &w, &h, &ch, 4);
+    if (!pixels || w <= 0 || h <= 0) {
+        if (pixels)
+            stbi_image_free(pixels);
+        return false;
+    }
+
+    std::uint8_t* owned = pixels;
+    bool stbiOwned = true;
+    if (maxSide > 0 && (w > maxSide || h > maxSide)) {
+        const float scale = std::min(static_cast<float>(maxSide) / static_cast<float>(w),
+                                     static_cast<float>(maxSide) / static_cast<float>(h));
+        const int dw = std::max(1, static_cast<int>(w * scale));
+        const int dh = std::max(1, static_cast<int>(h * scale));
+        auto* scaled = static_cast<std::uint8_t*>(
+            std::malloc(static_cast<std::size_t>(dw) * static_cast<std::size_t>(dh) * 4u));
+        if (scaled) {
+            for (int y = 0; y < dh; ++y) {
+                const int sy = y * h / dh;
+                for (int x = 0; x < dw; ++x) {
+                    const int sx = x * w / dw;
+                    std::memcpy(scaled + (static_cast<std::size_t>(y) * dw + x) * 4u,
+                                pixels + (static_cast<std::size_t>(sy) * w + sx) * 4u,
+                                4u);
+                }
+            }
+            stbi_image_free(pixels);
+            owned = scaled;
+            stbiOwned = false;
+            w = dw;
+            h = dh;
+        }
+    }
+
+    outPixels.resize(static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4u);
+    std::memcpy(outPixels.data(), owned, outPixels.size());
+    if (stbiOwned)
+        stbi_image_free(owned);
+    else
+        std::free(owned);
+    outW = w;
+    outH = h;
+    return true;
 }
 
 std::string trimLeadingSlashes(std::string value) {
@@ -183,18 +243,91 @@ void ThemeShopScreen::refreshState() {
     rebuildCurrentTab();
 }
 
-void ThemeShopScreen::refreshCommunityCatalog() {
+void ThemeShopScreen::show() {
+    m_catalogNeedsNetworkRefresh = true;
+    m_lastCustomTabIndex = -1;
+    m_shopBranchFocused = false;
+    m_shopBranchReveal.setImmediate(0.f);
+    TabbedOverlayScreen::show();
+}
+
+void ThemeShopScreen::refreshCommunityCatalog(bool forceNetwork) {
     if (!m_threadPool)
         return;
 
+    // Explicit Refresh still deletes the SD copy so a corrupt/partial cache
+    // cannot stick. Routine opens re-fetch over the network while keeping the
+    // file as an offline fallback (see ThemeCatalogClient::loadCatalog).
+    if (forceNetwork) {
+        // One SD copy per catalogue source (ThemeCatalogClient::catalogDiskPathFor);
+        // every one of them starts with "catalog_index".
+        std::error_code ec;
+        std::vector<std::filesystem::path> stale;
+        for (std::filesystem::directory_iterator it(themeshop::preview::kCommunityDiskDir, ec), end;
+             !ec && it != end; it.increment(ec)) {
+            const std::string name = it->path().filename().string();
+            if (name.rfind("catalog_index", 0) == 0)
+                stale.push_back(it->path());
+        }
+        for (const auto& path : stale)
+            std::filesystem::remove(path, ec);
+    }
+
+    m_catalogNeedsNetworkRefresh = false;
     m_catalogClient.refresh(*m_threadPool);
     syncCommunityCatalog(m_catalogClient.snapshot());
+}
+
+void ThemeShopScreen::ensureCommunityCatalogWarm() {
+    if (!m_threadPool)
+        return;
+    if (m_communityTransferState.isRunning())
+        return;
+    if (m_communityRevision == 0 || m_catalogNeedsNetworkRefresh) {
+        refreshCommunityCatalog(false);
+        return;
+    }
+    // Prefetch is owned by updateCustomContent (once/frame) — do not double-queue
+    // the neighborhood from here (was re-scanning Idle slots every tick).
+}
+
+void ThemeShopScreen::prefetchCommunityShelfNeighborhood() {
+    if (m_communityEntries.empty() || !m_threadPool)
+        return;
+    if (m_packageTransferState.isRunning())
+        return;
+
+    std::unordered_set<std::string> queued;
+    auto queueCover = [&](int index) {
+        if (index < 0 || index >= static_cast<int>(m_communityEntries.size()))
+            return;
+        // The art the card draws (preview sheet when present), not always the cover.
+        const std::string cover = gridPreviewPathOf(m_communityEntries[static_cast<std::size_t>(index)]);
+        std::string url = resolveCommunityPreviewUrl(cover);
+        if (url.empty() || !queued.emplace(std::move(url)).second)
+            return;
+        primeCommunityPreview(cover);
+    };
+
+    // Always keep page 1 warm (first focus / reset).
+    for (int i = 0; i < kCommunityPreviewEntriesPerPage; ++i)
+        queueCover(i);
+
+    // Pin the last Community scroll window ±2 shelves so the next cold flip
+    // is already downloading/decoding off-thread.
+    const int scroll = m_communityScrollRow;
+    const int start = std::max(0, (scroll - kCommunityPreviewVisibleRows * 2) * kCommunityPreviewGridCols);
+    const int end = std::min(static_cast<int>(m_communityEntries.size()),
+                             (scroll + kCommunityPreviewVisibleRows * 3) * kCommunityPreviewGridCols);
+    for (int i = start; i < end; ++i)
+        queueCover(i);
 }
 
 void ThemeShopScreen::setThemeShopState(const std::vector<ThemeShopEntry>& entries,
                                         const std::string& activeId) {
     m_allThemeShopEntries = entries;
-    pruneInstalledPreviewCache(entries);
+    // Keep Ready GPU covers across refreshThemeShopState / reopen — clearing here
+    // forced a full re-decode every Theme Shop open (logs: decode storm on show()).
     applySearchFilter();
     // Um tema recém-instalado entra aqui, então é aqui que a medição do que ele
     // ocupa é enfileirada. Quem já foi medido não é medido de novo.
@@ -218,20 +351,50 @@ void ThemeShopScreen::setThemeShopState(const std::vector<ThemeShopEntry>& entri
         m_themeShopSelectedId = m_themeShopEntries.front().id;
 }
 
+void ThemeShopScreen::setIconPackState(const std::vector<ThemeShopEntry>& entries,
+                                       const std::string& activeId) {
+    m_allIconPackEntries = entries;
+    applySearchFilter();
+
+    auto hasId = [&](const std::string& id) {
+        return std::any_of(m_iconPackEntries.begin(), m_iconPackEntries.end(),
+                           [&](const ThemeShopEntry& entry) {
+                               return entry.id == id;
+                           });
+    };
+
+    if (m_iconPackEntries.empty()) {
+        m_iconPackSelectedId.clear();
+        return;
+    }
+
+    if (!hasId(m_iconPackSelectedId))
+        m_iconPackSelectedId = activeId;
+    if (!hasId(m_iconPackSelectedId))
+        m_iconPackSelectedId = m_iconPackEntries.front().id;
+}
+
 void ThemeShopScreen::setPackageTransferState(const ThemeTransferState& state,
                                               std::string themeId,
                                               bool installMode) {
     m_packageTransferState = state;
     m_packageTransferThemeId = std::move(themeId);
     m_packageTransferInstallMode = installMode;
-
-    if (m_packageTransferState.isRunning()) {
-        clearCommunityPreviewCache();
-        m_lastPreviewPrimeKey.clear();
-    }
+    // Do not clearCommunityPreviewCache() here — install used to waitIdle-nuke
+    // every cover. Progress lives on-card / thin sheet instead.
 }
 
 const ThemeShopScreen::ThemeShopEntry* ThemeShopScreen::selectedThemeShopEntry() const {
+    if (isIconsTab()) {
+        if (m_iconPackEntries.empty())
+            return nullptr;
+        for (const auto& entry : m_iconPackEntries) {
+            if (entry.id == m_iconPackSelectedId)
+                return &entry;
+        }
+        return &m_iconPackEntries.front();
+    }
+
     if (m_themeShopEntries.empty())
         return nullptr;
 
@@ -358,6 +521,21 @@ void ThemeShopScreen::applySearchFilter() {
             m_communityEntries.push_back(entry);
     }
 
+    m_iconPackEntries.clear();
+    m_iconPackEntries.reserve(m_allIconPackEntries.size());
+    for (const auto& entry : m_allIconPackEntries) {
+        if (!matchesSearch(entry, needleLower))
+            continue;
+        // Icons Installed = on console; Icons Shop = catalog-only downloads.
+        if (m_iconsShelfMode == ShelfMode::Installed) {
+            if (!entry.installed)
+                continue;
+        } else if (entry.installed) {
+            continue;
+        }
+        m_iconPackEntries.push_back(entry);
+    }
+
     auto syncSelection = [](const auto& entries, std::string& selectedId) {
         auto hasId = [&](const std::string& id) {
             return std::any_of(entries.begin(), entries.end(), [&](const auto& entry) {
@@ -376,11 +554,14 @@ void ThemeShopScreen::applySearchFilter() {
 
     syncSelection(m_themeShopEntries, m_themeShopSelectedId);
     syncSelection(m_communityEntries, m_communitySelectedId);
+    syncSelection(m_iconPackEntries, m_iconPackSelectedId);
 
     if (m_themeShopEntries.empty())
         m_installedScrollRow = 0;
     if (m_communityEntries.empty())
         m_communityScrollRow = 0;
+    if (m_iconPackEntries.empty())
+        m_iconPackScrollRow = 0;
 }
 
 bool ThemeShopScreen::promptSearchQuery() {
@@ -539,11 +720,39 @@ const nxui::Texture* ThemeShopScreen::communityPreviewTexture(const ThemeCatalog
     return communityPreviewTexture(gridPreviewPathOf(entry));
 }
 
-ThemeShopScreen::PreviewPhase ThemeShopScreen::installedPreviewPhase(const std::string& previewPath) const {
+std::string ThemeShopScreen::installedPreviewCacheKey(const std::string& previewPath,
+                                                      bool adaptiveLoad,
+                                                      const std::string& iconPackId,
+                                                      const switchu::icons::HslAdjust* hslOverride) const {
+    if (!adaptiveLoad)
+        return previewPath;
+    // Draft detail scrubbing reuses one slot (reloads in place). Committed grid
+    // previews key by HSL so they stay frozen while drafting.
+    if (hslOverride)
+        return previewPath + "#draft";
+    const switchu::icons::HslAdjust hsl = hslAdjustForPack(iconPackId);
+    const bool hasPres = hsl.enabled || hsl.flatten || hsl.grayscale;
+    const std::uint32_t hslKey = hasPres
+        ? ((hsl.enabled ? 1u : 0u) << 26)
+          | ((hsl.flatten ? 1u : 0u) << 25)
+          | ((hsl.grayscale ? 1u : 0u) << 24)
+          | (static_cast<std::uint32_t>(std::lround(hsl.hue * 255.f)) << 16)
+          | (static_cast<std::uint32_t>(std::lround(hsl.sat * 255.f)) << 8)
+          | static_cast<std::uint32_t>(std::lround(hsl.light * 255.f))
+        : 0u;
+    return previewPath + "#" + std::to_string(hslKey);
+}
+
+ThemeShopScreen::PreviewPhase ThemeShopScreen::installedPreviewPhase(
+    const std::string& previewPath,
+    bool adaptiveLoad,
+    const std::string& iconPackId,
+    const switchu::icons::HslAdjust* hslOverride) const {
     if (previewPath.empty())
         return PreviewPhase::Failed;
 
-    auto it = m_installedPreviewCache.find(previewPath);
+    auto it = m_installedPreviewCache.find(
+        installedPreviewCacheKey(previewPath, adaptiveLoad, iconPackId, hslOverride));
     if (it == m_installedPreviewCache.end() || !it->second)
         return PreviewPhase::Idle;
 
@@ -551,140 +760,686 @@ ThemeShopScreen::PreviewPhase ThemeShopScreen::installedPreviewPhase(const std::
     return it->second->phase;
 }
 
-const nxui::Texture* ThemeShopScreen::installedPreviewTexture(const std::string& previewPath) const {
+const nxui::Texture* ThemeShopScreen::installedPreviewTexture(
+    const std::string& previewPath,
+    bool adaptiveLoad,
+    const std::string& iconPackId,
+    const switchu::icons::HslAdjust* hslOverride) const {
     if (previewPath.empty())
         return nullptr;
 
-    auto it = m_installedPreviewCache.find(previewPath);
+    auto it = m_installedPreviewCache.find(
+        installedPreviewCacheKey(previewPath, adaptiveLoad, iconPackId, hslOverride));
     if (it == m_installedPreviewCache.end() || !it->second)
         return nullptr;
 
     std::lock_guard<std::mutex> lk(it->second->mutex);
-    if (it->second->phase != PreviewPhase::Ready || !it->second->texture.valid())
+    // Stale-while-revalidate: keep showing the last good frame across Idle /
+    // Loading / Downloaded so HSL scrubbing never flashes the spinner.
+    if (!it->second->texture.valid())
         return nullptr;
     return &it->second->texture;
 }
 
-// Asked for from inside the frame, for every installed card the grid is about
-// to draw. It used to answer by doing the whole job right there: read the cover
-// off the card, decode it, and upload it, on the render thread, mid-draw.
-//
-// Measured on the console with the opening-frame trace, five installed covers
-// (a 694 KB PNG, an 87 KB JPEG and three around 30 KB) cost 287.738 ms of
-// content command-build on the first visible frame, against 0.31-1.35 ms on
-// every frame after it. That one frame was the whole Theme Shop opening stall;
-// nothing else in the frame came near a millisecond.
-//
-// So only the upload stays here. Reading and decoding go to the pool, exactly
-// as community previews already do, and the card shows its "Loading
-// screenshot..." placeholder for the frames in between -- which is the state
-// the grid was already written to draw.
-void ThemeShopScreen::primeInstalledPreview(const std::string& previewPath) {
+bool ThemeShopScreen::installedPreviewAdaptive(
+    const std::string& previewPath,
+    bool adaptiveLoad,
+    const std::string& iconPackId,
+    const switchu::icons::HslAdjust* hslOverride) const {
+    if (previewPath.empty())
+        return false;
+
+    auto it = m_installedPreviewCache.find(
+        installedPreviewCacheKey(previewPath, adaptiveLoad, iconPackId, hslOverride));
+    if (it == m_installedPreviewCache.end() || !it->second)
+        return false;
+
+    std::lock_guard<std::mutex> lk(it->second->mutex);
+    return it->second->adaptive && it->second->phase == PreviewPhase::Ready;
+}
+
+const nxui::Texture* ThemeShopScreen::installedPreviewContrastMask(
+    const std::string& previewPath,
+    bool adaptiveLoad,
+    const std::string& iconPackId,
+    const switchu::icons::HslAdjust* hslOverride) const {
+    if (previewPath.empty())
+        return nullptr;
+
+    auto it = m_installedPreviewCache.find(
+        installedPreviewCacheKey(previewPath, adaptiveLoad, iconPackId, hslOverride));
+    if (it == m_installedPreviewCache.end() || !it->second)
+        return nullptr;
+
+    std::lock_guard<std::mutex> lk(it->second->mutex);
+    if (it->second->phase != PreviewPhase::Ready || !it->second->hasContrastMask
+        || !it->second->contrastMask.valid())
+        return nullptr;
+    return &it->second->contrastMask;
+}
+
+bool ThemeShopScreen::selectedIconPackIsColour() const {
+    if (!isIconsTab())
+        return false;
+    const auto* entry = selectedThemeShopEntry();
+    return entry && entry->colourPack;
+}
+
+bool ThemeShopScreen::showSelectedIconTintControls() const {
+    if (!isIconsTab())
+        return false;
+    const auto* entry = selectedThemeShopEntry();
+    return entry && entry->installed;
+}
+
+bool ThemeShopScreen::selectedIconShowsHueSat() const {
+    if (!selectedIconCustomTint())
+        return false;
+    // Grayscale (alone or with Flatten) hides H/S; L stays.
+    return !selectedIconPackTint().grayscale;
+}
+
+ThemeShopScreen::IconPackTintState ThemeShopScreen::iconPackTintFor(const std::string& packId) const {
+    auto it = m_iconPackTints.find(packId.empty() ? "default" : packId);
+    if (it != m_iconPackTints.end())
+        return it->second;
+    return {};
+}
+
+ThemeShopScreen::IconPackTintState& ThemeShopScreen::selectedIconPackTint() {
+    if (m_draftTintActive)
+        return m_draftTint;
+    const auto* entry = selectedThemeShopEntry();
+    const std::string id = (entry && !entry->id.empty()) ? entry->id : "default";
+    return m_iconPackTints[id];
+}
+
+const ThemeShopScreen::IconPackTintState& ThemeShopScreen::selectedIconPackTint() const {
+    if (m_draftTintActive)
+        return m_draftTint;
+    const auto* entry = selectedThemeShopEntry();
+    const std::string id = (entry && !entry->id.empty()) ? entry->id : "default";
+    auto it = m_iconPackTints.find(id);
+    if (it != m_iconPackTints.end())
+        return it->second;
+    static const IconPackTintState kDefault{};
+    return kDefault;
+}
+
+void ThemeShopScreen::beginIconPackTintDraft() {
+    if (!showSelectedIconTintControls()) {
+        discardIconPackTintDraft();
+        return;
+    }
+    const auto* entry = selectedThemeShopEntry();
+    m_draftTintPackId = (entry && !entry->id.empty()) ? entry->id : "default";
+    m_draftTint = iconPackTintFor(m_draftTintPackId);
+    m_draftTintActive = true;
+    m_tintSliderHoldTime = 0.f;
+}
+
+void ThemeShopScreen::discardIconPackTintDraft() {
+    // Remember draft (toggle + sliders) in Theme Shop when closing with B.
+    // Do not emit to HOME chrome - that still waits for Apply.
+    if (m_draftTintActive && !m_draftTintPackId.empty())
+        m_iconPackTints[m_draftTintPackId] = m_draftTint;
+    m_draftTintActive = false;
+    m_draftTintPackId.clear();
+    m_draftTint = {};
+    m_tintSliderHoldTime = 0.f;
+}
+
+void ThemeShopScreen::commitDraftIconPackTint() {
+    if (!m_draftTintActive)
+        return;
+    const std::string id = m_draftTintPackId.empty() ? "default" : m_draftTintPackId;
+    m_iconPackTints[id] = m_draftTint;
+    emitIconPackTint(id, m_draftTint);
+    std::string coverFilter;
+    if (const auto* entry = selectedThemeShopEntry())
+        coverFilter = entry->coverPath;
+    invalidateIconPackPreviews(coverFilter);
+    discardIconPackTintDraft();
+}
+
+void ThemeShopScreen::emitIconPackTint(const std::string& packId, const IconPackTintState& tint) {
+    if (m_iconPackTintCb)
+        m_iconPackTintCb(packId, tint);
+}
+
+bool ThemeShopScreen::applyMatchThemePivotsToTint(IconPackTintState& tint,
+                                                 const std::string& meanSamplePath) const {
+    if (!m_themeMatchAccentValid)
+        return false;
+    float meanH = 0.f, meanS = 0.45f, meanL = 0.55f;
+    if (!meanSamplePath.empty())
+        switchu::icons::probeIconMeanHsl(meanSamplePath, meanH, meanS, meanL);
+    float accentH = m_themeMatchAccentH;
+    float accentS = m_themeMatchAccentS;
+    float accentL = m_themeMatchAccentL;
+    // Prefer cursor-like accent when theme accent is near-black with no chroma.
+    if (accentS < 0.05f && accentL < 0.08f) {
+        accentS = std::max(accentS, 0.45f);
+        accentL = std::max(accentL, 0.45f);
+    }
+    const auto pivots = switchu::icons::computeMatchThemePivots(
+        meanH, meanS, meanL, accentH, accentS, accentL);
+    tint.enabled = true;
+    tint.grayscale = false;
+    tint.matchTheme = true;
+    tint.hue = pivots.hue;
+    tint.sat = pivots.sat;
+    tint.light = pivots.light;
+    return true;
+}
+
+void ThemeShopScreen::setIconCustomTintEnabled(bool enabled) {
+    auto& tint = selectedIconPackTint();
+    if (tint.enabled == enabled)
+        return;
+    tint.enabled = enabled;
+    if (!enabled)
+        tint.matchTheme = false;
+}
+
+void ThemeShopScreen::setIconMatchThemeEnabled(bool enabled) {
+    auto& tint = selectedIconPackTint();
+    if (enabled) {
+        std::string samplePath;
+        if (const auto* entry = selectedThemeShopEntry())
+            samplePath = entry->coverPath;
+        if (!applyMatchThemePivotsToTint(tint, samplePath)) {
+            // Still enable Custom tint so the user can edit; Match stays off.
+            tint.enabled = true;
+            tint.matchTheme = false;
+            tint.grayscale = false;
+        }
+    } else {
+        if (!tint.matchTheme)
+            return;
+        // Leave auto-adjusted HSL as the Custom tint starting point.
+        tint.matchTheme = false;
+        tint.enabled = true;
+    }
+    // Persist Match immediately so theme switches keep the mode (and HOME
+    // rematch) even if the user has not pressed Apply yet.
+    if (m_draftTintActive && !m_draftTintPackId.empty()) {
+        m_iconPackTints[m_draftTintPackId] = tint;
+        emitIconPackTint(m_draftTintPackId, tint);
+        std::string coverFilter;
+        if (const auto* entry = selectedThemeShopEntry())
+            coverFilter = entry->coverPath;
+        invalidateIconPackPreviews(coverFilter);
+    }
+}
+
+void ThemeShopScreen::setIconFlattenEnabled(bool enabled) {
+    auto& tint = selectedIconPackTint();
+    if (tint.flatten == enabled)
+        return;
+    tint.flatten = enabled;
+    // Solid keeps the pack's mean hue now — do not seed Light to 0/1 (that
+    // forced black-on-Light / white-on-Dark and made L feel broken).
+    if (tint.matchTheme) {
+        std::string samplePath;
+        if (const auto* entry = selectedThemeShopEntry())
+            samplePath = entry->coverPath;
+        applyMatchThemePivotsToTint(tint, samplePath);
+    }
+}
+
+void ThemeShopScreen::setIconGrayscaleEnabled(bool enabled) {
+    auto& tint = selectedIconPackTint();
+    if (tint.grayscale == enabled)
+        return;
+    tint.grayscale = enabled;
+    if (enabled)
+        tint.matchTheme = false;
+}
+
+void ThemeShopScreen::maybeSeedFlattenLightDefault() {
+    // No-op: Solid no longer forces theme-polarity black/white.
+}
+
+void ThemeShopScreen::setIconTintHue(float hue01) {
+    hue01 = std::clamp(hue01, 0.f, 1.f);
+    auto& tint = selectedIconPackTint();
+    if (std::fabs(tint.hue - hue01) < 0.0005f)
+        return;
+    tint.hue = hue01;
+    tint.matchTheme = false;
+}
+
+void ThemeShopScreen::setIconTintSat(float sat01) {
+    sat01 = std::clamp(sat01, 0.f, 1.f);
+    auto& tint = selectedIconPackTint();
+    if (std::fabs(tint.sat - sat01) < 0.0005f)
+        return;
+    tint.sat = sat01;
+    tint.matchTheme = false;
+}
+
+void ThemeShopScreen::setIconTintLight(float light01) {
+    light01 = std::clamp(light01, 0.f, 1.f);
+    auto& tint = selectedIconPackTint();
+    if (std::fabs(tint.light - light01) < 0.0005f)
+        return;
+    tint.light = light01;
+    tint.matchTheme = false;
+}
+
+void ThemeShopScreen::nudgeIconTintHue(float delta) {
+    float hue = selectedIconPackTint().hue + delta;
+    hue -= std::floor(hue);
+    setIconTintHue(hue);
+}
+
+void ThemeShopScreen::nudgeIconTintSat(float delta) {
+    setIconTintSat(selectedIconPackTint().sat + delta);
+}
+
+void ThemeShopScreen::nudgeIconTintLight(float delta) {
+    setIconTintLight(selectedIconPackTint().light + delta);
+}
+
+switchu::icons::HslAdjust ThemeShopScreen::hslAdjustFromTint(const IconPackTintState& tint) const {
+    switchu::icons::HslAdjust adj;
+    adj.enabled = tint.enabled;
+    adj.flatten = tint.flatten;
+    adj.grayscale = tint.grayscale;
+    adj.hue = std::clamp(tint.hue, 0.f, 1.f);
+    adj.sat = std::clamp(tint.sat, 0.f, 1.f);
+    adj.light = std::clamp(tint.light, 0.f, 1.f);
+    return adj;
+}
+
+switchu::icons::HslAdjust ThemeShopScreen::hslAdjustForPack(const std::string& packId) const {
+    // Committed tint only - Icons grid + HOME stay frozen while drafting.
+    return hslAdjustFromTint(iconPackTintFor(packId));
+}
+
+void ThemeShopScreen::updateTintSliderAnalog(float dt) {
+    if (!m_input || !m_detailOpen || !selectedIconCustomTint())
+        return;
+    if (m_detailFocusArea != DetailFocusArea::TintHue
+        && m_detailFocusArea != DetailFocusArea::TintSat
+        && m_detailFocusArea != DetailFocusArea::TintLight)
+        return;
+
+    // Stick only here - D-pad uses discrete steps in handleCustomNavLeft/Right.
+    // Stick magnitude = walk→run; hold time adds a light accel curve.
+    float axis = m_input->leftStickX();
+
+    constexpr float kDead = 0.16f;
+    if (std::fabs(axis) < kDead) {
+        m_tintSliderHoldTime = 0.f;
+        return;
+    }
+
+    m_tintSliderHoldTime += dt;
+    const float mag = std::clamp((std::fabs(axis) - kDead) / (1.f - kDead), 0.f, 1.f);
+    // Walk→run from stick throw; hold accel ramps slower and caps lower.
+    const float speed = 0.14f + mag * mag * 1.40f;
+    const float accel = 1.f + std::min(1.55f, m_tintSliderHoldTime * 0.42f);
+    const float delta = std::copysign(speed * accel * dt, axis);
+
+    if (m_detailFocusArea == DetailFocusArea::TintHue)
+        nudgeIconTintHue(delta);
+    else if (m_detailFocusArea == DetailFocusArea::TintSat)
+        nudgeIconTintSat(delta);
+    else
+        nudgeIconTintLight(delta);
+}
+
+void ThemeShopScreen::invalidateIconPackPreviews(const std::string& coverPathFilter) {
+    // Soft invalidate only — Texture::~Texture waitIdle's. Only mark slots that
+    // need a new HSL bake Idle; do not zero hslKey (that forced a decode storm
+    // and starved Community cover fetches).
+    for (auto& entry : m_installedPreviewCache) {
+        if (!entry.second)
+            continue;
+        std::lock_guard<std::mutex> lk(entry.second->mutex);
+        if (!entry.second->adaptiveRequested)
+            continue;
+        if (!coverPathFilter.empty()
+            && entry.second->url != coverPathFilter
+            && entry.first.find(coverPathFilter) == std::string::npos)
+            continue;
+        entry.second->cancelled = true;
+        entry.second->pixels.clear();
+        entry.second->maskPixels.clear();
+        if (entry.second->phase == PreviewPhase::Loading
+            || entry.second->phase == PreviewPhase::Downloaded) {
+            entry.second->phase = entry.second->texture.valid()
+                ? PreviewPhase::Ready : PreviewPhase::Idle;
+        } else if (entry.second->phase == PreviewPhase::Ready) {
+            // Keep stale GPU frame; next prime sees hslKey mismatch and reloads.
+            entry.second->phase = PreviewPhase::Idle;
+        }
+        entry.second->cancelled = false;
+    }
+}
+
+void ThemeShopScreen::pausePreviewWorkForSleep() {
+    // Cancel workers only — do not destroy textures (Texture dtor waitIdle can
+    // wedge the GPU path if sleep/wake is already delicate).
+    for (auto& entry : m_installedPreviewCache) {
+        if (!entry.second)
+            continue;
+        std::lock_guard<std::mutex> lk(entry.second->mutex);
+        entry.second->cancelled = true;
+        entry.second->pixels.clear();
+        entry.second->maskPixels.clear();
+        if (entry.second->phase == PreviewPhase::Loading
+            || entry.second->phase == PreviewPhase::Downloaded)
+            entry.second->phase = entry.second->texture.valid()
+                ? PreviewPhase::Ready : PreviewPhase::Idle;
+    }
+    for (auto& entry : m_communityPreviewCache) {
+        if (!entry.second)
+            continue;
+        std::lock_guard<std::mutex> lk(entry.second->mutex);
+        entry.second->cancelled = true;
+        entry.second->bytes.clear();
+        if (entry.second->phase == PreviewPhase::Loading
+            || entry.second->phase == PreviewPhase::Downloaded)
+            entry.second->phase = entry.second->texture.valid()
+                ? PreviewPhase::Ready : PreviewPhase::Idle;
+    }
+    m_hasPendingInstalledPreviewWork = false;
+    m_hasPendingCommunityPreviewWork = false;
+}
+
+void ThemeShopScreen::primeInstalledPreview(const std::string& previewPath,
+                                            bool adaptiveLoad,
+                                            const std::string& iconPackId,
+                                            const switchu::icons::HslAdjust* hslOverride,
+                                            int maxSide) {
     if (!m_gpu || !m_renderer || previewPath.empty())
         return;
 
-    auto& slot = m_installedPreviewCache[previewPath];
+    const int decodeSide = maxSide > 0 ? maxSide : kCommunityPreviewGridMaxSide;
+
+    const switchu::icons::HslAdjust hsl = adaptiveLoad
+        ? (hslOverride ? *hslOverride : hslAdjustForPack(iconPackId))
+        : switchu::icons::HslAdjust{};
+    const bool hasPres = hsl.enabled || hsl.flatten || hsl.grayscale;
+    const std::uint32_t hslKey = adaptiveLoad && hasPres
+        ? ((hsl.enabled ? 1u : 0u) << 26)
+          | ((hsl.flatten ? 1u : 0u) << 25)
+          | ((hsl.grayscale ? 1u : 0u) << 24)
+          | (static_cast<std::uint32_t>(std::lround(hsl.hue * 255.f)) << 16)
+          | (static_cast<std::uint32_t>(std::lround(hsl.sat * 255.f)) << 8)
+          | static_cast<std::uint32_t>(std::lround(hsl.light * 255.f))
+        : 0u;
+
+    // Key by path + HSL so draft detail previews don't overwrite grid cards.
+    const std::string cacheKey =
+        installedPreviewCacheKey(previewPath, adaptiveLoad, iconPackId, hslOverride);
+    auto& slot = m_installedPreviewCache[cacheKey];
     if (!slot)
         slot = std::make_shared<PreviewImageState>();
 
-    const int maxSide = isPreviewSheetPath(previewPath)
-        ? kPreviewSheetMaxSide : kCommunityPreviewMaxSide;
-
     {
         std::lock_guard<std::mutex> lk(slot->mutex);
-        if (slot->url != previewPath) {
+        const bool identityChanged = slot->url != previewPath
+            || slot->adaptiveRequested != adaptiveLoad
+            || slot->hslKey != hslKey;
+        // Never downgrade a Ready/in-flight higher-res decode (grid 512 after
+        // fullscreen 720 was thrashing waitIdle every open/close).
+        const bool needsUpgrade = !identityChanged
+            && decodeSide > slot->maxSide
+            && (slot->phase == PreviewPhase::Ready
+                || slot->phase == PreviewPhase::Failed
+                || slot->phase == PreviewPhase::Idle);
+        if (identityChanged || needsUpgrade) {
+            // Keep the last GPU frame while HSL rematches / Match theme Apply —
+            // destroying textures waitIdle's and was hitching Community after.
+            const bool sameImage = slot->texture.valid()
+                && slot->url == previewPath
+                && slot->adaptiveRequested == adaptiveLoad;
+            const bool keepStale = sameImage || (hslOverride != nullptr && slot->texture.valid());
+            // Coalesce: if a draft decode is already running, cancel it and wait
+            // for Idle/Ready. Next frame primes once with the latest HSL — not
+            // dozens of overlapping decodes per second while scrubbing.
+            if (hslOverride
+                && (slot->phase == PreviewPhase::Loading
+                    || slot->phase == PreviewPhase::Downloaded)) {
+                slot->cancelled = true;
+                slot->maxSide = std::max(slot->maxSide, decodeSide);
+                return;
+            }
+            slot->cancelled = true; // drop any in-flight decode for this slot
             slot->url = previewPath;
+            slot->adaptiveRequested = adaptiveLoad;
+            slot->hslKey = hslKey;
+            slot->maxSide = decodeSide;
             slot->phase = PreviewPhase::Idle;
             slot->failureCount = 0;
+            slot->adaptive = keepStale ? slot->adaptive : false;
+            slot->hasContrastMask = keepStale ? slot->hasContrastMask : false;
+            slot->pixelW = 0;
+            slot->pixelH = 0;
+            slot->pixels.clear();
+            slot->maskPixels.clear();
+            slot->future = std::future<void>();
             slot->cancelled = false;
-            slot->decoded = nxui::DecodedImage();
-            slot->texture = nxui::Texture();
+            if (!keepStale) {
+                slot->texture = nxui::Texture();
+                slot->contrastMask = nxui::Texture();
+            }
+        } else if (slot->maxSide < decodeSide) {
+            slot->maxSide = decodeSide;
         }
-        // Loading is a worker already on it and Downloaded is pixels waiting for
-        // the next frame to upload them. Neither wants a second task.
-        if (slot->phase != PreviewPhase::Idle)
+        if (slot->phase == PreviewPhase::Ready || slot->phase == PreviewPhase::Failed
+            || slot->phase == PreviewPhase::Loading || slot->phase == PreviewPhase::Downloaded)
             return;
-        slot->cancelled = false;
+    }
+
+    // Prefer async decode so page flips don't hitch the UI thread. A cover
+    // stored as compressed blocks (.dds) keeps the synchronous route below:
+    // only loadFromFile knows to send it to the DDS loader.
+    if (m_threadPool && !isBlockCompressedPath(previewPath)) {
+        int inFlight = 0;
+        for (const auto& entry : m_installedPreviewCache) {
+            if (!entry.second) continue;
+            std::lock_guard<std::mutex> lk(entry.second->mutex);
+            // Only active decodes — Downloaded slots are waiting on GPU upload.
+            if (entry.second->phase == PreviewPhase::Loading)
+                ++inFlight;
+        }
+        if (inFlight >= kMaxInstalledPreviewDecodesInFlight)
+            return;
+
+        bool shouldStart = false;
+        {
+            std::lock_guard<std::mutex> lk(slot->mutex);
+            if (slot->phase == PreviewPhase::Idle) {
+                // pausePreviewWorkForSleep / pauseInstalledPreviewDecodes leave
+                // cancelled=true on Idle slots with no texture. Starting a new
+                // decode without clearing it makes the worker immediately fall
+                // back to Idle — endless "decode start" spam (BOTW / Minimalist).
+                if (slot->failureCount >= 4) {
+                    slot->phase = PreviewPhase::Failed;
+                    return;
+                }
+                slot->cancelled = false;
+                slot->phase = PreviewPhase::Loading;
+                shouldStart = true;
+            }
+        }
+        if (!shouldStart)
+            return;
+
+        m_hasPendingInstalledPreviewWork = true;
+        DebugLog::log("[themeshop] installed preview decode start: %s side=%d", previewPath.c_str(), decodeSide);
+        const std::string pathCopy = previewPath;
+        const bool adaptiveCopy = adaptiveLoad;
+        const switchu::icons::HslAdjust hslCopy = hsl;
+        const bool hasPresCopy = hasPres;
+        const int sideCopy = decodeSide;
+        const std::uint32_t expectedHslKey = hslKey;
+        slot->future = m_threadPool->submit([slot, pathCopy, adaptiveCopy, hslCopy, hasPresCopy,
+                                             sideCopy, expectedHslKey]() {
+            try {
+                {
+                    std::lock_guard<std::mutex> lk(slot->mutex);
+                    if (slot->cancelled || slot->hslKey != expectedHslKey) {
+                        // Must leave Loading or scrub cancel + sleep leave the
+                        // slot stuck and every later prime coalesces forever.
+                        if (slot->phase == PreviewPhase::Loading) {
+                            if (slot->texture.valid()) {
+                                slot->phase = PreviewPhase::Ready;
+                            } else {
+                                slot->failureCount += 1;
+                                slot->phase = (slot->failureCount >= 4)
+                                    ? PreviewPhase::Failed
+                                    : PreviewPhase::Idle;
+                            }
+                        }
+                        return;
+                    }
+                }
+
+                bool ok = false;
+                bool adaptive = false;
+                int pw = 0, ph = 0;
+                std::vector<std::uint8_t> pixels;
+                std::vector<std::uint8_t> maskPixels;
+
+                if (adaptiveCopy) {
+                    switchu::icons::DecodedAdaptiveIcon decoded;
+                    ok = switchu::icons::decodeMaybeAdaptiveIcon(
+                        pathCopy, decoded, sideCopy,
+                        hasPresCopy ? &hslCopy : nullptr,
+                        /*wantContrastMask=*/true);
+                    if (ok) {
+                        adaptive = decoded.adaptive;
+                        pw = decoded.w;
+                        ph = decoded.h;
+                        pixels = std::move(decoded.rgba);
+                        maskPixels = std::move(decoded.contrastMask);
+                    }
+                } else {
+                    switchu::icons::DecodedAdaptiveIcon decoded;
+                    // Reuse decoder without adaptive/HSL - still gets maxSide downscale.
+                    ok = switchu::icons::decodeMaybeAdaptiveIcon(
+                        pathCopy, decoded, sideCopy, nullptr, false);
+                    if (ok) {
+                        pw = decoded.w;
+                        ph = decoded.h;
+                        pixels = std::move(decoded.rgba);
+                    }
+                }
+
+                std::lock_guard<std::mutex> lk(slot->mutex);
+                if (slot->cancelled || slot->hslKey != expectedHslKey) {
+                    slot->pixels.clear();
+                    slot->maskPixels.clear();
+                    // Superseded draft scrub / sleep cancel: free the slot so the
+                    // next prime can start with the latest HSL key.
+                    if (slot->phase == PreviewPhase::Loading) {
+                        if (slot->texture.valid()) {
+                            slot->phase = PreviewPhase::Ready;
+                        } else {
+                            slot->failureCount += 1;
+                            slot->phase = (slot->failureCount >= 4)
+                                ? PreviewPhase::Failed
+                                : PreviewPhase::Idle;
+                        }
+                    }
+                    return;
+                }
+                if (!ok || pixels.empty()) {
+                    slot->failureCount += 1;
+                    slot->phase = PreviewPhase::Failed;
+                    slot->pixels.clear();
+                    slot->maskPixels.clear();
+                    DebugLog::log("[themeshop] installed preview decode failed: %s",
+                                  pathCopy.c_str());
+                    return;
+                }
+                slot->adaptive = adaptive;
+                slot->hasContrastMask = !maskPixels.empty();
+                slot->pixelW = pw;
+                slot->pixelH = ph;
+                slot->pixels = std::move(pixels);
+                slot->maskPixels = std::move(maskPixels);
+                slot->failureCount = 0;
+                slot->phase = PreviewPhase::Downloaded;
+            } catch (const std::exception& ex) {
+                std::lock_guard<std::mutex> lk(slot->mutex);
+                if (slot->cancelled) {
+                    if (slot->phase == PreviewPhase::Loading)
+                        slot->phase = slot->texture.valid()
+                            ? PreviewPhase::Ready : PreviewPhase::Idle;
+                    return;
+                }
+                slot->pixels.clear();
+                slot->maskPixels.clear();
+                slot->failureCount += 1;
+                slot->phase = PreviewPhase::Failed;
+                DebugLog::log("[themeshop] installed preview decode failed: %s", ex.what());
+            } catch (...) {
+                std::lock_guard<std::mutex> lk(slot->mutex);
+                if (slot->cancelled) {
+                    if (slot->phase == PreviewPhase::Loading)
+                        slot->phase = slot->texture.valid()
+                            ? PreviewPhase::Ready : PreviewPhase::Idle;
+                    return;
+                }
+                slot->pixels.clear();
+                slot->maskPixels.clear();
+                slot->failureCount += 1;
+                slot->phase = PreviewPhase::Failed;
+            }
+        });
+        return;
+    }
+
+    // No thread pool - keep previous synchronous path.
+    {
+        std::lock_guard<std::mutex> lk(slot->mutex);
         slot->phase = PreviewPhase::Loading;
     }
 
-    // No pool, or a format the decoder does not handle: keep the original
-    // synchronous path rather than leaving the card blank forever. decodeFile
-    // is stb_image, and loadFromFile is the one that knows to route a DDS to
-    // the compressed-block loader.
-    if (!m_threadPool || isBlockCompressedPath(previewPath)) {
-        nxui::Texture uploaded;
-        bool ok = uploaded.loadFromFile(*m_gpu, *m_renderer, previewPath, maxSide);
-        std::lock_guard<std::mutex> lk(slot->mutex);
-        if (ok) {
-            slot->texture = std::move(uploaded);
-            slot->phase = PreviewPhase::Ready;
-            slot->failureCount = 0;
-        } else {
-            slot->phase = PreviewPhase::Failed;
-            slot->failureCount += 1;
-        }
-        return;
+    nxui::Texture uploaded;
+    nxui::Texture contrastMask;
+    bool adaptive = false;
+    bool ok = false;
+    if (adaptiveLoad) {
+        ok = switchu::icons::loadMaybeAdaptiveIcon(uploaded, *m_gpu, *m_renderer,
+                                                   previewPath, &adaptive,
+                                                   decodeSide,
+                                                   nullptr,
+                                                   &contrastMask,
+                                                   hasPres ? &hsl : nullptr);
+    } else {
+        ok = uploaded.loadFromFile(*m_gpu, *m_renderer, previewPath, decodeSide);
     }
 
-    // One decode at a time.
-    //
-    // Submitting all five covers at once measured worse than the synchronous
-    // version it replaced: the opening frame fell from 287.738 ms to 110.553 ms
-    // of content, but a 1,414.1 ms frame appeared right behind it. stbi_load
-    // allocates the image at its full source size before the downscale, two
-    // pool workers hold one of those each, and the decoded results then queued
-    // up waiting to upload -- on a process already sitting at 429.5 MB of
-    // 457.9 MB. The old path was slow but only ever held one of these buffers,
-    // and freed it before reading the next file.
-    //
-    // Serialised, the transient cost is strictly lower than what the render
-    // thread used to pay, and it is no longer paid in the frame.
-    int decodesInFlight = 0;
-    for (const auto& cached : m_installedPreviewCache) {
-        if (!cached.second || cached.second == slot)
-            continue;
-        std::lock_guard<std::mutex> lk(cached.second->mutex);
-        if (cached.second->phase == PreviewPhase::Loading)
-            ++decodesInFlight;
+    std::lock_guard<std::mutex> lk(slot->mutex);
+    if (ok) {
+        slot->texture = std::move(uploaded);
+        slot->adaptive = adaptive;
+        slot->hasContrastMask = contrastMask.valid();
+        slot->contrastMask = std::move(contrastMask);
+        slot->phase = PreviewPhase::Ready;
+        slot->failureCount = 0;
+    } else {
+        slot->adaptive = false;
+        slot->hasContrastMask = false;
+        slot->phase = PreviewPhase::Failed;
+        slot->failureCount += 1;
     }
-    if (decodesInFlight >= kMaxInstalledPreviewDecodesInFlight) {
-        // Back to Idle so the next frame asks again. The grid calls this every
-        // frame for every card it draws, so no queue of its own is needed.
-        std::lock_guard<std::mutex> lk(slot->mutex);
-        if (slot->phase == PreviewPhase::Loading)
-            slot->phase = PreviewPhase::Idle;
-        return;
-    }
-
-    m_hasPendingInstalledPreviewWork = true;
-    auto state = slot;
-    slot->future = m_threadPool->submit([state, previewPath, maxSide]() {
-        nxui::DecodedImage image = nxui::Texture::decodeFile(previewPath, maxSide);
-        std::lock_guard<std::mutex> lk(state->mutex);
-        // Dropped while it was decoding. The pixels go, and the phase is left
-        // where the cancelling side put it.
-        if (state->cancelled)
-            return;
-        if (!image.valid()) {
-            state->phase = PreviewPhase::Failed;
-            state->failureCount += 1;
-            return;
-        }
-        state->decoded = std::move(image);
-        state->phase = PreviewPhase::Downloaded;
-    });
 }
 
-// The render-thread half. Uploading decoded pixels is microseconds, but it is
-// still the one step that has to touch the GPU from this thread, so it is
-// capped per frame the way the community uploads are.
 void ThemeShopScreen::syncFinishedInstalledPreviewLoads() {
     if (!m_gpu || !m_renderer || !m_hasPendingInstalledPreviewWork)
         return;
 
     bool hasPendingWork = false;
-
+    int uploadsThisFrame = 0;
     for (auto& entry : m_installedPreviewCache) {
         auto state = entry.second;
         if (!state)
@@ -698,122 +1453,142 @@ void ThemeShopScreen::syncFinishedInstalledPreviewLoads() {
                     std::lock_guard<std::mutex> lk(state->mutex);
                     state->phase = PreviewPhase::Failed;
                     state->failureCount += 1;
-                    state->decoded = nxui::DecodedImage();
+                    state->pixels.clear();
+                    state->maskPixels.clear();
                     DebugLog::log("[themeshop] installed preview task failed: %s", ex.what());
                 } catch (...) {
                     std::lock_guard<std::mutex> lk(state->mutex);
                     state->phase = PreviewPhase::Failed;
                     state->failureCount += 1;
-                    state->decoded = nxui::DecodedImage();
-                    DebugLog::log("[themeshop] installed preview task failed: unknown error");
+                    state->pixels.clear();
+                    state->maskPixels.clear();
                 }
             } else {
                 hasPendingWork = true;
-                continue;
             }
         }
 
-        nxui::DecodedImage image;
+        std::vector<std::uint8_t> pixels;
+        std::vector<std::uint8_t> maskPixels;
+        int pw = 0, ph = 0;
+        bool adaptive = false;
+        bool hasMask = false;
         {
             std::lock_guard<std::mutex> lk(state->mutex);
-            if (state->phase != PreviewPhase::Downloaded)
-                continue;
-            // Moved, not copied. Unlike a community preview, whose compressed
-            // bytes are worth keeping so it can come back without the network,
-            // this one is already on the card: re-reading it is a file open.
-            image = std::move(state->decoded);
-            state->decoded = nxui::DecodedImage();
+            if (state->phase == PreviewPhase::Downloaded) {
+                // Scrub cancel: drop superseded pixels; keep last texture on screen.
+                if (state->cancelled) {
+                    state->pixels.clear();
+                    state->maskPixels.clear();
+                    state->phase = state->texture.valid() ? PreviewPhase::Ready
+                                                         : PreviewPhase::Idle;
+                } else if (uploadsThisFrame >= previewUploadsBudgetThisFrame()) {
+                    hasPendingWork = true;
+                } else {
+                    pixels = std::move(state->pixels);
+                    maskPixels = std::move(state->maskPixels);
+                    pw = state->pixelW;
+                    ph = state->pixelH;
+                    adaptive = state->adaptive;
+                    hasMask = state->hasContrastMask;
+                    state->pixels.clear();
+                    state->maskPixels.clear();
+                }
+            } else if (state->phase == PreviewPhase::Loading) {
+                hasPendingWork = true;
+            }
         }
 
-        // Uploaded the same frame it is ready, with no per-frame cap. The cap
-        // the community uploads use is there to spread network arrivals; here
-        // only one decode exists at a time, and holding its pixels for a later
-        // frame is exactly the retained megabytes that made the first opening
-        // stall. The upload itself is microseconds.
+        if (pixels.empty() || pw <= 0 || ph <= 0)
+            continue;
+
+        ++uploadsThisFrame;
         nxui::Texture uploaded;
-        bool ok = uploaded.loadFromDecoded(*m_gpu, *m_renderer, image);
+        nxui::Texture contrastMask;
+        const bool ok = uploaded.loadFromPixels(*m_gpu, *m_renderer, pixels.data(), pw, ph);
+        if (ok && hasMask && !maskPixels.empty())
+            contrastMask.loadFromPixels(*m_gpu, *m_renderer, maskPixels.data(), pw, ph);
+
         std::lock_guard<std::mutex> lk(state->mutex);
         if (ok) {
             state->texture = std::move(uploaded);
-            state->phase = PreviewPhase::Ready;
+            state->contrastMask = std::move(contrastMask);
+            state->adaptive = adaptive;
+            state->hasContrastMask = contrastMask.valid();
             state->failureCount = 0;
+            state->phase = PreviewPhase::Ready;
         } else {
+            state->failureCount = 8;
             state->phase = PreviewPhase::Failed;
-            state->failureCount += 1;
-            DebugLog::log("[themeshop] previa instalada nao subiu (%dx%d): imagem em %.1f de %.1f MB",
-                          image.width, image.height,
-                          m_gpu->imageMemoryUsed() / 1048576.0,
-                          nxui::GpuDevice::imageBudget() / 1048576.0);
+            DebugLog::log("[themeshop] installed preview upload skipped (GPU budget): %dx%d", pw, ph);
         }
     }
 
     m_hasPendingInstalledPreviewWork = hasPendingWork;
 }
 
-void ThemeShopScreen::clearInstalledPreviewCache() {
+void ThemeShopScreen::trimInstalledPreviewCache() {
     if (m_installedPreviewCache.empty())
         return;
 
-    if (m_gpu)
-        m_gpu->waitIdle();
-
-    // A worker may still hold this state through its shared_ptr. Retiring the
-    // texture here, on the thread that owns the GPU, is what keeps a decode
-    // finishing late from destroying an image behind the render thread's back.
-    for (auto& entry : m_installedPreviewCache) {
-        auto& state = entry.second;
-        if (!state)
-            continue;
-
-        std::lock_guard<std::mutex> lk(state->mutex);
-        state->cancelled = true;
-        state->decoded = nxui::DecodedImage();
-        state->texture = nxui::Texture();
+    // Keep current page ±1 and the open detail key; drop the rest without waitIdle.
+    std::unordered_set<std::string> retain;
+    const bool icons = isIconsTab();
+    const auto& entries = icons ? m_iconPackEntries : m_themeShopEntries;
+    const int scroll = icons ? m_iconPackScrollRow : m_installedScrollRow;
+    const int start = std::max(0, (scroll - 1) * kCommunityPreviewGridCols);
+    const int end = std::min((int)entries.size(),
+                             (scroll + kInstalledPreviewCachePages) * kCommunityPreviewGridCols);
+    for (int i = start; i < end; ++i) {
+        const auto& e = entries[(size_t)i];
+        if (e.coverPath.empty()) continue;
+        const std::string packId = icons ? e.id : std::string{};
+        retain.insert(installedPreviewCacheKey(e.coverPath, icons, packId, nullptr));
     }
-
-    m_installedPreviewCache.clear();
-    m_hasPendingInstalledPreviewWork = false;
-}
-
-// Publishing the installed list used to drop every cached preview, and the list
-// is republished each time the sidebar opens the Theme Shop. That made the
-// decode above unavoidable on every single opening, not only the first one.
-// Keep what the new list still refers to; only what left the list goes.
-void ThemeShopScreen::pruneInstalledPreviewCache(const std::vector<ThemeShopEntry>& entries) {
-    if (m_installedPreviewCache.empty())
-        return;
-
-    std::unordered_set<std::string> retained;
-    for (const auto& entry : entries) {
-        if (!entry.coverPath.empty())
-            retained.insert(entry.coverPath);
-    }
-
-    bool willErase = false;
-    for (const auto& entry : m_installedPreviewCache) {
-        if (retained.find(entry.first) == retained.end()) {
-            willErase = true;
-            break;
+    if (m_detailOpen) {
+        const auto* sel = selectedThemeShopEntry();
+        if (sel && !sel->coverPath.empty()) {
+            const std::string packId = icons ? sel->id : std::string{};
+            if (icons && showSelectedIconTintControls()) {
+                // Always keep the #draft slot while tint controls are open —
+                // including when every toggle is off (identity / original look).
+                auto draft = hslAdjustFromTint(selectedIconPackTint());
+                retain.insert(installedPreviewCacheKey(sel->coverPath, true, packId, &draft));
+            }
+            retain.insert(installedPreviewCacheKey(sel->coverPath, icons, packId, nullptr));
         }
     }
-    if (!willErase)
-        return;
 
-    if (m_gpu)
-        m_gpu->waitIdle();
-
-    for (auto it = m_installedPreviewCache.begin(); it != m_installedPreviewCache.end();) {
-        if (retained.find(it->first) != retained.end()) {
+    constexpr int kMaxDropsPerCall = 2;
+    int erased = 0;
+    for (auto it = m_installedPreviewCache.begin();
+         it != m_installedPreviewCache.end() && erased < kMaxDropsPerCall; ) {
+        if (retain.find(it->first) != retain.end()) {
             ++it;
             continue;
         }
         if (it->second) {
             std::lock_guard<std::mutex> lk(it->second->mutex);
+            // Don't drop in-flight decodes mid-flight - let them finish then GC later.
+            if (it->second->phase == PreviewPhase::Loading
+                || it->second->phase == PreviewPhase::Downloaded) {
+                ++it;
+                continue;
+            }
             it->second->cancelled = true;
-            it->second->decoded = nxui::DecodedImage();
-            it->second->texture = nxui::Texture();
+            it->second->pixels.clear();
+            it->second->maskPixels.clear();
+            // Soft demote: keep GPU frame. Erasing a live Texture waitIdle's and
+            // was part of the Community first-focus hitch after Match storms.
+            if (it->second->texture.valid()) {
+                it->second->phase = PreviewPhase::Ready;
+                ++it;
+                continue;
+            }
+            it->second->contrastMask = nxui::Texture();
         }
         it = m_installedPreviewCache.erase(it);
+        ++erased;
     }
 }
 
@@ -867,6 +1642,7 @@ void ThemeShopScreen::primeCommunityPreview(const std::string& previewPath) {
         // so nothing on the next page could start. That reads as a broken
         // preview, not as a busy one.
         std::lock_guard<std::mutex> lk(state->mutex);
+        // Only active HTTP/disk loads — Downloaded awaits GPU upload.
         if (state->phase == PreviewPhase::Loading)
             ++inFlightDownloads;
     }
@@ -888,41 +1664,85 @@ void ThemeShopScreen::primeCommunityPreview(const std::string& previewPath) {
         return;
 
     m_hasPendingCommunityPreviewWork = true;
-    slot->future = m_threadPool->submit([slot, url]() {
+    // An animated theme's preview sheet is a grid of frames, not a photo:
+    // shrinking it to the shelf size shrinks every cell with it and the
+    // fullscreen turns into a mosaic. It is generated at the right size, so it
+    // decodes whole (fork); covers and screenshots use PoloNX's grid budget.
+    const int decodeSide = isPreviewSheetPath(url) ? kPreviewSheetMaxSide
+                                                   : kCommunityPreviewGridMaxSide;
+    slot->future = m_threadPool->submit([slot, url, decodeSide]() {
         try {
             {
                 std::lock_guard<std::mutex> lk(slot->mutex);
-                if (slot->cancelled)
+                if (slot->cancelled) {
+                    if (slot->phase == PreviewPhase::Loading)
+                        slot->phase = slot->texture.valid() ? PreviewPhase::Ready
+                                                           : PreviewPhase::Idle;
                     return;
+                }
             }
 
-            std::vector<std::uint8_t> bytes = themeshop::http::getBytes(url);
+            std::vector<std::uint8_t> bytes;
+            if (!themeshop::preview::loadCommunityDiskCache(url, bytes)) {
+                bytes = themeshop::http::getBytes(url);
+                if (!bytes.empty())
+                    themeshop::preview::saveCommunityDiskCache(url, bytes);
+            }
+
+            std::vector<std::uint8_t> pixels;
+            int pw = 0, ph = 0;
+            const bool decoded = !bytes.empty()
+                && decodeCommunityCoverPixels(bytes, decodeSide, pixels, pw, ph);
+            bytes.clear();
+
             std::lock_guard<std::mutex> lk(slot->mutex);
             if (slot->cancelled) {
                 slot->bytes.clear();
+                slot->pixels.clear();
+                // Free the Loading slot so the next prime can restart.
+                if (slot->phase == PreviewPhase::Loading)
+                    slot->phase = slot->texture.valid() ? PreviewPhase::Ready
+                                                       : PreviewPhase::Idle;
                 return;
             }
-            slot->bytes = std::move(bytes);
-            if (slot->bytes.empty()) {
+            slot->bytes.clear();
+            if (!decoded || pixels.empty() || pw <= 0 || ph <= 0) {
+                slot->pixels.clear();
+                slot->pixelW = 0;
+                slot->pixelH = 0;
                 slot->failureCount += 1;
                 slot->phase = PreviewPhase::Failed;
             } else {
+                slot->pixels = std::move(pixels);
+                slot->pixelW = pw;
+                slot->pixelH = ph;
+                slot->maxSide = decodeSide;
                 slot->failureCount = 0;
                 slot->phase = PreviewPhase::Downloaded;
             }
         } catch (const std::exception& ex) {
             std::lock_guard<std::mutex> lk(slot->mutex);
-            if (slot->cancelled)
+            if (slot->cancelled) {
+                if (slot->phase == PreviewPhase::Loading)
+                    slot->phase = slot->texture.valid() ? PreviewPhase::Ready
+                                                       : PreviewPhase::Idle;
                 return;
+            }
             slot->bytes.clear();
+            slot->pixels.clear();
             slot->failureCount += 1;
             slot->phase = PreviewPhase::Failed;
             DebugLog::log("[themeshop] preview fetch failed: %s", ex.what());
         } catch (...) {
             std::lock_guard<std::mutex> lk(slot->mutex);
-            if (slot->cancelled)
+            if (slot->cancelled) {
+                if (slot->phase == PreviewPhase::Loading)
+                    slot->phase = slot->texture.valid() ? PreviewPhase::Ready
+                                                       : PreviewPhase::Idle;
                 return;
+            }
             slot->bytes.clear();
+            slot->pixels.clear();
             slot->failureCount += 1;
             slot->phase = PreviewPhase::Failed;
             DebugLog::log("[themeshop] preview fetch failed: unknown error");
@@ -934,17 +1754,99 @@ void ThemeShopScreen::primeCommunityPreview(const ThemeCatalogClient::Entry& ent
     primeCommunityPreview(gridPreviewPathOf(entry));
 }
 
+int ThemeShopScreen::previewUploadsBudgetThisFrame() const {
+    // During the shelf slide, push a few more GPU uploads so a cold landing
+    // page settles inside the animation (decode already happened off-thread).
+    if (m_pageSlideAnim.value() > 0.05f)
+        return std::max(3, kMaxPreviewUploadsPerFrame);
+    return kMaxPreviewUploadsPerFrame;
+}
+
+void ThemeShopScreen::primeVisibleInstalledPreviews() {
+    if ((!isInstalledTab() && !isIconsTab()) || !m_gpu || !m_renderer)
+        return;
+
+    const bool icons = isIconsTab();
+    const auto& entries = icons ? m_iconPackEntries : m_themeShopEntries;
+    if (entries.empty())
+        return;
+
+    const int scroll = currentScrollRowRef();
+    const int pageStart = scroll * kCommunityPreviewGridCols;
+    const int pageEnd = std::min(static_cast<int>(entries.size()),
+                                 pageStart + kCommunityPreviewEntriesPerPage);
+    // Prefetch ±1 page (2 visible rows each) so the next ZL/ZR lands warm.
+    const int preStart = std::max(0, (scroll - kCommunityPreviewVisibleRows) * kCommunityPreviewGridCols);
+    const int preEnd = std::min(static_cast<int>(entries.size()),
+                                (scroll + kCommunityPreviewVisibleRows * 2) * kCommunityPreviewGridCols);
+
+    auto primeEntry = [&](int index) {
+        if (index < 0 || index >= static_cast<int>(entries.size()))
+            return;
+        const auto& entry = entries[static_cast<std::size_t>(index)];
+        if (!entry.coverUrl.empty()) {
+            primeCommunityPreview(entry.coverUrl);
+            return;
+        }
+        if (entry.coverPath.empty())
+            return;
+        const std::string packId = icons ? entry.id : std::string{};
+        primeInstalledPreview(entry.coverPath, icons, packId, nullptr, kCommunityPreviewGridMaxSide);
+    };
+
+    for (int i = pageStart; i < pageEnd; ++i)
+        primeEntry(i);
+    for (int i = preStart; i < preEnd; ++i)
+        primeEntry(i);
+    // Do NOT prime the entire shelf every frame — that decode-stormed the
+    // thread pool (logs: atmos/Default Dark spam) and starved Community covers.
+}
+
 void ThemeShopScreen::primeVisibleCommunityPreviews() {
     if (!isCommunityTab() || m_communityEntries.empty())
         return;
 
+    // Count Loading once — primeCommunityPreview used to re-scan the whole cache
+    // per cover, which went O(n²) when a full-catalog warm was also queued.
+    int inFlightDownloads = 0;
+    for (const auto& entry : m_communityPreviewCache) {
+        if (!entry.second)
+            continue;
+        std::lock_guard<std::mutex> lk(entry.second->mutex);
+        if (entry.second->phase == PreviewPhase::Loading)
+            ++inFlightDownloads;
+    }
+
     std::unordered_set<std::string> queuedUrls;
     auto queuePreview = [&](const std::string& previewPath) {
+        if (inFlightDownloads >= kMaxPreviewDownloadsInFlight)
+            return;
         std::string url = resolveCommunityPreviewUrl(previewPath);
         if (url.empty() || !queuedUrls.emplace(url).second)
             return;
+        auto it = m_communityPreviewCache.find(url);
+        if (it != m_communityPreviewCache.end() && it->second) {
+            std::lock_guard<std::mutex> lk(it->second->mutex);
+            if (it->second->phase != PreviewPhase::Idle
+                && !(it->second->phase == PreviewPhase::Failed && it->second->failureCount < 2))
+                return;
+        }
         primeCommunityPreview(previewPath);
+        // Optimistic: assume a start so we stop queueing at the in-flight cap
+        // without re-scanning the whole cache after every prime.
+        ++inFlightDownloads;
     };
+
+    const int scrollRow = m_communityScrollRow;
+    const int pageStart = scrollRow * kCommunityPreviewGridCols;
+    const int pageEnd = std::min((int)m_communityEntries.size(),
+                                 pageStart + kCommunityPreviewEntriesPerPage);
+
+    // 1) Visible page covers first - never starve these for prefetch.
+    // Esta e a funcao que de fato baixa para a pagina visivel: pede a folha
+    // animada quando o tema tem uma, que e o que a grade desenha (fork).
+    for (int i = pageStart; i < pageEnd; ++i)
+        queuePreview(gridPreviewPathOf(m_communityEntries[(size_t)i]));
 
     const auto* selected = selectedCommunityThemeEntry();
     if (selected) {
@@ -952,118 +1854,157 @@ void ThemeShopScreen::primeVisibleCommunityPreviews() {
             std::string current = currentDetailCommunityPreviewPath();
             if (!current.empty())
                 queuePreview(current);
+        } else {
+            // The grid art the card actually draws: the animated preview sheet
+            // when the theme has one, otherwise the cover (fork).
+            const std::string selectedPath = gridPreviewPathOf(*selected);
+            if (!selectedPath.empty())
+                queuePreview(selectedPath);
         }
-
-        const std::string selectedPath = gridPreviewPathOf(*selected);
-        if (!selectedPath.empty())
-            queuePreview(selectedPath);
     }
 
-    int scrollRow = m_communityScrollRow;
-    int start = scrollRow * kCommunityPreviewGridCols;
-    int end = std::min((int)m_communityEntries.size(), start + kCommunityPreviewEntriesPerPage);
-    for (int i = start; i < end; ++i)
-        // Esta e a funcao que de fato baixa para a pagina visivel, e pedia a
-        // capa. Todo o resto ja usava a folha -- desenho, detalhe, poda,
-        // sincronizacao -- e nada disso adiantava com o download apontando para
-        // outro arquivo. A grade mostrava "indisponivel" ate alguem abrir um
-        // tema, porque so o caminho do detalhe pedia a folha.
+    // 2) Neighbor shelves (±2) after the visible set — cold ZL/ZR lands warm.
+    const int preStart = std::max(0, (scrollRow - kCommunityPreviewVisibleRows * 2) * kCommunityPreviewGridCols);
+    const int preEnd = std::min((int)m_communityEntries.size(),
+                                (scrollRow + kCommunityPreviewVisibleRows * 3) * kCommunityPreviewGridCols);
+    for (int i = preStart; i < preEnd; ++i)
         queuePreview(gridPreviewPathOf(m_communityEntries[(size_t)i]));
+
+    // 3) Detail screenshots last (and only while detail is open).
+    if (selected && m_detailOpen) {
+        for (const auto& shot : selected->screenshots)
+            queuePreview(shot);
+    }
+
+    // Do NOT warm the entire catalog here — that re-primed every cover every
+    // frame (main-thread mutex storm) and made first Community visits hitchy.
 }
 
 void ThemeShopScreen::syncFinishedCommunityPreviewLoads() {
     if (!m_gpu || !m_renderer || !m_hasPendingCommunityPreviewWork)
         return;
 
+    // Prefer uploading the visible shelf (and next shelf mid-slide) before
+    // background neighbor frames so cold flips paint first.
+    std::unordered_set<std::string> preferUpload;
+    if (isCommunityTab() && !m_communityEntries.empty()) {
+        const int scroll = m_communityScrollRow;
+        const int first = scroll * kCommunityPreviewGridCols;
+        const int last = std::min(static_cast<int>(m_communityEntries.size()),
+                                  first + kCommunityPreviewEntriesPerPage);
+        for (int i = first; i < last; ++i) {
+            std::string url = resolveCommunityPreviewUrl(
+                gridPreviewPathOf(m_communityEntries[static_cast<std::size_t>(i)]));
+            if (!url.empty())
+                preferUpload.insert(std::move(url));
+        }
+        if (m_pageSlideAnim.value() > 0.05f) {
+            const int nextFirst = last;
+            const int nextLast = std::min(static_cast<int>(m_communityEntries.size()),
+                                          nextFirst + kCommunityPreviewEntriesPerPage);
+            for (int i = nextFirst; i < nextLast; ++i) {
+                std::string url = resolveCommunityPreviewUrl(
+                    gridPreviewPathOf(m_communityEntries[static_cast<std::size_t>(i)]));
+                if (!url.empty())
+                    preferUpload.insert(std::move(url));
+            }
+        }
+    }
+
     bool hasPendingWork = false;
     int uploadsThisFrame = 0;
-    // So sobe para a GPU o que esta em uso agora. Antes este laco subia
-    // qualquer entrada do cache que tivesse bytes, e o cache guarda ate 64
-    // delas: a poda liberava a textura de uma previa fora da tela, marcava a
-    // entrada como Downloaded para reaproveitar os bytes, e este passo a subia
-    // de novo no quadro seguinte. Liberar e re-subir se alimentavam.
-    //
-    // Medido no console, percorrendo as abas parado: a memoria de imagem subia
-    // 12.7 MB a cada 2 segundos ate 108 MB, e o menu morria. Nao era vazamento
-    // -- a contabilidade devolvia certo -- era o cache inteiro querendo estar
-    // na GPU ao mesmo tempo.
-    const std::unordered_set<std::string> wanted = wantedCommunityPreviewUrls();
-    for (auto& entry : m_communityPreviewCache) {
-        auto state = entry.second;
-        if (!state)
-            continue;
+    const int uploadBudget = previewUploadsBudgetThisFrame();
 
-        if (state->future.valid()) {
-            if (state->future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                try {
-                    state->future.get();
-                } catch (const std::exception& ex) {
-                    std::lock_guard<std::mutex> lk(state->mutex);
-                    state->phase = PreviewPhase::Failed;
-                    state->failureCount += 1;
-                    state->bytes.clear();
-                    DebugLog::log("[themeshop] preview task failed: %s", ex.what());
-                } catch (...) {
-                    std::lock_guard<std::mutex> lk(state->mutex);
-                    state->phase = PreviewPhase::Failed;
-                    state->failureCount += 1;
-                    state->bytes.clear();
-                    DebugLog::log("[themeshop] preview task failed: unknown error");
+    auto pumpFutures = [&](const std::shared_ptr<PreviewImageState>& state) {
+        if (!state || !state->future.valid())
+            return;
+        if (state->future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            try {
+                state->future.get();
+            } catch (const std::exception& ex) {
+                std::lock_guard<std::mutex> lk(state->mutex);
+                state->phase = PreviewPhase::Failed;
+                state->failureCount += 1;
+                state->bytes.clear();
+                state->pixels.clear();
+                DebugLog::log("[themeshop] preview task failed: %s", ex.what());
+            } catch (...) {
+                std::lock_guard<std::mutex> lk(state->mutex);
+                state->phase = PreviewPhase::Failed;
+                state->failureCount += 1;
+                state->bytes.clear();
+                state->pixels.clear();
+                DebugLog::log("[themeshop] preview task failed: unknown error");
+            }
+        } else {
+            hasPendingWork = true;
+        }
+    };
+
+    auto tryUpload = [&](const std::string& key,
+                         const std::shared_ptr<PreviewImageState>& state,
+                         bool preferredOnly) {
+        if (!state)
+            return;
+        if (preferredOnly && !preferUpload.empty() && preferUpload.find(key) == preferUpload.end())
+            return;
+
+        pumpFutures(state);
+
+        std::vector<std::uint8_t> pixels;
+        int pw = 0, ph = 0;
+        {
+            std::lock_guard<std::mutex> lk(state->mutex);
+            if (state->phase == PreviewPhase::Downloaded) {
+                if (uploadsThisFrame >= uploadBudget) {
+                    hasPendingWork = true;
+                    return;
                 }
-            } else {
+                pixels = std::move(state->pixels);
+                pw = state->pixelW;
+                ph = state->pixelH;
+                state->pixels.clear();
+                state->bytes.clear();
+            } else if (state->phase == PreviewPhase::Loading) {
                 hasPendingWork = true;
             }
         }
 
-        std::vector<std::uint8_t> bytes;
-        {
-            std::lock_guard<std::mutex> lk(state->mutex);
-            if (state->phase == PreviewPhase::Downloaded) {
-                if (wanted.find(entry.first) == wanted.end()) {
-                    // Fora de uso: os bytes ficam, a textura nao nasce. Quando
-                    // voltar a ser preciso, sobe sem ir a rede.
-                } else if (uploadsThisFrame >= kMaxPreviewUploadsPerFrame) {
-                    hasPendingWork = true;
-                } else {
-                    // Copied, not moved. The compressed bytes are what lets a
-                    // preview come back without going to the network again;
-                    // they are tens of kilobytes against the megabyte the
-                    // decoded texture occupies, so they are the half worth
-                    // keeping when the texture has to go.
-                    bytes = state->bytes;
-                }
-            }
-        }
-
-        if (bytes.empty())
-            continue;
+        if (pixels.empty() || pw <= 0 || ph <= 0)
+            return;
 
         ++uploadsThisFrame;
         nxui::Texture uploaded;
-        bool ok = uploaded.loadFromMemory(*m_gpu, *m_renderer, bytes.data(), bytes.size(),
-                                          isPreviewSheetPath(state->url)
-                                              ? kPreviewSheetMaxSide : kCommunityPreviewMaxSide);
+        const bool ok = uploaded.loadFromPixels(*m_gpu, *m_renderer, pixels.data(), pw, ph);
         std::lock_guard<std::mutex> lk(state->mutex);
         if (ok) {
             state->texture = std::move(uploaded);
             state->failureCount = 0;
             state->phase = PreviewPhase::Ready;
         } else {
-            state->failureCount += 1;
-            state->phase = PreviewPhase::Failed;
-            // Sem esta linha a previa some sem deixar rastro: os bytes chegaram,
-            // a decodificacao passou, e o que falhou foi a alocacao de imagem --
-            // que so escreve no stderr, onde nada le. O relato vira "captura
-            // indisponivel" e o log nao tem uma palavra sobre o assunto.
-            //
-            // Com o fundo animado como padrao, 71 dos 112 MB de imagem ja estao
-            // gastos antes de a loja abrir, entao os numeros vao junto.
-            DebugLog::log("[themeshop] previa nao subiu (%zu KB): imagem em %.1f de %.1f MB",
-                          bytes.size() / 1024,
+            // Keep decoded pixels for a retry next frame instead of re-fetching.
+            state->pixels = std::move(pixels);
+            state->pixelW = pw;
+            state->pixelH = ph;
+            state->phase = PreviewPhase::Downloaded;
+            hasPendingWork = true;
+            // Sem esta linha a previa some sem deixar rastro (fork): a falha e a
+            // alocacao de imagem, que so escreve no stderr. Os numeros vao junto.
+            DebugLog::log("[themeshop] community preview upload skipped (GPU budget, %dx%d): imagem em %.1f de %.1f MB",
+                          pw, ph,
                           m_gpu->imageMemoryUsed() / 1048576.0,
                           nxui::GpuDevice::imageBudget() / 1048576.0);
         }
+    };
+
+    // Pass 1: visible (preferred) covers.
+    if (!preferUpload.empty()) {
+        for (auto& entry : m_communityPreviewCache)
+            tryUpload(entry.first, entry.second, true);
     }
+    // Pass 2: everything else (neighbors / leftovers).
+    for (auto& entry : m_communityPreviewCache)
+        tryUpload(entry.first, entry.second, false);
 
     m_hasPendingCommunityPreviewWork = hasPendingWork;
 }
@@ -1072,9 +2013,7 @@ void ThemeShopScreen::clearCommunityPreviewCache() {
     if (m_communityPreviewCache.empty())
         return;
 
-    if (m_gpu)
-        m_gpu->waitIdle();
-
+    // Avoid device-wide waitIdle on tab hide - cancel + drop textures instead.
     for (auto& entry : m_communityPreviewCache) {
         auto& state = entry.second;
         if (!state)
@@ -1083,124 +2022,184 @@ void ThemeShopScreen::clearCommunityPreviewCache() {
         std::lock_guard<std::mutex> lk(state->mutex);
         state->cancelled = true;
         state->bytes.clear();
+        state->pixels.clear();
+        state->maskPixels.clear();
         state->texture = nxui::Texture();
+        state->contrastMask = nxui::Texture();
+        state->phase = PreviewPhase::Idle;
     }
 
     m_communityPreviewCache.clear();
     m_hasPendingCommunityPreviewWork = false;
 }
 
-// O que esta em uso neste instante: a pagina visivel, o selecionado e, com o
-// detalhe aberto, a imagem que ele mostra. Uma regra so, porque ter duas foi o
-// que produziu a maioria dos defeitos desta tela -- pedir por um caminho e
-// reter por outro apaga exatamente o que acabou de chegar.
-std::unordered_set<std::string> ThemeShopScreen::wantedCommunityPreviewUrls() const {
-    std::unordered_set<std::string> urls;
-    auto want = [&](const std::string& previewPath) {
-        std::string url = resolveCommunityPreviewUrl(previewPath);
-        if (!url.empty())
-            urls.insert(std::move(url));
-    };
+void ThemeShopScreen::clearInstalledPreviewCache() {
+    if (m_installedPreviewCache.empty())
+        return;
 
-    int start = m_communityScrollRow * kCommunityPreviewGridCols;
-    int end = std::min((int)m_communityEntries.size(), start + kCommunityPreviewEntriesPerPage);
-    for (int i = start; i < end; ++i)
-        want(gridPreviewPathOf(m_communityEntries[(size_t)i]));
+    for (auto& entry : m_installedPreviewCache) {
+        auto& state = entry.second;
+        if (!state)
+            continue;
 
-    if (const auto* selected = selectedCommunityThemeEntry()) {
-        want(gridPreviewPathOf(*selected));
-        if (m_detailOpen)
-            want(currentDetailCommunityPreviewPath());
+        std::lock_guard<std::mutex> lk(state->mutex);
+        state->cancelled = true;
+        state->bytes.clear();
+        state->pixels.clear();
+        state->maskPixels.clear();
+        state->texture = nxui::Texture();
+        state->contrastMask = nxui::Texture();
+        state->phase = PreviewPhase::Idle;
     }
-    return urls;
+
+    m_installedPreviewCache.clear();
+    m_hasPendingInstalledPreviewWork = false;
 }
 
-void ThemeShopScreen::trimCommunityPreviewCache() {
+void ThemeShopScreen::releasePreviewCachesOnHide() {
+    const std::size_t community = m_communityPreviewCache.size();
+    const std::size_t installed = m_installedPreviewCache.size();
+    if (community == 0 && installed == 0)
+        return;
+
+    clearCommunityPreviewCache();
+    clearInstalledPreviewCache();
+    DebugLog::log("[themeshop] preview caches hard-released on hide: community=%zu installed=%zu (Frame Tap headroom)",
+                  community, installed);
+}
+
+void ThemeShopScreen::trimCommunityPreviewCache(bool pressure) {
     if (m_communityPreviewCache.empty())
         return;
 
-    if (!isCommunityTab()) {
-        clearCommunityPreviewCache();
+    // Hold neighborhood covers when possible. Logs (19:24) showed max=36
+    // thrashing Ready 38→36 with waitIdle destroys — next shelves got cold again
+    // so first visits stayed slower than revisited pages.
+    // Under pressure (shop hidden / remount room for Frame Tap): keep only the
+    // current shelf neighborhood so Applet-pool free climbs back toward ~40 MB.
+    const std::size_t kMaxReadyCommunityPreviews = pressure
+        ? std::max<std::size_t>(12u, static_cast<std::size_t>(kCommunityPreviewGridCols) * 3u)
+        : std::max<std::size_t>(
+              48u,
+              static_cast<std::size_t>(kCommunityPreviewEntriesPerPage) * 4u);
+    // Hysteresis: only start dropping once we are meaningfully over budget.
+    const std::size_t kTrimStart = pressure
+        ? kMaxReadyCommunityPreviews
+        : (kMaxReadyCommunityPreviews + 8u);
+    // Texture::~Texture waitIdle's - drip; pressure may drop a few more/tick.
+    const int kMaxDropsPerCall = pressure ? 3 : 1;
+
+    // Cheap ready count first — callers used to rebuild a full-catalog preferred
+    // set every frame even when nothing needed trimming.
+    std::size_t readyCount = 0;
+    for (const auto& entry : m_communityPreviewCache) {
+        if (!entry.second) continue;
+        std::lock_guard<std::mutex> lk(entry.second->mutex);
+        if (entry.second->phase == PreviewPhase::Ready)
+            ++readyCount;
+    }
+    if (readyCount <= kTrimStart)
         return;
+
+    std::unordered_set<std::string> preferred;
+    auto prefer = [&](const std::string& previewPath) {
+        std::string url = resolveCommunityPreviewUrl(previewPath);
+        if (!url.empty())
+            preferred.insert(std::move(url));
+    };
+
+    // Pin visible + neighbor shelves (and open detail), not the whole catalog —
+    // pinning everything made trim a no-op while preferred-set build stayed O(n).
+    const int scroll = std::max(0, m_communityScrollRow);
+    const int first = std::max(0, (scroll - 1) * kCommunityPreviewGridCols);
+    const int last = (scroll + 2) * kCommunityPreviewGridCols;
+    for (int i = first; i < last && i < static_cast<int>(m_communityEntries.size()); ++i)
+        prefer(gridPreviewPathOf(m_communityEntries[static_cast<std::size_t>(i)]));
+    // Keep page 1 warm for first focus / reset.
+    for (int i = 0; i < kCommunityPreviewEntriesPerPage
+             && i < static_cast<int>(m_communityEntries.size()); ++i)
+        prefer(gridPreviewPathOf(m_communityEntries[static_cast<std::size_t>(i)]));
+    if (const auto* selected = selectedCommunityThemeEntry()) {
+        prefer(gridPreviewPathOf(*selected));
+        if (m_detailOpen)
+            prefer(currentDetailCommunityPreviewPath());
     }
 
-    std::unordered_set<std::string> retainedUrls = wantedCommunityPreviewUrls();
-
-
-    bool willErase = false;
-    for (auto it = m_communityPreviewCache.begin(); it != m_communityPreviewCache.end();) {
-        if (retainedUrls.find(it->first) == retainedUrls.end()) {
-            willErase = true;
-            break;
-        }
-        ++it;
-    }
-
-    if (willErase && m_gpu)
-        m_gpu->waitIdle();
-
-    // Leaving a page used to erase the entry outright, which threw away the
-    // downloaded bytes along with the texture -- so paging back fetched the
-    // same image over the network a second time. Now the texture goes and the
-    // bytes stay: the picture comes straight back, and the GPU memory it was
-    // holding is still released, which is what the eviction was for.
-    //
-    // Bounded so a large catalogue does not accumulate indefinitely. Past the
-    // cap the old behaviour applies and the entry is dropped for real.
     int erased = 0;
-    int retainedBytes = 0;
-    for (auto it = m_communityPreviewCache.begin(); it != m_communityPreviewCache.end();) {
-        if (retainedUrls.find(it->first) != retainedUrls.end()) {
+    for (auto it = m_communityPreviewCache.begin();
+         it != m_communityPreviewCache.end()
+             && readyCount > kMaxReadyCommunityPreviews
+             && erased < kMaxDropsPerCall; ) {
+        if (preferred.find(it->first) != preferred.end()) {
             ++it;
             continue;
         }
-
-        bool keepBytes = false;
-        if (it->second) {
+        if (!it->second) {
+            it = m_communityPreviewCache.erase(it);
+            continue;
+        }
+        bool drop = false;
+        {
             std::lock_guard<std::mutex> lk(it->second->mutex);
-            const bool hasBytes = !it->second->bytes.empty();
-            const bool settled = it->second->phase == PreviewPhase::Ready
-                              || it->second->phase == PreviewPhase::Downloaded;
-            keepBytes = hasBytes && settled && retainedBytes < kMaxCachedPreviewBytesEntries;
-            if (keepBytes) {
-                // Back to Downloaded: the upload step picks it up again when
-                // the preview is next needed, without a request.
-                //
-                // And it has to be told there is work, because that step is
-                // gated on a flag that only the download path used to raise.
-                // Without this the revived entry sits at Downloaded forever and
-                // the preview reads as loading and never arrives -- which is
-                // exactly what this cache change first shipped as.
+            if (it->second->phase == PreviewPhase::Ready) {
                 it->second->texture = nxui::Texture();
-                it->second->phase = PreviewPhase::Downloaded;
-                m_hasPendingCommunityPreviewWork = true;
-                ++retainedBytes;
-            } else {
-                it->second->cancelled = true;
-                it->second->bytes.clear();
-                it->second->texture = nxui::Texture();
+                it->second->phase = PreviewPhase::Idle;
+                it->second->failureCount = 0;
+                drop = true;
+                --readyCount;
+            } else if (it->second->phase == PreviewPhase::Failed) {
+                drop = true;
+            } else if (it->second->phase == PreviewPhase::Loading
+                       || it->second->phase == PreviewPhase::Downloaded) {
+                ++it;
+                continue;
             }
         }
-
-        if (keepBytes) {
-            ++it;
-        } else {
+        if (drop) {
             it = m_communityPreviewCache.erase(it);
             ++erased;
+        } else {
+            ++it;
         }
     }
 
     if (erased > 0) {
-        DebugLog::log("[themeshop] preview cache trimmed: erased=%d retained=%zu",
-                      erased,
-                      m_communityPreviewCache.size());
+        DebugLog::log("[themeshop] preview cache soft-trim%s: erased=%d size=%zu ready=%zu",
+                      pressure ? " (pressure)" : "",
+                      erased, m_communityPreviewCache.size(), readyCount);
     }
+}
+
+void ThemeShopScreen::pauseInstalledPreviewDecodes() {
+    // Free thread-pool slots for Community cover fetches when entering that tab.
+    for (auto& entry : m_installedPreviewCache) {
+        if (!entry.second)
+            continue;
+        std::lock_guard<std::mutex> lk(entry.second->mutex);
+        if (entry.second->phase != PreviewPhase::Loading
+            && entry.second->phase != PreviewPhase::Downloaded)
+            continue;
+        entry.second->cancelled = true;
+        entry.second->pixels.clear();
+        entry.second->maskPixels.clear();
+        entry.second->phase = entry.second->texture.valid()
+            ? PreviewPhase::Ready : PreviewPhase::Idle;
+    }
+    m_hasPendingInstalledPreviewWork = false;
 }
 
 void ThemeShopScreen::syncCommunityCatalog(const ThemeCatalogClient::Snapshot& snapshot) {
     m_communityTransferState = snapshot.loading;
     m_allCommunityEntries = snapshot.entries;
     m_communityRevision = snapshot.revision;
+    const bool iconsChanged = m_catalogIconEntries.size() != snapshot.icons.size()
+        || !std::equal(m_catalogIconEntries.begin(), m_catalogIconEntries.end(),
+                       snapshot.icons.begin(),
+                       [](const ThemeCatalogClient::IconEntry& lhs,
+                          const ThemeCatalogClient::IconEntry& rhs) {
+                           return lhs.id == rhs.id && lhs.version == rhs.version;
+                       });
+    m_catalogIconEntries = snapshot.icons;
 
     std::unordered_set<std::string> validUrls;
     for (const auto& entry : m_allCommunityEntries) {
@@ -1255,6 +2254,11 @@ void ThemeShopScreen::syncCommunityCatalog(const ThemeCatalogClient::Snapshot& s
 
     if (!hasId(m_communitySelectedId))
         m_communitySelectedId = m_communityEntries.front().id;
+
+    // The Icons tab lists catalog packs too, so let the app rebuild it once the
+    // icon list actually changed (install/remove/refresh).
+    if (iconsChanged && m_iconCatalogUpdatedCb)
+        m_iconCatalogUpdatedCb();
 }
 
 void ThemeShopScreen::pollMusicDownloads() {

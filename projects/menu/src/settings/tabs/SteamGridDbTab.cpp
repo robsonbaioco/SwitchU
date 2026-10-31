@@ -31,6 +31,74 @@ SettingsScreen::Tab settings::tabs::SteamGridDbTab::build(SettingsScreen& screen
     };
     tab.items.push_back(std::move(enabled));
 
+    // Per-view switches under the master toggle. The fork's setting rows have
+    // no indent/disabled state, so they simply do nothing while the master
+    // toggle is off.
+    auto addViewToggle = [&](const char* labelKey, const char* label,
+                             const char* descKey, const char* desc,
+                             bool& flag) {
+        SettingItem item;
+        item.type = ItemType::Toggle;
+        item.label = i18n.tr(labelKey, label);
+        item.description = i18n.tr(descKey, desc);
+        item.boolVal = flag;
+        item.anim01 = item.boolVal ? 1.f : 0.f;
+        item.onChange = [&screen, &flag](SettingItem& self) {
+            flag = self.boolVal;
+            if (screen.m_steamGridDbViewFlagsCb) {
+                screen.m_steamGridDbViewFlagsCb(screen.m_steamGridDbShowInGrid,
+                                                screen.m_steamGridDbShowInDynamicLine,
+                                                screen.m_steamGridDbShowInFolders);
+            }
+        };
+        tab.items.push_back(std::move(item));
+    };
+
+    addViewToggle("settings.steamgriddb.show_grid", "Show on grid menu",
+                  "settings.steamgriddb.show_grid_desc",
+                  "Hero backdrop behind the standard HOME grid.",
+                  screen.m_steamGridDbShowInGrid);
+    addViewToggle("settings.steamgriddb.show_line", "Show on single-row menu",
+                  "settings.steamgriddb.show_line_desc",
+                  "Hero backdrop behind the single-row carousel.",
+                  screen.m_steamGridDbShowInDynamicLine);
+    addViewToggle("settings.steamgriddb.show_folders", "Show inside folders",
+                  "settings.steamgriddb.show_folders_desc",
+                  "Artwork while browsing games inside an open folder.",
+                  screen.m_steamGridDbShowInFolders);
+
+    SettingItem poster;
+    poster.type = ItemType::Toggle;
+    poster.label = i18n.tr("settings.steamgriddb.show_poster_line",
+                           "Show Poster artwork in single-row view");
+    poster.description = i18n.tr("settings.steamgriddb.show_poster_line_desc",
+        "Use tall SteamGridDB covers on the carousel. Grid layout stays on icons.");
+    poster.boolVal = screen.m_steamGridDbShowPosterInDynamicLine;
+    poster.anim01 = poster.boolVal ? 1.f : 0.f;
+    poster.onChange = [&screen](SettingItem& self) {
+        screen.m_steamGridDbShowPosterInDynamicLine = self.boolVal;
+        if (screen.m_steamGridDbPosterInLineCb)
+            screen.m_steamGridDbPosterInLineCb(self.boolVal);
+    };
+    tab.items.push_back(std::move(poster));
+
+    SettingItem logo;
+    logo.type = ItemType::Toggle;
+    logo.label = i18n.tr("settings.steamgriddb.show_logo_line",
+                         "Show logo in single-row view");
+    logo.description = i18n.tr("settings.steamgriddb.show_logo_line_desc",
+        "Game logo above the carousel. Turn off to keep only the hero and covers.");
+    logo.boolVal = screen.m_steamGridDbShowLogoInDynamicLine;
+    logo.anim01 = logo.boolVal ? 1.f : 0.f;
+    logo.onChange = [&screen](SettingItem& self) {
+        screen.m_steamGridDbShowLogoInDynamicLine = self.boolVal;
+        if (screen.m_steamGridDbLogoInLineCb)
+            screen.m_steamGridDbLogoInLineCb(self.boolVal);
+    };
+    tab.items.push_back(std::move(logo));
+
+    // Row indices used by onUpdate below.
+    const std::size_t apiKeyIndex = tab.items.size();
     SettingItem apiKey;
     apiKey.type = ItemType::Action;
     apiKey.label = i18n.tr("settings.steamgriddb.api_key", "API key");
@@ -49,7 +117,7 @@ SettingsScreen::Tab settings::tabs::SteamGridDbTab::build(SettingsScreen& screen
     scan.label = i18n.tr("settings.steamgriddb.scan", "Search artwork for missing assets");
     scan.buttonLabel = i18n.tr("button.search", "Search");
     scan.description = i18n.tr("settings.steamgriddb.scan_desc",
-        "Downloads a hero and logo only for applications that do not already have artwork.");
+        "Downloads a hero, logo and cover only for applications that are missing artwork.");
     scan.onChange = [&screen](SettingItem&) {
         if (screen.m_steamGridDbRunning) {
             screen.requestToast(nxui::I18n::instance().tr(
@@ -82,6 +150,7 @@ SettingsScreen::Tab settings::tabs::SteamGridDbTab::build(SettingsScreen& screen
             ? tr.tr("settings.steamgriddb.api_key_set", "Configured (hidden)")
             : tr.tr(kKeyFields[index].hintKey, kKeyFields[index].hint);
     };
+    const std::size_t firstKeyFieldIndex = tab.items.size();
     for (int index = 0; index < 3; ++index) {
         SettingItem field;
         field.type = ItemType::Action;
@@ -94,18 +163,19 @@ SettingsScreen::Tab settings::tabs::SteamGridDbTab::build(SettingsScreen& screen
         tab.items.push_back(std::move(field));
     }
 
-    tab.onUpdate = [keyDescription](SettingsScreen::Tab& current, TabbedOverlayScreen& base) {
+    tab.onUpdate = [keyDescription, apiKeyIndex, firstKeyFieldIndex](
+                       SettingsScreen::Tab& current, TabbedOverlayScreen& base) {
         auto& owner = static_cast<SettingsScreen&>(base);
-        if (current.items.size() < 4) return;
+        if (current.items.size() <= apiKeyIndex) return;
 
-        auto& key = current.items[2];
+        auto& key = current.items[apiKeyIndex];
         key.description = owner.m_steamGridDbHasApiKey
             ? nxui::I18n::instance().tr("settings.steamgriddb.api_key_set", "Configured (hidden)")
             : nxui::I18n::instance().tr("settings.steamgriddb.api_key_optional",
                   "Optional. Heroes and icons work without it; logos need one.");
-        if (current.items.size() < 8) return;
+        if (current.items.size() < firstKeyFieldIndex + 3) return;
         for (int index = 0; index < 3; ++index)
-            current.items[static_cast<std::size_t>(5 + index)].description =
+            current.items[firstKeyFieldIndex + static_cast<std::size_t>(index)].description =
                 keyDescription(owner, index);
     };
 

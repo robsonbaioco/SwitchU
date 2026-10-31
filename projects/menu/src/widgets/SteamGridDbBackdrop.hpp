@@ -7,6 +7,7 @@
 #include <nxui/core/Texture.hpp>
 #include <nxui/widgets/Widget.hpp>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -24,10 +25,26 @@ public:
     void setLayoutMode(AppLayoutMode mode) { m_layoutMode = mode; }
     void setArtworkOpacityScale(float opacityScale) { m_artworkOpacityScale = std::clamp(opacityScale, 0.f, 1.f); }
     float artworkOpacityScale() const { return m_artworkOpacityScale; }
+    // Destroy hero/logo MemBlocks (FT NeedHeadroom). invalidateArtworkCaches
+    // alone keeps GPU textures alive for crossfade reuse.
+    void releaseGpuArtwork();
+    // True when a hero texture is on-screen at meaningful opacity.
+    bool hasDisplayedHero() const;
+    // Average relative luminance of the current hero [0..1], or <0 if none.
+    float displayedHeroLuminance() const;
+    // Screen-space band the logo is centred in (single-row mode only).
+    void setLogoArea(const nxui::Rect& area) { m_logoArea = area; }
+    void setShowLogo(bool show) { m_showLogo = show; }
     void setPreloadTitles(std::vector<std::uint64_t> titleIds);
+    // Pace neighbour hero/logo warm so return soft-land does not dump a burst
+    // of 3.6MB SD reads the moment defer expires. 0 = as soon as free.
+    void setPreloadMinInterval(float seconds);
+    void setPreloadPaused(bool paused);
+    bool isArtworkBusy() const;
     void showTitle(std::uint64_t titleId, bool forceReload = false);
-    // Call after a scan writes new files: everything cached in here was decided
-    // from what was on disk at the time.
+    // Call after a scan writes new files, or whenever SteamGridDB settings change
+    // what is available: drops the uploaded-set ids, decoded images and the list
+    // of titles known to have none, so the next showTitle() re-reads the card.
     void invalidateArtworkCaches();
 
 protected:
@@ -41,6 +58,7 @@ private:
         std::uint64_t titleId = 0;
         bool hasHero = false;
         bool hasLogo = false;
+        float heroLuminance = -1.f;
     };
 
     struct DecodedImage {
@@ -55,6 +73,7 @@ private:
         std::uint64_t titleId = 0;
         std::uint64_t generation = 0;
         long decodeMilliseconds = 0;
+        float heroLuminance = -1.f;
     };
 
     struct DecodeState {
@@ -69,8 +88,10 @@ private:
 
     static DecodedImage decodeImage(const std::string& path, int outputWidth,
                                     int outputHeight, bool fill);
+    static float sampleLuminance(const DecodedImage& image);
     static nxui::Rect fillRect(const nxui::Texture& texture, const nxui::Rect& area);
     static nxui::Rect containRect(const nxui::Texture& texture, const nxui::Rect& area);
+    bool useFullHeroOpacity() const;
     void drawSet(nxui::Renderer& renderer, const ArtworkSet& set, float alpha) const;
     void startPendingDecode(std::uint64_t titleId);
     void beginCrossfade(int nextSet, std::uint64_t titleId);
@@ -93,7 +114,17 @@ private:
     std::vector<DecodedArtwork> m_decodedCache;
     int m_uploadStage = 0;
     bool m_waitForGpuBeforeUpload = false;
+    // Cruise neighbour warm (~0.9 MiB hero reads). 0 = as soon as free (too
+    // aggressive on SD while browsing single-row with heroes).
+    float m_preloadMinInterval = 0.35f;
+    float m_preloadGapSec = 0.f;
+    bool m_preloadPaused = false;
     AppLayoutMode m_layoutMode = AppLayoutMode::Grid;
+    // Band the logo is centred in while single-row mode is active. The app
+    // raises it above the folder title bubble when a folder is open.
+    nxui::Rect m_logoArea{370.f, 149.f, 540.f, 150.f};
+    bool m_showLogo = true;
+    bool m_showPreviousDuringCrossfade = false;
     nxui::AnimatedFloat m_fade{1.f};
     nxui::AnimatedFloat m_artworkOpacity{1.f};
     float m_artworkOpacityScale = 0.50f;

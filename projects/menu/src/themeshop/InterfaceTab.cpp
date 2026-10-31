@@ -4,55 +4,70 @@
 #include <algorithm>
 #include <cmath>
 
-ThemeShopScreen::Tab themeshop::tabs::OptionsTab::build(ThemeShopScreen& screen) {
+// PoloNX split the old Options tab into Sounds (music / SFX / theme music) and
+// Interface. This is the Interface half, merged with everything the fork's
+// Options tab carried: the appearance sliders, the 9-view launcher selector,
+// the fork's grid ranges, Dynamic Pages and the grid reload actions. PoloNX's
+// Cursor Movement / Page Transition selectors are not here: the fork never
+// carried those modes (its grid has its own morph and paging).
+ThemeShopScreen::Tab themeshop::tabs::InterfaceTab::build(ThemeShopScreen& screen) {
     using Tab = ThemeShopScreen::Tab;
     using SettingItem = ThemeShopScreen::SettingItem;
     using ItemType = ThemeShopScreen::ItemType;
     auto& i18n = nxui::I18n::instance();
 
     Tab t;
-    t.name = i18n.tr("themeshop.tabs.options", "Options");
+    t.name = i18n.tr("themeshop.tabs.interface", "Interface");
 
+    // Must stay item 0: onUpdate below refreshes it in place.
     {
         SettingItem it;
-        it.label = i18n.tr("settings.music.menu_music", "Menu Music");
+        const bool ft = screen.m_frameTapLiteEngaged;
+        it.label = ft
+            ? i18n.tr("themeshop.options.frame_tap_engaged", "Frame Tap Engaged")
+            : i18n.tr("themeshop.options.battery_saver", "Battery Saver");
+        it.description = ft
+            ? i18n.tr("themeshop.options.frame_tap_engaged_desc",
+                      "Lite mode is held while Frame Tap is streaming. "
+                      "Disconnect the viewer to change Battery Saver.")
+            : i18n.tr("themeshop.options.battery_saver_desc",
+                      "Lighten HOME memory and GPU use. Also available in Quick Settings.");
         it.type = ItemType::Toggle;
-        it.boolVal = screen.m_musicEnabled;
+        it.boolVal = screen.m_batterySaver || ft;
         it.anim01 = it.boolVal ? 1.f : 0.f;
         it.onChange = [&screen](SettingItem& self) {
-            screen.m_musicEnabled = self.boolVal;
-            if (screen.m_musicEnabledCb) screen.m_musicEnabledCb(self.boolVal);
+            if (screen.m_frameTapLiteEngaged) {
+                // Held on while Frame Tap streams. The fork's SettingItem has no
+                // disabled state, so the toggle snaps back instead.
+                self.boolVal = true;
+                self.anim01 = 1.f;
+                return;
+            }
+            screen.m_batterySaver = self.boolVal;
+            if (screen.m_batterySaverCb) screen.m_batterySaverCb(self.boolVal);
         };
         t.items.push_back(std::move(it));
     }
 
-        {
-        SettingItem it;
-        it.label = i18n.tr("settings.music.music_volume", "Music Volume");
-        it.type = ItemType::Slider;
-        it.floatVal = std::clamp(screen.m_musicVolume, 0.f, 1.f);
-        it.anim01 = it.floatVal;
-        it.onChange = [&screen](SettingItem& self) {
-            self.anim01 = self.floatVal;
-            screen.m_musicVolume = std::clamp(self.floatVal, 0.f, 1.f);
-            if (screen.m_musicVolumeCb) screen.m_musicVolumeCb(screen.m_musicVolume);
-        };
-        t.items.push_back(std::move(it));
-    }
-
-    {
-        SettingItem it;
-        it.label = i18n.tr("settings.music.sfx_volume", "SFX Volume");
-        it.type = ItemType::Slider;
-        it.floatVal = std::clamp(screen.m_sfxVolume, 0.f, 1.f);
-        it.anim01 = it.floatVal;
-        it.onChange = [&screen](SettingItem& self) {
-            self.anim01 = self.floatVal;
-            screen.m_sfxVolume = std::clamp(self.floatVal, 0.f, 1.f);
-            if (screen.m_sfxVolumeCb) screen.m_sfxVolumeCb(screen.m_sfxVolume);
-        };
-        t.items.push_back(std::move(it));
-    }
+    t.onUpdate = [&screen](Tab& tab, TabbedOverlayScreen&) {
+        if (tab.items.empty())
+            return;
+        auto& it = tab.items[0];
+        auto& i18n = nxui::I18n::instance();
+        const bool ft = screen.m_frameTapLiteEngaged;
+        const bool wantOn = screen.m_batterySaver || ft;
+        it.boolVal = wantOn;
+        it.anim01 = wantOn ? 1.f : 0.f;
+        it.label = ft
+            ? i18n.tr("themeshop.options.frame_tap_engaged", "Frame Tap Engaged")
+            : i18n.tr("themeshop.options.battery_saver", "Battery Saver");
+        it.description = ft
+            ? i18n.tr("themeshop.options.frame_tap_engaged_desc",
+                      "Lite mode is held while Frame Tap is streaming. "
+                      "Disconnect the viewer to change Battery Saver.")
+            : i18n.tr("themeshop.options.battery_saver_desc",
+                      "Lighten HOME memory and GPU use. Also available in Quick Settings.");
+    };
 
     {
         SettingItem it;
@@ -102,8 +117,6 @@ ThemeShopScreen::Tab themeshop::tabs::OptionsTab::build(ThemeShopScreen& screen)
         t.items.push_back(std::move(it));
     }
 
-
-
     {
         SettingItem it;
         it.label = i18n.tr("settings.display.launcher_view", "Launcher View");
@@ -145,7 +158,7 @@ ThemeShopScreen::Tab themeshop::tabs::OptionsTab::build(ThemeShopScreen& screen)
         t.items.push_back(std::move(it));
     }
 
-
+    // Fork ranges (3-8 columns, 2-5 rows): setGridLayoutState clamps to these.
     {
         SettingItem it;
         it.label = i18n.tr("settings.display.grid_columns", "Home Grid Columns");
@@ -197,6 +210,57 @@ ThemeShopScreen::Tab themeshop::tabs::OptionsTab::build(ThemeShopScreen& screen)
         it.onChange = [&screen](SettingItem& self) {
             screen.m_dynamicPages = self.boolVal;
             if (screen.m_dynamicPagesCb) screen.m_dynamicPagesCb(self.boolVal);
+        };
+        t.items.push_back(std::move(it));
+    }
+
+    {
+        SettingItem it;
+        it.label = i18n.tr("themeshop.options.sort_large_tiles", "Sort Large Tiles Too");
+        it.description = i18n.tr("themeshop.options.sort_large_tiles_desc",
+                                 "A-Z and Recent also move applications that use a larger tile size.");
+        it.type = ItemType::Toggle;
+        it.boolVal = screen.m_sortLargeTiles;
+        it.anim01 = it.boolVal ? 1.f : 0.f;
+        it.onChange = [&screen](SettingItem& self) {
+            screen.m_sortLargeTiles = self.boolVal;
+            if (screen.m_sortLargeTilesCb) screen.m_sortLargeTilesCb(self.boolVal);
+        };
+        t.items.push_back(std::move(it));
+    }
+
+    {
+        SettingItem it;
+        it.label = i18n.tr("themeshop.options.icon_contrast", "Adaptive icon contrast");
+        it.description = i18n.tr(
+            "themeshop.options.icon_contrast_desc",
+            "In single-row with a hero, colour HOME icons follow the interface light/dark chrome. Without a hero they keep authored colours (or your custom tint).");
+        it.type = ItemType::Toggle;
+        it.boolVal = screen.m_iconContrastAdapt;
+        it.anim01 = it.boolVal ? 1.f : 0.f;
+        it.onChange = [&screen](SettingItem& self) {
+            screen.m_iconContrastAdapt = self.boolVal;
+            if (screen.m_iconContrastAdaptCb)
+                screen.m_iconContrastAdaptCb(self.boolVal);
+        };
+        t.items.push_back(std::move(it));
+    }
+
+    {
+        SettingItem it;
+        it.label = i18n.tr("themeshop.options.action_hints", "Action Hints");
+        it.description = i18n.tr("themeshop.options.action_hints_desc",
+                                 "Choose how contextual controls appear in the bottom-right corner.");
+        it.type = ItemType::Selector;
+        it.options = {
+            i18n.tr("themeshop.options.hint_panel", "Panel"),
+            i18n.tr("themeshop.options.hint_capsules", "Capsules")
+        };
+        it.intVal = std::clamp(screen.m_actionHintStyle, 0, 1);
+        it.onChange = [&screen](SettingItem& self) {
+            screen.m_actionHintStyle = std::clamp(self.intVal, 0, 1);
+            if (screen.m_actionHintStyleCb)
+                screen.m_actionHintStyleCb(screen.m_actionHintStyle);
         };
         t.items.push_back(std::move(it));
     }

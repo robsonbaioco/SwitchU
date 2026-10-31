@@ -5,11 +5,14 @@
 #include <unordered_set>
 #include "settings/TabbedOverlayScreen.hpp"
 #include "core/AppLayoutMode.hpp"
+#include "widgets/AdaptiveIconLoad.hpp"
 
+#include <nxui/core/Input.hpp>
 #include <nxui/core/Texture.hpp>
 
 #include <cstdint>
 #include <algorithm>
+#include <functional>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -21,7 +24,9 @@ class CommunityTab;
 class AnimatedTab;
 class MusicTab;
 class SteamGridDbTab;
-class OptionsTab;
+class IconsTab;
+class SoundsTab;
+class InterfaceTab;
 class UpdateTab;
 class UninstallTab;
 }
@@ -46,6 +51,20 @@ public:
         std::string installPath;
         bool active = false;
         bool removable = false;
+        // Colour glyph pack (spectrum badge + custom tint controls in detail).
+        bool colourPack = false;
+        // Theme ships sidebar/chrome icons (Community/Installed badge).
+        bool hasIcons = false;
+        // Theme ships bundled BGM / SFX folders (Music / Sounds badges).
+        bool hasMusic = false;
+        bool hasSounds = false;
+        // Icon packs: present on the console / shipped with SwitchU / online.
+        bool installed = true;
+        bool builtin = false;
+        bool catalog = false;
+        // Remote preview for catalog packs that are not installed yet.
+        std::string coverUrl;
+        std::string description;
     };
 
     ThemeShopScreen();
@@ -126,9 +145,37 @@ public:
             }
         }
     }
+    void onActionHintStyleChange(IntCb cb) { m_actionHintStyleCb = std::move(cb); }
+    void onSortLargeTilesChange(BoolCb cb) { m_sortLargeTilesCb = std::move(cb); }
+    void onBatterySaverChange(BoolCb cb) { m_batterySaverCb = std::move(cb); }
+    void onIconContrastAdaptChange(BoolCb cb) { m_iconContrastAdaptCb = std::move(cb); }
+    void onThemeMusicOverrideChange(BoolCb cb) { m_themeMusicOverrideCb = std::move(cb); }
+    void onThemeMusicAddToPlaylistChange(BoolCb cb) { m_themeMusicAddToPlaylistCb = std::move(cb); }
+    void onThemeMusicPlayOnApplyChange(BoolCb cb) { m_themeMusicPlayOnApplyCb = std::move(cb); }
+    struct IconPackTintState {
+        bool enabled = false;
+        bool flatten = false;
+        bool grayscale = false;
+        bool matchTheme = false;
+        float hue = 0.5f;
+        float sat = 0.5f;
+        float light = 0.5f;
+    };
+    using IconPackTintCb = std::function<void(const std::string& packId, const IconPackTintState& tint)>;
+    void onIconPackTintChange(IconPackTintCb cb) { m_iconPackTintCb = std::move(cb); }
+    bool detailOpen() const { return m_detailOpen; }
+    // Leave the product sheet and return focus to the shelf grid.
+    void closeDetailView() { closeDetail(); }
+    void setInputSource(const nxui::Input* input) { m_input = input; }
     void onAutoThemeOpen(VoidCb cb) { m_autoThemeOpenCb = std::move(cb); }
     void onNextTrack(VoidCb cb)          { m_nextTrackCb = std::move(cb); }
     void onThemeShopApply(StringCb cb)   { m_themeShopApplyCb = std::move(cb); }
+    void onIconPackApply(StringCb cb)    { m_iconPackApplyCb = std::move(cb); }
+    void onIconPackDownload(StringCb cb) { m_iconPackDownloadCb = std::move(cb); }
+    void onIconPackDownloadApply(StringCb cb) { m_iconPackDownloadApplyCb = std::move(cb); }
+    void onIconPackDelete(StringCb cb)   { m_iconPackDeleteCb = std::move(cb); }
+    // Catalog icons finished (re)loading; the app rebuilds the pack list.
+    void onIconCatalogUpdated(VoidCb cb) { m_iconCatalogUpdatedCb = std::move(cb); }
     void onThemeShopDelete(StringCb cb)  { m_themeShopDeleteCb = std::move(cb); }
     void onThemeShopDownload(StringCb cb) { m_themeShopDownloadCb = std::move(cb); }
     void onThemeShopDownloadInstall(StringCb cb) { m_themeShopDownloadInstallCb = std::move(cb); }
@@ -159,6 +206,34 @@ public:
     void setSteamGridDbOpacity(float v) {
         m_steamGridDbOpacity = std::clamp(v, 0.f, 1.f);
     }
+    void setSortLargeTilesState(bool enabled) { m_sortLargeTiles = enabled; }
+    void setBatterySaverState(bool enabled) { m_batterySaver = enabled; }
+    void setFrameTapLiteEngaged(bool engaged) { m_frameTapLiteEngaged = engaged; }
+    void setIconContrastAdaptState(bool enabled) { m_iconContrastAdapt = enabled; }
+    void setThemeMusicOverrideState(bool enabled) { m_themeMusicOverride = enabled; }
+    void setThemeMusicAddToPlaylistState(bool enabled) { m_themeMusicAddToPlaylist = enabled; }
+    void setThemeMusicPlayOnApplyState(bool enabled) { m_themeMusicPlayOnApply = enabled; }
+    void setIconPackTintState(const std::unordered_map<std::string, IconPackTintState>& tints) {
+        m_iconPackTints = tints;
+    }
+    // Theme accent used by Match theme (app refreshes on theme apply / shop open).
+    void setThemeMatchAccent(float h, float s, float l) {
+        m_themeMatchAccentH = h;
+        m_themeMatchAccentS = s;
+        m_themeMatchAccentL = l;
+        m_themeMatchAccentValid = true;
+    }
+    // Soft-invalidate adaptive icon previews (optional cover-path filter).
+    void invalidateIconPackPreviews(const std::string& coverPathFilter = {});
+    // Cancel in-flight installed/icon decodes so Community can use the pool.
+    void pauseInstalledPreviewDecodes();
+    // Stop in-flight preview workers without destroying GPU textures (sleep-safe).
+    void pausePreviewWorkForSleep();
+    // Persist draft tint (Theme Shop → config/HOME). Call before Apply.
+    void commitDraftIconPackTint();
+    void setActionHintStyleState(const std::string& style) {
+        m_actionHintStyle = style == "panel" ? 0 : 1;
+    }
 
     void setAutoThemeSummary(std::string summary) {
         m_autoThemeSummary = std::move(summary);
@@ -166,7 +241,8 @@ public:
 
     void setThreadPool(nxui::ThreadPool* pool);
     void setRenderContext(nxui::GpuDevice* gpu, nxui::Renderer* renderer);
-    void refreshCommunityCatalog();
+    void show() override;
+    void refreshCommunityCatalog(bool forceNetwork = false);
 
     // Vira a página do catálogo, de onde quer que o foco esteja.
     //
@@ -181,9 +257,20 @@ public:
         if (frames > m_renderDebugFrames)
             m_renderDebugFrames = frames;
     }
+    enum class ShelfMode {
+        Installed = 0,
+        Shop = 1,
+    };
+
+    bool showsCatalogRefresh() const;
+    bool showsShelfBranch() const;
+    ShelfMode activeShelfMode() const;
+    void setActiveShelfMode(ShelfMode mode);
 
     void setThemeShopState(const std::vector<ThemeShopEntry>& entries,
                            const std::string& activeId);
+    void setIconPackState(const std::vector<ThemeShopEntry>& entries,
+                          const std::string& activeId);
     void setPackageTransferState(const ThemeTransferState& state,
                                  std::string themeId,
                                  bool installMode);
@@ -217,13 +304,16 @@ public:
 
     const ThemeCatalogClient::Entry* selectedCommunityThemeEntry() const;
     const ThemeCatalogClient::Entry* findCommunityThemeEntry(const std::string& themeId) const;
+    const std::vector<ThemeCatalogClient::IconEntry>& catalogIconEntries() const {
+        return m_catalogIconEntries;
+    }
     const std::string& communityCatalogUrl() const {
         return m_catalogClient.catalogUrl();
     }
 
 protected:
     void buildTabs() override;
-    bool usesCustomContentLayout() const override { return m_tabIndex <= 3; }
+    bool usesCustomContentLayout() const override { return m_tabIndex <= kMusicTabIndex; }
     bool consumeRenderDiagnosticsFrame() override;
     void drawCustomContent(nxui::Renderer& ren, const nxui::Rect& panel, const nxui::Rect& content, float opacity) override;
     void updateCustomContent(float dt) override;
@@ -235,6 +325,12 @@ protected:
     bool handleCustomNavLeft() override;
     bool handleCustomNavRight() override;
     bool handleCustomTouch(nxui::Input& input, const nxui::Rect& panel, const nxui::Rect& tabs, const nxui::Rect& content) override;
+    float tabBranchExtraHeight(int tabIndex) const override;
+    void drawTabBranch(nxui::Renderer& ren, int tabIndex, const nxui::Rect& branchRect, float opacity) override;
+    bool tabBranchConsumesFocus() const override;
+    bool tabFocusCursorRect(nxui::Rect& outRect) const override;
+    void onTabRailParentActivated(int tabIndex) override;
+    bool onTabRailBranchActivated(int parentTabIndex) override;
     void currentAccessibilityParts(std::string& context,
                                    std::string& position,
                                    std::string& summary,
@@ -246,10 +342,20 @@ private:
     friend class themeshop::tabs::CommunityTab;
     friend class themeshop::tabs::AnimatedTab;
     friend class themeshop::tabs::MusicTab;
-    friend class themeshop::tabs::OptionsTab;
+    friend class themeshop::tabs::IconsTab;
+    friend class themeshop::tabs::SoundsTab;
+    friend class themeshop::tabs::InterfaceTab;
     friend class themeshop::tabs::UpdateTab;
     friend class themeshop::tabs::UninstallTab;
     friend class themeshop::tabs::SteamGridDbTab;
+
+    // Sidebar order. Themes and Icons carry an Installed | Shop branch; the
+    // first four are custom-drawn (see usesCustomContentLayout), the rest are
+    // settings rows: Sounds, Interface, SteamGridDB, Update, Uninstall.
+    static constexpr int kThemesTabIndex = 0;
+    static constexpr int kAnimatedTabIndex = 1;
+    static constexpr int kIconsTabIndex = 2;
+    static constexpr int kMusicTabIndex = 3;
 
     enum class PreviewPhase {
         Idle,
@@ -264,16 +370,20 @@ private:
         PreviewPhase phase = PreviewPhase::Idle;
         int failureCount = 0;
         bool cancelled = false;
+        bool adaptiveRequested = false; // load via AdaptiveIconLoad
+        bool adaptive = false;          // mono result -> tint with chrome
+        bool hasContrastMask = false;   // colour pack coverage twin for chrome follow
+        std::uint32_t hslKey = 0;       // custom-tint fingerprint for cache reuse
+        int maxSide = 0;                // decode budget used for this slot
+        int pixelW = 0;
+        int pixelH = 0;
         std::string url;
-        std::vector<std::uint8_t> bytes;
-        // Pixels an installed preview's worker produced, waiting for the one
-        // step that has to happen on the render thread. Community previews
-        // carry compressed `bytes` instead: theirs arrive from the network and
-        // are worth keeping small, while these come off the card and are only
-        // held for the frame that uploads them.
-        nxui::DecodedImage decoded;
+        std::vector<std::uint8_t> bytes;       // compressed community download
+        std::vector<std::uint8_t> pixels;      // decoded RGBA (installed/icons)
+        std::vector<std::uint8_t> maskPixels;  // optional contrast twin
         std::future<void> future;
         nxui::Texture texture;
+        nxui::Texture contrastMask;
     };
 
     enum class ThemeTouchTarget {
@@ -285,12 +395,26 @@ private:
         GridCard,
         DetailPreviewControl,
         DetailButton,
+        DetailTintToggle,
+        DetailMatchThemeToggle,
+        DetailFlattenToggle,
+        DetailGrayscaleToggle,
+        DetailTintHue,
+        DetailTintSat,
+        DetailTintLight,
         FullscreenPreview,
         DetailBackdrop,
     };
 
     enum class DetailFocusArea {
         Preview,
+        TintToggle,
+        MatchThemeToggle,
+        FlattenToggle,
+        GrayscaleToggle,
+        TintHue,
+        TintSat,
+        TintLight,
         Buttons,
     };
 
@@ -302,7 +426,17 @@ private:
 
     bool pollCommunityCatalog();
     void syncCommunityCatalog(const ThemeCatalogClient::Snapshot& snapshot);
-    bool isCommunityTab() const;
+    // Warm catalog + shelf covers while still on Installed so Community
+    // first-focus / page flips do not pay disk/HTTP bootstrap on the focus frame.
+    void ensureCommunityCatalogWarm();
+    // First shelf + last Community scroll neighborhood (±1 page).
+    void prefetchCommunityShelfNeighborhood();
+    bool isThemesTab() const;
+    bool isCommunityTab() const; // Themes tab + Shop shelf
+    bool isIconsTab() const;
+    bool isInstalledTab() const; // Themes tab + Installed shelf
+    bool isIconsShopMode() const;
+    bool isIconsInstalledMode() const;
     bool isAnimatedTab() const;
     // One line summarising the open tab's whole catalogue: how many themes it
     // has, and what they cost to download and to keep.
@@ -346,19 +480,75 @@ private:
     PreviewPhase communityPreviewPhase(const ThemeCatalogClient::Entry& entry) const;
     const nxui::Texture* communityPreviewTexture(const std::string& previewPath) const;
     const nxui::Texture* communityPreviewTexture(const ThemeCatalogClient::Entry& entry) const;
-    PreviewPhase installedPreviewPhase(const std::string& previewPath) const;
-    const nxui::Texture* installedPreviewTexture(const std::string& previewPath) const;
-    void primeInstalledPreview(const std::string& previewPath);
+    std::string installedPreviewCacheKey(const std::string& previewPath,
+                                         bool adaptiveLoad,
+                                         const std::string& iconPackId,
+                                         const switchu::icons::HslAdjust* hslOverride = nullptr) const;
+    PreviewPhase installedPreviewPhase(const std::string& previewPath,
+                                       bool adaptiveLoad = false,
+                                       const std::string& iconPackId = {},
+                                       const switchu::icons::HslAdjust* hslOverride = nullptr) const;
+    const nxui::Texture* installedPreviewTexture(const std::string& previewPath,
+                                                 bool adaptiveLoad = false,
+                                                 const std::string& iconPackId = {},
+                                                 const switchu::icons::HslAdjust* hslOverride = nullptr) const;
+    bool installedPreviewAdaptive(const std::string& previewPath,
+                                  bool adaptiveLoad = false,
+                                  const std::string& iconPackId = {},
+                                  const switchu::icons::HslAdjust* hslOverride = nullptr) const;
+    const nxui::Texture* installedPreviewContrastMask(const std::string& previewPath,
+                                                      bool adaptiveLoad = false,
+                                                      const std::string& iconPackId = {},
+                                                      const switchu::icons::HslAdjust* hslOverride = nullptr) const;
+    void primeInstalledPreview(const std::string& previewPath,
+                               bool adaptiveLoad = false,
+                               const std::string& iconPackId = {},
+                               const switchu::icons::HslAdjust* hslOverride = nullptr,
+                               int maxSide = 0);
     void syncFinishedInstalledPreviewLoads();
+    void trimInstalledPreviewCache();
+    // Drop all installed/Icons GPU frames + CPU pixels (Frame Tap Applet headroom).
     void clearInstalledPreviewCache();
-    void pruneInstalledPreviewCache(const std::vector<ThemeShopEntry>& entries);
+    bool selectedIconPackIsColour() const;
+    // Installed Icons-tab pack: Custom tint / Flatten / Grayscale controls.
+    bool showSelectedIconTintControls() const;
+    bool selectedIconShowsHueSat() const;
+    IconPackTintState iconPackTintFor(const std::string& packId) const;
+    IconPackTintState& selectedIconPackTint();
+    const IconPackTintState& selectedIconPackTint() const;
+    bool selectedIconCustomTint() const { return selectedIconPackTint().enabled; }
+    void beginIconPackTintDraft();
+    void discardIconPackTintDraft();
+    void setIconCustomTintEnabled(bool enabled);
+    void setIconMatchThemeEnabled(bool enabled);
+    void setIconFlattenEnabled(bool enabled);
+    void setIconGrayscaleEnabled(bool enabled);
+    void setIconTintHue(float hue01);
+    void setIconTintSat(float sat01);
+    void setIconTintLight(float light01);
+    bool applyMatchThemePivotsToTint(IconPackTintState& tint,
+                                     const std::string& meanSamplePath) const;
+    void nudgeIconTintHue(float delta);
+    void nudgeIconTintSat(float delta);
+    void nudgeIconTintLight(float delta);
+    void emitIconPackTint(const std::string& packId, const IconPackTintState& tint);
+    switchu::icons::HslAdjust hslAdjustForPack(const std::string& packId) const;
+    switchu::icons::HslAdjust hslAdjustFromTint(const IconPackTintState& tint) const;
+    void maybeSeedFlattenLightDefault();
+    void updateTintSliderAnalog(float dt);
     void primeCommunityPreview(const std::string& previewPath);
     void primeCommunityPreview(const ThemeCatalogClient::Entry& entry);
     void primeVisibleCommunityPreviews();
+    void primeVisibleInstalledPreviews();
     void syncFinishedCommunityPreviewLoads();
     void clearCommunityPreviewCache();
-    std::unordered_set<std::string> wantedCommunityPreviewUrls() const;
-    void trimCommunityPreviewCache();
+    // Hard-drop community + installed preview GPU on hide so Frame Tap can
+    // remount (~30–40 MB Applet free). Catalog/disk cache stay warm.
+    void releasePreviewCachesOnHide();
+    /* pressure=true: reclaim screenshots / excess covers while browsing under
+     * GPU pressure. Hide path uses releasePreviewCachesOnHide() instead. */
+    void trimCommunityPreviewCache(bool pressure = false);
+    int previewUploadsBudgetThisFrame() const;
 
     BoolCb m_musicEnabledCb;
     FloatCb m_musicVolumeCb;
@@ -377,9 +567,22 @@ private:
     BoolCb m_dynamicPagesCb;
     LayoutModeCb m_layoutModeCb;
     AppLayoutMode m_layoutMode = AppLayoutMode::Grid;
+    IntCb m_actionHintStyleCb;
+    BoolCb m_sortLargeTilesCb;
+    BoolCb m_batterySaverCb;
+    BoolCb m_iconContrastAdaptCb;
+    BoolCb m_themeMusicOverrideCb;
+    BoolCb m_themeMusicAddToPlaylistCb;
+    BoolCb m_themeMusicPlayOnApplyCb;
+    IconPackTintCb m_iconPackTintCb;
     VoidCb m_autoThemeOpenCb;
     VoidCb m_nextTrackCb;
     StringCb m_themeShopApplyCb;
+    StringCb m_iconPackApplyCb;
+    StringCb m_iconPackDownloadCb;
+    StringCb m_iconPackDownloadApplyCb;
+    StringCb m_iconPackDeleteCb;
+    VoidCb m_iconCatalogUpdatedCb;
     StringCb m_themeShopDeleteCb;
     StringCb m_themeShopDownloadCb;
     StringCb m_themeShopDownloadInstallCb;
@@ -416,11 +619,34 @@ private:
     int m_gridColumns = 5;
     int m_gridRows = 3;
     bool m_dynamicPages = true;
+    int m_actionHintStyle = 1;
+    bool m_sortLargeTiles = true;
+    bool m_batterySaver = false;
+    bool m_frameTapLiteEngaged = false;
+    bool m_iconContrastAdapt = true;
+    bool m_themeMusicOverride = true;
+    bool m_themeMusicAddToPlaylist = true;
+    bool m_themeMusicPlayOnApply = true;
+    bool m_themeMatchAccentValid = false;
+    float m_themeMatchAccentH = 0.f;
+    float m_themeMatchAccentS = 0.55f;
+    float m_themeMatchAccentL = 0.55f;
+    // Committed tints (match config / HOME / Icons grid cards).
+    std::unordered_map<std::string, IconPackTintState> m_iconPackTints;
+    // Live HSL edit while the detail sheet is open - preview only until Apply.
+    bool m_draftTintActive = false;
+    std::string m_draftTintPackId;
+    IconPackTintState m_draftTint;
+    float m_tintSliderHoldTime = 0.f;
+    const nxui::Input* m_input = nullptr;
     std::string m_autoThemeSummary;
     std::string m_searchQuery;
     std::vector<ThemeShopEntry> m_allThemeShopEntries;
     std::vector<ThemeShopEntry> m_themeShopEntries;
     std::string m_themeShopSelectedId;
+    std::vector<ThemeShopEntry> m_allIconPackEntries;
+    std::vector<ThemeShopEntry> m_iconPackEntries;
+    std::string m_iconPackSelectedId;
 
     // Tamanhos medidos por caminho de instalação. Compartilhado com as threads
     // de trabalho que fazem a medição, daí o mutex; a leitura acontece durante
@@ -442,15 +668,21 @@ private:
     std::unordered_map<std::string, std::shared_ptr<PreviewImageState>> m_installedPreviewCache;
     std::vector<ThemeCatalogClient::Entry> m_allCommunityEntries;
     std::vector<ThemeCatalogClient::Entry> m_communityEntries;
+    std::vector<ThemeCatalogClient::IconEntry> m_catalogIconEntries;
     std::string m_communitySelectedId;
     std::string m_packageTransferThemeId;
     bool m_packageTransferInstallMode = false;
     bool m_hasPendingCommunityPreviewWork = false;
     bool m_hasPendingInstalledPreviewWork = false;
     std::uint64_t m_communityRevision = 0;
+    // Set on each Theme Shop open so Community/Icons re-pull index.json even
+    // when a disk cache already exists (renames, new themes, badge flags).
+    bool m_catalogNeedsNetworkRefresh = true;
     bool m_detailOpen = false;
     bool m_detailFullscreen = false;
     std::string m_lastLoggedDetailPath;
+    // Snap blue ring to grid selection after detail close (no Apply->card lerp).
+    bool m_snapGridFocus = false;
     ContentFocusArea m_contentFocusArea = ContentFocusArea::Grid;
     DetailFocusArea m_detailFocusArea = DetailFocusArea::Buttons;
     int m_headerButtonIndex = 0;
@@ -460,6 +692,10 @@ private:
     int m_detailScreenshotIndex = 0;
     nxui::AnimatedFloat m_detailSheetAnim{0.f};
     nxui::AnimatedFloat m_detailFullscreenAnim{0.f};
+    // Soft eShop page flip: 1 → 0 after stepPage (sign in m_pageSlideFrom).
+    nxui::AnimatedFloat m_pageSlideAnim{0.f};
+    float m_pageSlideFrom = 0.f;
+    bool m_previewPausedWhileHidden = false;
     int m_installedScrollRow = 0;
     int m_communityScrollRow = 0;
     int m_musicScrollRow = 0;
@@ -472,6 +708,12 @@ private:
     ProgressHideCb m_progressHideCb;
     VoidCb m_musicDownloadedCb;
     PlayMusicCb m_playMusicCb;
+    int m_iconPackScrollRow = 0;
+    ShelfMode m_themesShelfMode = ShelfMode::Installed;
+    ShelfMode m_iconsShelfMode = ShelfMode::Installed;
+    bool m_shopBranchFocused = false;
+    nxui::Rect m_shopBranchRect{};
+    nxui::AnimatedFloat m_shopBranchReveal{0.f};
     int m_lastCustomTabIndex = -1;
     std::string m_lastPreviewPrimeKey;
     float m_previewTrimTimer = 0.f;

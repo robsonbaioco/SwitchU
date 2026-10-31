@@ -39,7 +39,9 @@ public:
                            float cellW, float cellH,
                            float padX, float padY);
 
-    void setLayoutMode(AppLayoutMode mode);
+    // animate=false snaps immediately (boot / rebuild). animate=true plays the
+    // grid ↔ single-row morph used when the user toggles layout.
+    void setLayoutMode(AppLayoutMode mode, bool animate = true);
     AppLayoutMode layoutMode() const { return m_layoutMode; }
     bool isDynamicLine() const { return m_layoutMode == AppLayoutMode::DynamicLine; }
     bool isFlow() const { return m_layoutMode == AppLayoutMode::Flow; }
@@ -69,11 +71,23 @@ public:
     }
     bool isDynamicLineScrolling() const;
     bool isLayoutMorphing() const { return m_layoutMorphing; }
+    // After a model rebuild remaps global indices (compact line ↔ padded grid),
+    // re-anchor morph page + line scroll to the focused title so the cursor and
+    // tiles blend into the correct grid cells.
+    void rebindLayoutMorphAnchor();
     void setDynamicLineUpTarget(nxui::Widget* target);
     // Where UP goes from the top row of the paged grid. Only the sides had a
     // target, so the folder header could not be reached with the d-pad.
     void setGridUpTarget(nxui::Widget* target);
     void setDynamicLineDownTarget(nxui::Widget* target);
+    // When true, single-row may use per-tile Poster frames (apps with poster.img).
+    void setLinePosterAspect(bool enabled) {
+        if (m_linePosterAspect == enabled) return;
+        m_linePosterAspect = enabled;
+        m_lineLayoutCacheCount = -1;
+    }
+    bool linePosterAspect() const { return m_linePosterAspect; }
+    void invalidateLineLayout() { m_lineLayoutCacheCount = -1; }
 
     void setPage(int page);
     int  currentPage()  const { return m_page; }
@@ -249,12 +263,23 @@ public:
                             std::vector<nxui::Widget*> right);
 
     int focusedGlobalIndex() const;
-    bool focusGlobalIndex(int idx);
+    // instant snaps the carousel (PoloNX); durationSec < 0 uses the default line
+    // scroll and is ignored when instant.
+    bool focusGlobalIndex(int idx, bool instant = false, float durationSec = -1.f);
     bool swapSlots(int a, int b);
 
     void startAppearAnimation(const IconAppearOptions& opt = IconAppearOptions{});
     // Mirror of a fromTile appear: icons fly back into opt.origin, last in, first out.
     void startDisappearAnimation(const IconAppearOptions& opt, float dur);
+
+    // Move-mode swap effect. Glides the tile that a placement displaced from
+    // (displacedPrevious) into the slot it ended up in (displacedCurrent).
+    // Tiles that stay on the visible page glide across the gap; one arriving
+    // from another page slides in from the side that page lies on. Call after
+    // the model rebuild, since the rebuild force-visibles every icon. The tile
+    // the player was holding is deliberately left alone: it is already drawn
+    // where it was dropped, under the edit ghost.
+    void animateDisplacedTile(int displacedPrevious, int displacedCurrent);
 
     void startPageTransition(int targetPage);
     void startWaveTransition(int targetPage);
@@ -434,9 +459,12 @@ private:
     bool m_layoutMorphing = false;
     int  m_layoutMorphPage = 0;
     static constexpr float kLayoutMorphDuration = 0.40f;
+    // Move-mode swap glide (PoloNX), see animateDisplacedTile.
+    static constexpr float kSwapGlideDuration = 0.36f;
     nxui::Widget* m_lineUpTarget = nullptr;
     nxui::Widget* m_gridUpTarget = nullptr;
     nxui::Widget* m_lineDownTarget = nullptr;
+    bool m_linePosterAspect = false;
     std::vector<nxui::Widget*> m_gridLeftTargets;
     std::vector<nxui::Widget*> m_gridRightTargets;
 

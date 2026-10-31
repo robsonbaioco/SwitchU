@@ -13,6 +13,10 @@
 #include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <limits>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 #include <nxui/core/I18n.hpp>
 
 namespace {
@@ -459,7 +463,10 @@ bool WiiUMenuApp::moveFocusedIcon(nxui::FocusDirection dir) {
             if (col > 0)
                 target = from - 1;
             else if (page > 0)
-                target = (page - 1) * perPage + row * cols + (cols - 1);
+                // A wide tile cannot be anchored in the last column: land on the
+                // rightmost column where its whole footprint still fits.
+                target = (page - 1) * perPage + row * cols +
+                         std::max(0, cols - spanColumns);
             else
                 return false;
             break;
@@ -601,6 +608,18 @@ void WiiUMenuApp::wireFocusCallback() {
                 m_titlePill->setVisible(true);
                 return;
             }
+            if (m_layoutFlip && m_layoutFlip.get() == cur) {
+                m_titlePill->setText(nxui::I18n::instance().tr(
+                    "hint.switch_layout", "Switch view"));
+                m_titlePill->setVisible(true);
+                return;
+            }
+            if (m_battery && m_battery.get() == cur) {
+                m_titlePill->setText(nxui::I18n::instance().tr(
+                    "quick_settings.title", "Quick Settings"));
+                m_titlePill->setVisible(true);
+                return;
+            }
             m_titlePill->hideAnimated();
         } else {
             refreshGameArtworkBackdrop(0);
@@ -681,6 +700,8 @@ bool WiiUMenuApp::isCurrentFocusableWidget(nxui::Widget* w) const {
         if (btn.get() == w) return w->isFocusable();
     for (const auto& avatar : m_userAvatarButtons)
         if (avatar.get() == w) return w->isFocusable();
+    if (m_layoutFlip && m_layoutFlip.get() == w) return w->isFocusable();
+    if (m_battery && m_battery.get() == w) return w->isFocusable();
     if (m_grid)
         for (const auto& icon : m_grid->allIcons())
             if (icon.get() == w) return w->isFocusable();
@@ -711,8 +732,15 @@ bool WiiUMenuApp::focusTitle(uint64_t titleId) {
         return false;
 
     if (m_grid->currentPage() != oldPage || titleId != 0) {
-        m_iconStreamer.onPageChanged(m_grid->currentPage(), m_grid->iconsPerPage(),
-                                     app().gpu(), app().renderer(),
+        // iconsPerPage() stays cols×rows even in single-row — use pageSize=1
+        // so we only warm the focused tile ± neighbours, not a whole grid page.
+        int page = m_grid->currentPage();
+        int pageSize = std::max(1, m_grid->iconsPerPage());
+        if (m_appLayoutMode == AppLayoutMode::DynamicLine) {
+            page = std::max(0, m_grid->focusedGlobalIndex());
+            pageSize = 1;
+        }
+        m_iconStreamer.onPageChanged(page, pageSize, app().gpu(), app().renderer(),
                                      m_grid->allIcons());
     }
 
@@ -1792,8 +1820,14 @@ void WiiUMenuApp::updateCursor() {
         nxui::Rect fr = cur->focusRect();
         m_cursor->moveTo(fr.expanded(4.f));
         m_cursor->setVisible(true);
+        if (m_snapHomeFocus)
+            m_snapHomeFocus = false;
+        if (m_grid && m_grid->isDynamicLine())
+            syncSteamGridDbLogoArea();
     } else {
+        m_wasLayoutMorphing = false;
         m_cursor->setVisible(false);
+        m_snapHomeFocus = false;
     }
 }
 #endif

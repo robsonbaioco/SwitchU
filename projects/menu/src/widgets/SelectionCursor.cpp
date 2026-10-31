@@ -1,5 +1,6 @@
 #include "SelectionCursor.hpp"
 #include <nxui/core/Renderer.hpp>
+#include <algorithm>
 #include <cmath>
 
 
@@ -7,6 +8,34 @@ SelectionCursor::SelectionCursor() {
     m_x.setImmediate(0); m_y.setImmediate(0);
     m_w.setImmediate(0); m_h.setImmediate(0);
     m_cornerRadius.setImmediate(18.f);
+}
+
+void SelectionCursor::setInstantMotion(bool instant) {
+    m_instantMotion = instant;
+    if (!instant || !m_initialized)
+        return;
+    // Switching modes while the cursor is already travelling should take
+    // effect immediately, rather than waiting for the next focus change.
+    m_x.setImmediate(m_x.target());
+    m_y.setImmediate(m_y.target());
+    m_w.setImmediate(m_w.target());
+    m_h.setImmediate(m_h.target());
+    m_cornerRadius.setImmediate(m_cornerRadius.target());
+}
+
+void SelectionCursor::setMotionPaused(bool paused) {
+    if (paused == m_motionPaused)
+        return;
+    if (paused && m_initialized) {
+        // Tweens live on AnimationManager (not onUpdate) — kill in-flight
+        // translates so leave-splash / freeze cannot bake a mid-journey ring.
+        m_x.setImmediate(m_x.value());
+        m_y.setImmediate(m_y.value());
+        m_w.setImmediate(m_w.value());
+        m_h.setImmediate(m_h.value());
+        m_cornerRadius.setImmediate(m_cornerRadius.value());
+    }
+    m_motionPaused = paused;
 }
 
 float SelectionCursor::computeAdaptiveDuration(const nxui::Rect& target,
@@ -65,6 +94,13 @@ void SelectionCursor::moveTo(const nxui::Rect& target, float duration) {
         std::abs(m_w.target() - target.width) < eps &&
         std::abs(m_h.target() - target.height) < eps)
         return;
+    if (m_instantMotion || m_motionPaused || duration <= 0.f) {
+        m_x.setImmediate(target.x);
+        m_y.setImmediate(target.y);
+        m_w.setImmediate(target.width);
+        m_h.setImmediate(target.height);
+        return;
+    }
     float adaptiveDuration = computeAdaptiveDuration(target, m_cornerRadius.value(), duration);
     m_x.set(target.x, adaptiveDuration, nxui::Easing::outCubic);
     m_y.set(target.y, adaptiveDuration, nxui::Easing::outCubic);
@@ -89,6 +125,14 @@ void SelectionCursor::moveTo(const nxui::Rect& target, float cornerRadius, float
         std::abs(m_h.target() - target.height) < eps &&
         std::abs(m_cornerRadius.target() - cornerRadius) < eps)
         return;
+    if (m_instantMotion || m_motionPaused || duration <= 0.f) {
+        m_x.setImmediate(target.x);
+        m_y.setImmediate(target.y);
+        m_w.setImmediate(target.width);
+        m_h.setImmediate(target.height);
+        m_cornerRadius.setImmediate(cornerRadius);
+        return;
+    }
     float adaptiveDuration = computeAdaptiveDuration(target, cornerRadius, duration);
     m_x.set(target.x, adaptiveDuration, nxui::Easing::outCubic);
     m_y.set(target.y, adaptiveDuration, nxui::Easing::outCubic);
@@ -119,10 +163,14 @@ void SelectionCursor::onRender(nxui::Renderer& ren) {
     float w = m_w.value(), h = m_h.value();
     if (w < 1.f || h < 1.f) return;
 
+    // Target rect is the card itself. Rings only expand outward (PoloNX) so
+    // posters are never inset.
     nxui::Rect r = {x, y, w, h};
     float cr = m_cornerRadius.value();
 
     float wave = std::sin(m_time * m_waveSpeed) * 0.5f + 0.5f;
+    const float outerAlpha = (0.28f + 0.22f * wave) * m_opacity;
+    const float innerAlpha = (0.72f + 0.20f * wave) * m_opacity;
 
     if (m_bloomEnabled) {
     constexpr int BLOOM_LAYERS = 5;
@@ -136,10 +184,10 @@ void SelectionCursor::onRender(nxui::Renderer& ren) {
         ren.drawRoundedRect(glowRect, gc, cr + expand + 2.f);
     }
     }
-    nxui::Color mainC = m_color.withAlpha(m_opacity);
-    ren.drawRoundedRectOutline(r, mainC, cr, m_borderWidth);
-
-    nxui::Rect inner = r.shrunk(m_borderWidth * 0.5f);
-    nxui::Color innerC = nxui::Color(0.3f, 0.85f, 1.f, 0.25f * m_opacity * (0.7f + 0.3f * wave));
-    ren.drawRoundedRectOutline(inner, innerC, cr - 2.f, 1.5f);
+    ren.drawRoundedRectOutline(r.expanded(5.f),
+                               m_color.withAlpha(outerAlpha * 0.55f),
+                               cr + 5.f, m_borderWidth + 1.5f);
+    ren.drawRoundedRectOutline(r.expanded(2.f),
+                               m_color.withAlpha(innerAlpha),
+                               cr + 2.f, m_borderWidth);
 }

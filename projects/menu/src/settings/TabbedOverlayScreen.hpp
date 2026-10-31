@@ -47,7 +47,7 @@ public:
     void setSmallFont(nxui::Font* f)  { m_smallFont = f; }
     void setTheme(const nxui::Theme* t);
 
-    void show();
+    virtual void show();
     void hide();
     bool isActive() const { return m_active || m_animating; }
     bool isFullyVisible() const { return m_active && !m_animating; }
@@ -222,6 +222,20 @@ protected:
     virtual float overlayTabWidth() const { return kTabWidth; }
     virtual void drawOverlayHeader(nxui::Renderer&, const nxui::Rect&, float) {}
 
+    // Optional nested row under a tab (e.g. Theme Shop "Shop" under Themes/Icons).
+    virtual float tabBranchExtraHeight(int tabIndex) const { (void)tabIndex; return 0.f; }
+    virtual void drawTabBranch(nxui::Renderer&, int tabIndex, const nxui::Rect& branchRect, float opacity) {
+        (void)tabIndex; (void)branchRect; (void)opacity;
+    }
+    virtual bool tabBranchConsumesFocus() const { return false; }
+    virtual bool tabFocusCursorRect(nxui::Rect& outRect) const { (void)outRect; return false; }
+    virtual void onTabRailParentActivated(int tabIndex) { (void)tabIndex; }
+    virtual bool onTabRailBranchActivated(int parentTabIndex) {
+        (void)parentTabIndex;
+        return false;
+    }
+    float tabRailContentHeight() const;
+
     void onRender(nxui::Renderer& ren) override;
     void onContentRender(nxui::Renderer& ren) override;
     void onContentUpdate(float dt) override;
@@ -359,6 +373,7 @@ protected:
     enum class TouchTarget { None, Tab, Content, Dropdown };
     TouchTarget m_touchTarget = TouchTarget::None;
     int   m_touchHitIndex = -1;
+    bool  m_touchTabBranch = false;
     bool  m_touchOnSelected = false;
     bool  m_touchDirectControl = false;
     float m_touchStartX = 0.f;

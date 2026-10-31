@@ -5,6 +5,7 @@
 #include "core/NsService.hpp"
 #include "tutorial/TutorialActivity.hpp"
 #include "services/NtpClient.hpp"
+#include "usb/Mtp.hpp"
 #include <nxui/Application.hpp>
 #include <fmt/format.h>
 #ifdef SWITCHU_MENU
@@ -182,6 +183,61 @@ extern "C" void __appInit(void) {
     DebugLog::openFileLog();
     DebugLog::log("[menu] __appInit complete (sd mount: 0x%X)", rc);
 
+    // ns is opened lazily by core/NsService (this fork), not here.
+
+    // Single VI/layer probe before libnx's fatal BadGfxInit path.
+    // Retrying viInitialize after a failure (e.g. 0xF601) was observed to panic VI
+    // itself. Prefer an immediate clean exit; daemon delays at most one relaunch.
+    {
+        auto failGfxProbe = [](const char* step, Result rc) {
+            // Sticky marker so daemon.log can correlate after a hard reboot.
+            if (FILE* f = std::fopen("sdmc:/config/SwitchU/last_gfx_fail.txt", "w")) {
+                std::fprintf(f, "step=%s rc=0x%X\n", step, rc);
+                std::fflush(f);
+                std::fclose(f);
+                fsdevCommitDevice("sdmc");
+            }
+            switchu::FileLog::logCommit(
+                "[menu] gfx probe %s fail rc=0x%X; clean exit (daemon may delay/skip relaunch)",
+                step, rc);
+            DebugLog::closeFileLog();
+            switchu::FileLog::close();
+            svcExitProcess();
+        };
+
+        Result lastRc = viInitialize(ViServiceType_Default);
+        if (R_FAILED(lastRc))
+            failGfxProbe("viInitialize", lastRc);
+
+        ViDisplay display{};
+        ViLayer layer{};
+        bool gfxReady = false;
+        bool haveDisplay = false;
+        bool haveLayer = false;
+        lastRc = viOpenDefaultDisplay(&display);
+        if (R_FAILED(lastRc)) {
+            viExit();
+            failGfxProbe("viOpenDefaultDisplay", lastRc);
+        }
+        haveDisplay = true;
+        lastRc = viCreateLayer(&display, &layer);
+        if (R_SUCCEEDED(lastRc)) {
+            haveLayer = true;
+            gfxReady = true;
+        }
+
+        if (haveLayer)
+            viCloseLayer(&layer);
+        if (haveDisplay)
+            viCloseDisplay(&display);
+        viExit();
+
+        if (!gfxReady) {
+            // Avoid LibnxError_BadGfxInit (and the vi/omm cascade it caused).
+            failGfxProbe("viCreateLayer", lastRc);
+        }
+    }
+
     // A library applet's managed layer is left at 1280x720 by libnx, so docked
     // the UI sat unscaled in the middle of the 1080p output. Open the layer
     // ourselves (its id is needed) and size it to the full output: the
@@ -357,11 +413,15 @@ int main(int argc, char* argv[]) {
         app.setLogSink([](const char* msg) { DebugLog::log("%s", msg); });
         nxui::GpuDevice::setDebugSink([](const char* msg) { DebugLog::log("%s", msg); });
         if (app.initialize()) {
+            DebugLog::log("[menu] starting USB MTP server...");
+            switchu::usb::mtpStart();
             DebugLog::log("[menu] app.run...");
             app.run();
         } else {
             DebugLog::log("[menu] app.initialize FAILED");
         }
+        DebugLog::log("[menu] stopping USB MTP server...");
+        switchu::usb::mtpStop();
         DebugLog::log("[menu] app.shutdown...");
         app.shutdown();
         switchu::services::NtpClient::cleanup();

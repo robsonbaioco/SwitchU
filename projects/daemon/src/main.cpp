@@ -287,6 +287,16 @@ static void guardPersist(const char* why) {
     if (!switchu::daemon::guard_store::save(g_guard))
         switchu::FileLog::log("[guard] state save FAIL (%s); counters stay in memory", why);
 }
+// MenuReady for the current menu holder session (PoloNX #177). Only feeds the
+// menu-exit log line here: relaunch policy after a menu death belongs to the
+// boot guard below, so PoloNX's gfx soft-retry / watchdog / "wait for HOME"
+// policy is not ported (it would stop relaunching before the guard reaches
+// safe mode at kFastExitsBeforeSafe).
+static bool g_menuReadyThisSession = false;
+// The menu writes this when gfx init fails before MenuReady (step + rc).
+static constexpr const char* kLastGfxFailPath = "sdmc:/config/SwitchU/last_gfx_fail.txt";
+// Give VI a beat after an app loses foreground before the menu creates a layer.
+static constexpr uint64_t kHomeMenuSettleNsSuspended = 300'000'000ULL;  // ~300ms
 static s32      g_lastRecordCount = 0;
 static uint64_t g_lastRecordTids[1024] = {};
 static uint32_t g_lastViewFlags[1024]  = {};
@@ -752,16 +762,21 @@ static void restoreNormalPerformance(const char* source) {
 
     u32 before = 0;
     const Result beforeRc = readPerformanceConfiguration(apmSys.value, before);
-    // apm:sys SetCpuBoostMode
-    const u32 mode = ApmCpuBoostMode_Normal;
+    // apm:sys SetCpuBoostMode, then (PoloNX #177) RequestPerformanceMode(0)
+    // and LoadAndApplySettings (cmd 5) so apm re-applies the normal configuration.
+    const u32 mode = static_cast<u32>(ApmCpuBoostMode_Normal);
     const Result setRc = serviceDispatchIn(&apmSys.value, 6, mode);
+    const u32 perfMode = 0;
+    const Result reqRc = serviceDispatchIn(&apmSys.value, 0, perfMode);
+    const Result loadRc = serviceDispatch(&apmSys.value, 5);
     u32 after = 0;
     const Result afterRc = readPerformanceConfiguration(apmSys.value, after);
 
     switchu::FileLog::log(
-        "[perf-config] %s boost reset before=0x%08X(boost=%d rc=0x%X) set=0x%X after=0x%08X(boost=%d rc=0x%X)",
+        "[perf-config] %s boost reset before=0x%08X(boost=%d rc=0x%X) set=0x%X req=0x%X load=0x%X "
+        "after=0x%08X(boost=%d rc=0x%X)",
         source, before, isBoostPerformanceConfiguration(before) ? 1 : 0, beforeRc,
-        setRc, after, isBoostPerformanceConfiguration(after) ? 1 : 0, afterRc);
+        setRc, reqRc, loadRc, after, isBoostPerformanceConfiguration(after) ? 1 : 0, afterRc);
 }
 
 static Result openTimeAdminService(ScopedService& out) {
@@ -982,6 +997,33 @@ static void logHomeState(const char* source, const char* stage) {
                           g_foregroundAppletActive ? 1 : 0);
 }
 
+static void clearLastGfxFailMarker() {
+    std::error_code ec;
+    std::filesystem::remove(kLastGfxFailPath, ec);
+}
+
+static bool readLastGfxFailMarker(char* stepOut, size_t stepCap, Result* rcOut) {
+    if (!stepOut || stepCap == 0 || !rcOut)
+        return false;
+    stepOut[0] = '\0';
+    *rcOut = 0;
+    FILE* f = std::fopen(kLastGfxFailPath, "r");
+    if (!f)
+        return false;
+    char line[128] = {};
+    const bool ok = std::fgets(line, sizeof(line), f) != nullptr;
+    std::fclose(f);
+    if (!ok)
+        return false;
+    unsigned rc = 0;
+    char step[64] = {};
+    if (std::sscanf(line, "step=%63s rc=0x%X", step, &rc) != 2)
+        return false;
+    std::snprintf(stepOut, stepCap, "%s", step);
+    *rcOut = static_cast<Result>(rc);
+    return true;
+}
+
 static bool takeForegroundFromRunningApp(const char* source) {
     if (!daemon::app::isRunning() || !daemon::app::hasForeground())
         return true;
@@ -1195,6 +1237,13 @@ static void openMenuFromHome(const char* source) {
                                               homeTick);
         switchu::FileLog::log("[%s] HOME launching MainMenu status.running=%d suspended=0x%016lX",
                               source, status.app_running ? 1 : 0, status.suspended_app_id);
+        // PoloNX #177: let VI settle after the app loses foreground, before the
+        // menu creates its layer (early gfx init failures otherwise).
+        if (status.suspended_app_id != 0) {
+            switchu::FileLog::log("[%s] HOME settle_ms=%lu", source,
+                                  static_cast<unsigned long>(kHomeMenuSettleNsSuspended / 1'000'000ULL));
+            svcSleepThread(kHomeMenuSettleNsSuspended);
+        }
         Result menuRc = daemon::menu_la::launch(smi::MenuStartMode::MainMenu, status);
         switchu::FileLog::log("[%s] HOME MainMenu launch rc=0x%X", source, menuRc);
         if (R_SUCCEEDED(menuRc))
@@ -2034,6 +2083,11 @@ static void handleMenuCommand() {
         switchu::FileLog::log("[smi] menu ready");
         logMenuReadyTrace(args, commandReceiveTick);
         logPerformanceConfiguration("menu-ready");
+        // PoloNX #177: a FastLoad boost can outlive the title that asked for
+        // it; clear it here as well as on app exit.
+        restoreNormalPerformance("menu-ready");
+        g_menuReadyThisSession = true;
+        clearLastGfxFailMarker();
         // MenuReady only says the activity object exists. The observed crash
         // loop reached it every time and died ~3 s after the first frame, so
         // clearing the guard here let every crash slip past it. Health is
@@ -2589,8 +2643,23 @@ static void mainLoop() {
     guardTestTick();
 
     if (daemon::menu_la::checkFinished()) {
-        switchu::FileLog::log("[main] menu exited (reason=%d)",
-            (int)daemon::menu_la::exitReason());
+        // Diagnostics from PoloNX #177: did this process reach MenuReady, and
+        // did it leave a gfx-init failure marker behind. Relaunch policy stays
+        // with the boot guard.
+        const bool sawReady = g_menuReadyThisSession;
+        g_menuReadyThisSession = false;
+        char failStep[64] = {};
+        Result failRc = 0;
+        const bool haveGfxFail = !sawReady &&
+            readLastGfxFailMarker(failStep, sizeof(failStep), &failRc);
+        switchu::FileLog::log(
+            "[main] menu exited (reason=%d ready=%d suspended=0x%016lX gfx_fail=%d step=%s rc=0x%X)",
+            (int)daemon::menu_la::exitReason(),
+            sawReady ? 1 : 0,
+            daemon::app::suspendedTitleId(),
+            haveGfxFail ? 1 : 0,
+            haveGfxFail ? failStep : "-",
+            haveGfxFail ? failRc : 0);
         if (guardOnMenuExit())
             ++g_menuFastExitCount;
         if (g_menuFastExitCount >= 3 && g_menuRelaunchCooldown < 500) {

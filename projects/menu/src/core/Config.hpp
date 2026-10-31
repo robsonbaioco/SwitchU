@@ -2,6 +2,8 @@
 #include "core/AppLayoutMode.hpp"
 #include <algorithm>
 #include <cstdint>
+#include <cmath>
+#include <unordered_map>
 #include <limits>
 #include <utility>
 #include <vector>
@@ -40,6 +42,16 @@ struct AppConfig {
     int   accessibilitySpeechRate = 190;
     bool  steamGridDbEnabled = true;
     float steamGridDbOpacity = 0.50f;
+    // Sub-toggles used when steamGridDbEnabled is on. Defaults keep prior
+    // behaviour (artwork everywhere the focused title allows).
+    bool  steamGridDbShowInGrid = true;
+    bool  steamGridDbShowInDynamicLine = true;
+    bool  steamGridDbShowInFolders = true;
+    // Tall SteamGridDB portrait covers (Poster) on the single-row carousel only.
+    // Settings → SteamGridDB toggle; Change View stays grid ↔ single-row.
+    bool  steamGridDbShowPosterInDynamicLine = true;
+    // Logo overlay above / beside the single-row carousel.
+    bool  steamGridDbShowLogoInDynamicLine = true;
     std::string steamGridDbApiKey;
     // Game details in the dossier. Each player brings their own keys: RAWG
     // for the metascore, a Twitch application for IGDB time-to-beat.
@@ -126,6 +138,52 @@ struct AppConfig {
         }
         playtime.emplace_back(titleId, nanoseconds);
         return nanoseconds != 0;
+    }
+
+    // A-Z / Recent also reorder applications that use a larger tile size.
+    bool sortLargeTiles = true;
+    // Colour HOME chrome icons follow single-row hero light/dark chrome when on
+    // (Theme > Options). Default on — matches pre-PoloNX enjoyment.
+    bool iconContrastAdapt = true;
+    // Battery Saver = user-forced lite HOME path (same reclaim as Frame Tap
+    // coexistence). Quick Settings + Theme Shop → Interface, synced.
+    bool batterySaver = false;
+    // Theme Shop → Options: applying a theme with bundled music.
+    // Override on = replace the current playlist (legacy). Off = keep the
+    // user's library; optionally append theme tracks and/or start them.
+    bool themeMusicOverride = true;
+    bool themeMusicAddToPlaylist = true;
+    bool themeMusicPlayOnApply = true;
+    // Per-pack Photoshop-style HSL adjust (0.5 pivots = leave original) plus
+    // Solid / Grayscale presentation toggles. matchTheme keeps pivots synced
+    // to the active theme accent until the user edits HSL or turns it off.
+    struct IconPackTint {
+        bool enabled = false;
+        bool flatten = false;
+        bool grayscale = false;
+        bool matchTheme = false;
+        float hue = 0.5f;
+        float sat = 0.5f;
+        float light = 0.5f;
+    };
+    std::unordered_map<std::string, IconPackTint> iconPackTints;
+
+    IconPackTint iconPackTintFor(const std::string& packId) const {
+        auto it = iconPackTints.find(packId.empty() ? "default" : packId);
+        if (it != iconPackTints.end())
+            return it->second;
+        return {};
+    }
+    void setIconPackTint(const std::string& packId, const IconPackTint& tint) {
+        const std::string id = packId.empty() ? "default" : packId;
+        if (!tint.enabled && !tint.flatten && !tint.grayscale && !tint.matchTheme
+            && std::fabs(tint.hue - 0.5f) < 0.0005f
+            && std::fabs(tint.sat - 0.5f) < 0.0005f
+            && std::fabs(tint.light - 0.5f) < 0.0005f) {
+            iconPackTints.erase(id);
+            return;
+        }
+        iconPackTints[id] = tint;
     }
 
     // When each title was last opened, by title id. The record ns keeps is
@@ -230,11 +288,17 @@ struct AppConfig {
     }
 
     std::string themePreset = "Default Dark";
+    // HOME sidebar glyph pack under romfs:/icons/<id>/.
+    // Missing files fall back to the "default" pack.
+    std::string iconPack = "default";
     // See switchu::folders::kFolderStyle*. Applies to every folder tile
     // (PoloNX #100). Classic is this fork's own glass folder.
     int folderStyle = 0;
     // First-game icon overlay. Ignored by Classic (the mosaic is the cover).
     bool folderShowCover = false;
+    // Layout when opening a folder: 0 = Auto (keep current), 1 = Grid,
+    // 2 = Single-row. Does not change the HOME layout preference on its own.
+    int folderDefaultView = 0;
 
     // Automatic day/night theme switching.
     std::string autoThemeMode = "off";       // "off" | "manual" | "geo"

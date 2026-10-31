@@ -284,12 +284,23 @@ public:
     static uint64_t imageBudget()          { return s_imageBudget; }
     static void setImageBudget(uint64_t b) { s_imageBudget = b; }
 
+    // PoloNX #177: process free-memory cushion, default 2 MiB, raised while the
+    // Frame Tap viewer light path runs. In this fork it is bookkeeping only:
+    // allocImageMemory does not refuse on TotalMemorySize - UsedMemorySize
+    // (the heap reservation counts as used, see there), so nothing enforces it.
+    static constexpr uint64_t kDefaultAllocationHeadroom = 2ull * 1024ull * 1024ull;
+    // After reclaim+GPU release; clamped to free − UI reserve at enter time.
+    static constexpr uint64_t kFrameTapLightAllocationHeadroom = 16ull * 1024ull * 1024ull;
+    // Always leave this much process free for UI reloads while light.
+    static constexpr uint64_t kFrameTapLightUiReserve = 6ull * 1024ull * 1024ull;
     uint64_t imageMemoryUsed() const { return m_imageMemUsed; }
     uint64_t imageMemoryBudget() const { return imageBudget(); }
     uint64_t imageMemoryAvailable() const {
         return m_imageMemUsed < imageBudget()
             ? imageBudget() - m_imageMemUsed : 0;
     }
+    uint64_t allocationHeadroom() const { return m_allocationHeadroom; }
+    void setAllocationHeadroom(uint64_t bytes) { m_allocationHeadroom = bytes; }
 
     // expectedBytes is what the caller says this image should occupy; 0 means
     // the uncompressed w*h*4. It exists because the short-buffer check below is
@@ -367,6 +378,11 @@ public:
     uint64_t imageMemoryUsed() const { return 0; }
     uint64_t imageMemoryBudget() const { return UINT64_MAX; }
     uint64_t imageMemoryAvailable() const { return UINT64_MAX; }
+    static constexpr uint64_t kDefaultAllocationHeadroom = 2ull * 1024ull * 1024ull;
+    static constexpr uint64_t kFrameTapLightAllocationHeadroom = 16ull * 1024ull * 1024ull;
+    static constexpr uint64_t kFrameTapLightUiReserve = 6ull * 1024ull * 1024ull;
+    uint64_t allocationHeadroom() const { return kDefaultAllocationHeadroom; }
+    void setAllocationHeadroom(uint64_t) {}
 #endif
 
 private:
@@ -433,6 +449,7 @@ private:
     static DebugSink s_debugSink;
     uint64_t m_imageMemUsed = 0;
     uint64_t m_poolMemUsed  = 0;
+    uint64_t m_allocationHeadroom = kDefaultAllocationHeadroom;
     static constexpr uint32_t kImageChunkSize = 2u * 1024u * 1024u;
     struct ImagePoolChunk {
         dk::UniqueMemBlock block;

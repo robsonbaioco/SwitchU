@@ -291,8 +291,16 @@ void IconGrid::setup(std::vector<std::shared_ptr<GlossyIcon>> icons,
     }
 }
 
-void IconGrid::setLayoutMode(AppLayoutMode mode) {
-    if (m_layoutMode == mode) return;
+void IconGrid::setLayoutMode(AppLayoutMode mode, bool animate) {
+    if (m_layoutMode == mode) {
+        // PoloNX: a non-animated re-apply (boot / rebuild) settles any morph
+        // still in flight on the side this mode builds on.
+        if (!animate) {
+            m_layoutMorph.setImmediate(mode == AppLayoutMode::DynamicLine ? 1.f : 0.f);
+            m_layoutMorphing = false;
+        }
+        return;
+    }
     const AppLayoutMode previous = m_layoutMode;
     m_layoutMode = mode;
     // XMB takes the icons of every non-selected category out of the focus tree
@@ -397,12 +405,13 @@ void IconGrid::setLayoutMode(AppLayoutMode mode) {
 
     // The slide morph exists between the paged grid and the Dynamic Line; the
     // 3D and tile views draw their own entrances, so they just snap the morph
-    // to the side they build on.
+    // to the side they build on. animate=false (boot / rebuild, PoloNX) snaps
+    // it too.
     const bool toLine = m_layoutMode == AppLayoutMode::DynamicLine;
     const bool morphable =
         (previous == AppLayoutMode::Grid || previous == AppLayoutMode::DynamicLine) &&
         (m_layoutMode == AppLayoutMode::Grid || m_layoutMode == AppLayoutMode::DynamicLine);
-    if (morphable) {
+    if (morphable && animate) {
         m_layoutMorphing = true;
         m_layoutMorph.setImmediate(toLine ? 0.f : 1.f);
         m_layoutMorph.set(toLine ? 1.f : 0.f, kLayoutMorphDuration,
@@ -410,6 +419,21 @@ void IconGrid::setLayoutMode(AppLayoutMode mode) {
     } else {
         m_layoutMorphing = false;
         m_layoutMorph.setImmediate(toLine ? 1.f : 0.f);
+    }
+}
+
+void IconGrid::rebindLayoutMorphAnchor() {
+    if (!m_layoutMorphing)
+        return;
+    const int cur = focusedGlobalIndex();
+    const int perPage = std::max(1, iconsPerPage());
+    m_layoutMorphPage = cur >= 0 ? cur / perPage : m_page;
+    if (cur >= 0)
+        m_lineScrollOffset.setImmediate(static_cast<float>(cur));
+    if (m_layoutMode == AppLayoutMode::Grid && cur >= 0) {
+        const int wanted = cur / perPage;
+        if (wanted != m_page)
+            setPage(wanted);
     }
 }
 
@@ -428,6 +452,8 @@ void IconGrid::setDynamicLineUpTarget(nxui::Widget* target) {
         layoutMetro();
         return;
     }
+    // Grid's top row goes up through m_gridUpTarget (setGridUpTarget), the
+    // fork's equivalent of PoloNX's "land on Change View" fallback.
     if (!isCarousel())
         return;
     for (auto& icon : m_allIcons) {
@@ -435,7 +461,6 @@ void IconGrid::setDynamicLineUpTarget(nxui::Widget* target) {
             icon->setCustomNavigation(nxui::FocusDirection::UP, m_lineUpTarget);
     }
 }
-
 void IconGrid::setDynamicLineDownTarget(nxui::Widget* target) {
     m_lineDownTarget = target;
     if (!isCarousel())
@@ -666,14 +691,26 @@ void IconGrid::layoutLine() {
     nxui::Widget* prevFocused = m_focus.current();
     clearChildren();
 
+    // Grid folder edge-paging registers DLeft/DRight actions on column edges.
+    // In-place Grid→line morph reuses those icons; if the actions stick around
+    // they fire before custom nav and dead-end RIGHT on the old last column
+    // (e.g. title 5 in a 5×N folder).
+    auto clearEdgePagingActions = [](nxui::Widget& w) {
+        w.removeAction(static_cast<uint64_t>(nxui::Button::DLeft));
+        w.removeAction(static_cast<uint64_t>(nxui::Button::DRight));
+        w.removeAction(static_cast<uint64_t>(nxui::Button::LStickL));
+        w.removeAction(static_cast<uint64_t>(nxui::Button::LStickR));
+        w.removeAction(static_cast<uint64_t>(nxui::Button::RStickL));
+        w.removeAction(static_cast<uint64_t>(nxui::Button::RStickR));
+    };
+
     std::vector<nxui::Widget*> fItems;
     fItems.reserve(m_allIcons.size());
     const int lineCount = static_cast<int>(m_allIcons.size());
     // The line is a carousel: walking off either end comes back around, so the
     // last installed title leads to the first. Empty padding is not focusable in
     // this mode, so the cycle only ever visits real entries. Returns -1 when the
-    // line holds at most one of them, which leaves the binding null rather than
-    // pointing an icon at itself.
+    // line holds at most one of them.
     const auto wrapFocusable = [this, lineCount](int from, int step) {
         for (int offset = 1; offset <= lineCount; ++offset) {
             const int candidate = ((from + step * offset) % lineCount + lineCount)
@@ -687,12 +724,17 @@ void IconGrid::layoutLine() {
     };
     for (size_t i = 0; i < m_allIcons.size(); ++i) {
         auto& icon = m_allIcons[i];
+        clearEdgePagingActions(*icon);
         const int left = wrapFocusable((int)i, -1);
         const int right = wrapFocusable((int)i, +1);
+        // No other entry: dead-end on itself (PoloNX). nullptr would fall
+        // through to spatial nav and yank focus into the sidebar chrome.
         icon->setCustomNavigation(nxui::FocusDirection::LEFT,
-                                  left >= 0 ? m_allIcons[(size_t)left].get() : nullptr);
+                                  left >= 0 ? m_allIcons[(size_t)left].get()
+                                            : icon.get());
         icon->setCustomNavigation(nxui::FocusDirection::RIGHT,
-                                  right >= 0 ? m_allIcons[(size_t)right].get() : nullptr);
+                                  right >= 0 ? m_allIcons[(size_t)right].get()
+                                             : icon.get());
         icon->setCustomNavigation(nxui::FocusDirection::UP, m_lineUpTarget);
         icon->setCustomNavigation(nxui::FocusDirection::DOWN, nullptr);
         addChild(icon);
@@ -859,41 +901,59 @@ nxui::Rect IconGrid::dynamicIconRect(int index, float* outScale,
                                      float* outOpacity,
                                      float* outDistance) const {
     const float centerX = m_rect.x + m_rect.width * 0.5f;
-    // Leave a dedicated control strip below the profiles, then place the app
-    // carousel in the lower half of the HOME scene.
-    const float centerY = m_rect.y + m_rect.height * 0.66f;
+    // Unfocused row sits in the lower half; a focused Poster rises to true
+    // vertical centre so the title pill has equal air above/below.
+    const float lineCenterY = m_rect.y + m_rect.height * 0.66f;
     const float offset = m_lineScrollOffset.value();
-    // Carousel sizing is intentionally independent from the configurable
-    // grid rows/columns. Changing the grid density must not resize single row.
-    constexpr float baseCellW = 150.f;
-    constexpr float baseCellH = 150.f;
-    // The old extra 36 px made neighbouring apps feel disconnected. A small,
-    // stable gutter keeps the row compact even when grid padding is reconfigured.
-    const float lineSpacing = baseCellW + std::max(8.f, m_padX * 0.4f);
+    // Carousel sizing is independent of grid density. Square icons stay square;
+    // apps with a Poster and folders (when posters are enabled) use tall 2:3.
+    constexpr float kIconBase = 150.f;
+    // Halfway between the large (300@1.18) and clock-safe (268@1.06) sizes.
+    constexpr float kPosterBaseW = 284.f;
+    bool poster = false;
+    // Posters belong to the Dynamic Line (and its morph to/from the grid). The
+    // 3D carousel views only fall back to this rect and keep square tiles.
+    const bool posterView = m_layoutMode == AppLayoutMode::DynamicLine || m_layoutMorphing;
+    if (posterView && m_linePosterAspect && index >= 0 && index < (int)m_allIcons.size()) {
+        const auto& icon = m_allIcons[(std::size_t)index];
+        poster = icon && icon->usesPosterFrame();
+    }
+    const float baseCellW = poster ? kPosterBaseW : kIconBase;
+    const float baseCellH = poster ? (kPosterBaseW * 1.5f) : kIconBase;
+    // Scroll pitch stays icon-sized so posters can hero-overlap neighbours.
+    const float lineSpacing = kIconBase + std::max(8.f, m_padX * 0.4f);
 
     float d = lineRingDelta(offset, static_cast<float>(index));
     const float absD = std::abs(d);
     float s = 1.f;
     float a = 1.f;
+    const float sSide = poster ? 0.72f : 0.82f;
+    const float sFocus = poster ? 1.12f : 1.36f;
+    float focusBlend = 0.f;
     if (absD <= 1.0f) {
         // Position drives the visual state: the departing icon now shrinks as
         // it leaves centre while the incoming icon travels and grows into it.
         const float centerBlend = 1.f - absD;
-        const float smoothBlend = centerBlend * centerBlend * (3.f - 2.f * centerBlend);
-        s = 0.82f + smoothBlend * (1.36f - 0.82f);
-        a = 0.76f + smoothBlend * 0.24f;
+        focusBlend = centerBlend * centerBlend * (3.f - 2.f * centerBlend);
+        s = sSide + focusBlend * (sFocus - sSide);
+        a = 0.76f + focusBlend * 0.24f;
     } else {
-        s = std::max(0.54f, 0.82f - (absD - 1.0f) * 0.12f);
+        s = std::max(0.54f, sSide - (absD - 1.0f) * 0.12f);
         a = std::max(0.0f, 0.76f - (absD - 1.0f) * 0.24f);
     }
 
-    const float liftT = std::min(absD, 1.f);
-    const float smoothLift = liftT * liftT * (3.f - 2.f * liftT);
-    const float sideLift = 32.f * smoothLift;
     const float w = baseCellW * s;
     const float h = baseCellH * s;
+    float centerY = lineCenterY;
+    if (poster && focusBlend > 0.f) {
+        // Clear the clock capsule (~y 70) and leave room for the title pill.
+        constexpr float kTopPad = 100.f;
+        constexpr float kBottomPad = 128.f;
+        const float focusedCenterY = kTopPad + (720.f - kTopPad - kBottomPad) * 0.5f;
+        centerY = lineCenterY + (focusedCenterY - lineCenterY) * focusBlend;
+    }
     const float x = centerX + d * lineSpacing - w * 0.5f;
-    const float y = centerY - h * 0.5f - sideLift;
+    const float y = centerY - h * 0.5f;
 
     if (outScale) *outScale = s;
     if (outOpacity) *outOpacity = a;
@@ -966,7 +1026,7 @@ nxui::Rect IconGrid::focusedDisplayRect() const {
     return {};
 }
 
-bool IconGrid::focusGlobalIndex(int idx) {
+bool IconGrid::focusGlobalIndex(int idx, bool instant, float durationSec) {
     if (m_layoutMode == AppLayoutMode::Metro) {
         if (idx < 0 || idx >= metroTotalCount()) return false;
         auto icon = metroSharedIconAt(idx);
@@ -1009,9 +1069,18 @@ bool IconGrid::focusGlobalIndex(int idx) {
         // one step rather than scrolling the length of the line. The offset is
         // allowed outside [0, count) for this; every reader goes through
         // lineRingDelta().
-        const float from = m_lineScrollOffset.value();
-        m_lineScrollOffset.set(from + lineRingDelta(from, static_cast<float>(idx)),
-                               kLineScrollDuration, nxui::Easing::outCubic);
+        //
+        // instant (PoloNX): opening or closing a folder rebuilds the model while
+        // the carousel still holds the offset of the other tree; animating from
+        // there would visibly scroll through the whole row, so snap instead.
+        if (instant) {
+            m_lineScrollOffset.setImmediate(static_cast<float>(idx));
+        } else {
+            const float dur = durationSec > 0.f ? durationSec : kLineScrollDuration;
+            const float from = m_lineScrollOffset.value();
+            m_lineScrollOffset.set(from + lineRingDelta(from, static_cast<float>(idx)),
+                                   dur, nxui::Easing::outCubic);
+        }
         return true;
     }
 
@@ -1492,6 +1561,40 @@ void IconGrid::startAppearAnimation(const IconAppearOptions& opt) {
     }
 }
 
+void IconGrid::animateDisplacedTile(int displacedPrevious, int displacedCurrent) {
+    if (m_layoutMode != AppLayoutMode::Grid || m_sliding || m_bumping)
+        return;
+
+    const int count = static_cast<int>(m_allIcons.size());
+    const int perPage = std::max(1, iconsPerPage());
+    const int page = m_page;
+    if (displacedCurrent < 0 || displacedCurrent >= count ||
+        displacedCurrent / perPage != page)
+        return;
+    GlossyIcon* icon = m_allIcons[static_cast<std::size_t>(displacedCurrent)].get();
+    if (!icon)
+        return;
+
+    const int spanColumns = std::max(1, icon->gridSpanColumns());
+    const int spanRows = std::max(1, icon->gridSpanRows());
+    if (displacedPrevious >= 0 && displacedPrevious < count &&
+        displacedPrevious / perPage == page) {
+        icon->startGlideFrom(
+            gridSpanRect(displacedPrevious, spanColumns, spanRows),
+            kSwapGlideDuration);
+        return;
+    }
+    // Came from another page: enter from the side that page sits on, the same
+    // direction a page slide would have travelled.
+    nxui::Rect from = gridSpanRect(displacedCurrent, spanColumns, spanRows);
+    const bool fromEarlierPage =
+        displacedPrevious < 0 ||
+        (displacedCurrent / perPage) > (displacedPrevious / perPage);
+    from.x += (fromEarlierPage ? -1.f : 1.f) * pageStride();
+    icon->setAppearOrigin(from);
+    icon->startAppear(0.f);
+}
+
 void IconGrid::startDisappearAnimation(const IconAppearOptions& opt, float dur) {
     if (m_layoutMode == AppLayoutMode::DynamicLine) {
         for (auto& icon : m_allIcons)
@@ -1599,9 +1702,13 @@ void IconGrid::bumpEdge(int dir) {
 }
 
 void IconGrid::onUpdate(float dt) {
-    if (m_layoutMorphing &&
-        std::abs(m_layoutMorph.value() - m_layoutMorph.target()) < 0.001f)
-        m_layoutMorphing = false;
+    if (m_layoutMorphing) {
+        // AnimationManager advances the tween; this only clears the flag.
+        if (std::abs(m_layoutMorph.value() - m_layoutMorph.target()) < 0.001f) {
+            m_layoutMorph.setImmediate(m_layoutMorph.target());
+            m_layoutMorphing = false;
+        }
+    }
 
     m_layoutReveal.update(dt);
     if (m_layoutMode == AppLayoutMode::Xmb) {
@@ -1759,7 +1866,12 @@ void IconGrid::renderPageAt(nxui::Renderer& ren, int page, float dx) {
 }
 
 void IconGrid::renderDynamicLine(nxui::Renderer& ren) {
-    ren.pushClipRect(m_rect);
+    // Focused Posters rise above the grid band for vertical centering — clip to
+    // the full screen height so their tops (and rounded corners) are not sheared.
+    nxui::Rect clip = m_rect;
+    clip.y = 0.f;
+    clip.height = 720.f;
+    ren.pushClipRect(clip);
 
     // The focused index is a linear scan over every icon. Reading it inside the
     // loop made the whole pass quadratic in the installed title count for a
@@ -1822,7 +1934,10 @@ void IconGrid::renderLayoutMorph(nxui::Renderer& ren) {
     std::sort(candidates.begin(), candidates.end(),
               [](const auto& lhs, const auto& rhs) { return lhs.absD > rhs.absD; });
 
-    ren.pushClipRect(m_rect);
+    nxui::Rect clip = m_rect;
+    clip.y = 0.f;
+    clip.height = 720.f;
+    ren.pushClipRect(clip);
     for (const auto& c : candidates) {
         auto& icon = m_allIcons[c.index];
         float lineAlpha = 1.f;

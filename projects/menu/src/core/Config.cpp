@@ -4,6 +4,7 @@
 #include "FolderStore.hpp"
 #include <fstream>
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <system_error>
@@ -117,6 +118,11 @@ bool AppConfig::load() {
     readJsonOpt(j, "accessibilitySpeechRate", accessibilitySpeechRate);
     readJsonOpt(j, "steamGridDbEnabled", steamGridDbEnabled);
     readJsonOpt(j, "steamGridDbOpacity", steamGridDbOpacity);
+    readJsonOpt(j, "steamGridDbShowInGrid", steamGridDbShowInGrid);
+    readJsonOpt(j, "steamGridDbShowInDynamicLine", steamGridDbShowInDynamicLine);
+    readJsonOpt(j, "steamGridDbShowInFolders", steamGridDbShowInFolders);
+    readJsonOpt(j, "steamGridDbShowPosterInDynamicLine", steamGridDbShowPosterInDynamicLine);
+    readJsonOpt(j, "steamGridDbShowLogoInDynamicLine", steamGridDbShowLogoInDynamicLine);
     readJsonOpt(j, "steamGridDbApiKey", steamGridDbApiKey);
     readJsonOpt(j, "rawgApiKey", rawgApiKey);
     readJsonOpt(j, "igdbClientId", igdbClientId);
@@ -125,6 +131,59 @@ bool AppConfig::load() {
     readJsonOpt(j, "themePreset", themePreset);
     readJsonOpt(j, "lastPageTitleId", lastPageTitleId);
     readJsonOpt(j, "sortMode", sortMode);
+    readJsonOpt(j, "sortLargeTiles", sortLargeTiles);
+    readJsonOpt(j, "iconContrastAdapt", iconContrastAdapt);
+    readJsonOpt(j, "batterySaver", batterySaver);
+    readJsonOpt(j, "themeMusicOverride", themeMusicOverride);
+    readJsonOpt(j, "themeMusicAddToPlaylist", themeMusicAddToPlaylist);
+    readJsonOpt(j, "themeMusicPlayOnApply", themeMusicPlayOnApply);
+    iconPackTints.clear();
+    if (auto it = j.find("iconPackTints"); it != j.end() && it->is_object()) {
+        for (auto& [packId, value] : it->items()) {
+            if (!value.is_object() || packId.empty())
+                continue;
+            IconPackTint tint;
+            readJsonOpt(value, "enabled", tint.enabled);
+            readJsonOpt(value, "flatten", tint.flatten);
+            readJsonOpt(value, "grayscale", tint.grayscale);
+            readJsonOpt(value, "matchTheme", tint.matchTheme);
+            readJsonOpt(value, "hue", tint.hue);
+            readJsonOpt(value, "sat", tint.sat);
+            readJsonOpt(value, "light", tint.light);
+            if (tint.matchTheme)
+                tint.enabled = true;
+            tint.hue = std::clamp(tint.hue, 0.f, 1.f);
+            tint.sat = std::clamp(tint.sat, 0.f, 1.f);
+            tint.light = std::clamp(tint.light, 0.f, 1.f);
+            // Legacy pack ids (grayscale/solid/tinted) → atmos.
+            std::string id = packId;
+            if (id == "tinted" || id == "grayscale" || id == "solid")
+                id = "atmos";
+            iconPackTints[id] = tint;
+        }
+    } else {
+        bool legacyEnabled = false;
+        float legacyHue = 0.5f, legacySat = 0.5f, legacyLight = 0.5f;
+        readJsonOpt(j, "iconCustomTint", legacyEnabled);
+        readJsonOpt(j, "iconTintHue", legacyHue);
+        readJsonOpt(j, "iconTintSat", legacySat);
+        readJsonOpt(j, "iconTintLight", legacyLight);
+        if (legacyEnabled
+            || std::fabs(legacyHue - 0.5f) > 0.0005f
+            || std::fabs(legacySat - 0.5f) > 0.0005f
+            || std::fabs(legacyLight - 0.5f) > 0.0005f) {
+            IconPackTint tint;
+            tint.enabled = legacyEnabled;
+            tint.hue = std::clamp(legacyHue, 0.f, 1.f);
+            tint.sat = std::clamp(legacySat, 0.f, 1.f);
+            tint.light = std::clamp(legacyLight, 0.f, 1.f);
+            std::string packId = "default";
+            readJsonOpt(j, "iconPack", packId);
+            if (packId.empty())
+                packId = "default";
+            iconPackTints[packId] = tint;
+        }
+    }
     readJsonOpt(j, "lastOpenedSequence", lastOpenedSequence);
     lastOpened.clear();
     if (auto it = j.find("lastOpened"); it != j.end() && it->is_object()) {
@@ -197,6 +256,11 @@ bool AppConfig::load() {
             }
         }
     }
+    readJsonOpt(j, "iconPack", iconPack);
+    if (iconPack.empty())
+        iconPack = "default";
+    else if (iconPack == "tinted" || iconPack == "grayscale" || iconPack == "solid")
+        iconPack = "atmos";
     readJsonOpt(j, "autoThemeMode", autoThemeMode);
     readJsonOpt(j, "autoThemeDayPreset", autoThemeDayPreset);
     readJsonOpt(j, "autoThemeNightPreset", autoThemeNightPreset);
@@ -208,6 +272,8 @@ bool AppConfig::load() {
     readJsonOpt(j, "autoThemeGeoCity", autoThemeGeoCity);
     readJsonOpt(j, "folderStyle", folderStyle);
     readJsonOpt(j, "folderShowCover", folderShowCover);
+    readJsonOpt(j, "folderDefaultView", folderDefaultView);
+    folderDefaultView = std::clamp(folderDefaultView, 0, 2);
 
     if (musicVolume < 0.f) musicVolume = 0.f;
     if (musicVolume > 1.f) musicVolume = 1.f;
@@ -312,6 +378,11 @@ bool AppConfig::save() const {
     j["accessibilitySpeechRate"] = std::clamp(accessibilitySpeechRate, 120, 320);
     j["steamGridDbEnabled"] = steamGridDbEnabled;
     j["steamGridDbOpacity"] = std::clamp(steamGridDbOpacity, 0.f, 1.f);
+    j["steamGridDbShowInGrid"] = steamGridDbShowInGrid;
+    j["steamGridDbShowInDynamicLine"] = steamGridDbShowInDynamicLine;
+    j["steamGridDbShowInFolders"] = steamGridDbShowInFolders;
+    j["steamGridDbShowPosterInDynamicLine"] = steamGridDbShowPosterInDynamicLine;
+    j["steamGridDbShowLogoInDynamicLine"] = steamGridDbShowLogoInDynamicLine;
     j["steamGridDbApiKey"] = steamGridDbApiKey;
     j["rawgApiKey"] = rawgApiKey;
     j["igdbClientId"] = igdbClientId;
@@ -320,9 +391,35 @@ bool AppConfig::save() const {
     j["themePreset"] = (m_safe && !m_touchedTheme) ? m_savedTheme : themePreset;
     j["folderStyle"] = std::clamp(folderStyle, 0, switchu::folders::kFolderStyleCount - 1);
     j["folderShowCover"] = folderShowCover;
+    j["folderDefaultView"] = std::clamp(folderDefaultView, 0, 2);
+    j["iconPack"] = iconPack.empty() ? "default" : iconPack;
     j["lastPageTitleId"] = lastPageTitleId;
+    // Unclamped to PoloNX's 0..2: this fork has kSortModeCount modes.
     j["sortMode"] = sortMode;
     j["sortModeScheme"] = 2;
+    j["sortLargeTiles"] = sortLargeTiles;
+    j["iconContrastAdapt"] = iconContrastAdapt;
+    j["batterySaver"] = batterySaver;
+    j["themeMusicOverride"] = themeMusicOverride;
+    j["themeMusicAddToPlaylist"] = themeMusicAddToPlaylist;
+    j["themeMusicPlayOnApply"] = themeMusicPlayOnApply;
+    {
+        nlohmann::json tints = nlohmann::json::object();
+        for (const auto& [packId, tint] : iconPackTints) {
+            if (packId.empty())
+                continue;
+            tints[packId] = {
+                {"enabled", tint.enabled},
+                {"flatten", tint.flatten},
+                {"grayscale", tint.grayscale},
+                {"matchTheme", tint.matchTheme},
+                {"hue", std::clamp(tint.hue, 0.f, 1.f)},
+                {"sat", std::clamp(tint.sat, 0.f, 1.f)},
+                {"light", std::clamp(tint.light, 0.f, 1.f)},
+            };
+        }
+        j["iconPackTints"] = std::move(tints);
+    }
     j["lastOpenedSequence"] = lastOpenedSequence;
     {
         nlohmann::json opened = nlohmann::json::object();

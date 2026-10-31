@@ -48,6 +48,26 @@ void SteamGridDbBackdrop::invalidateArtworkCaches() {
     m_missingArtworkTitleIds.clear();
 }
 
+void SteamGridDbBackdrop::releaseGpuArtwork() {
+    if (m_pendingDecode && m_pendingDecode->state)
+        m_pendingDecode->state->cancelled.store(true);
+    m_pendingDecode.reset();
+    m_readyArtwork.reset();
+    m_decodedCache.clear();
+    m_missingArtworkTitleIds.clear();
+    m_preloadTitleIds.clear();
+    for (auto& set : m_sets) {
+        set.hero = nxui::Texture{};
+        set.logo = nxui::Texture{};
+        set.titleId = 0;
+        set.hasHero = false;
+        set.hasLogo = false;
+        set.heroLuminance = -1.f;
+    }
+    m_uploadStage = 0;
+    m_waitForGpuBeforeUpload = false;
+}
+
 bool SteamGridDbBackdrop::hasGpuArtwork(std::uint64_t titleId) const {
     return std::any_of(m_sets.begin(), m_sets.end(), [titleId](const ArtworkSet& set) {
         return set.titleId == titleId && (set.hasHero || set.hasLogo);
@@ -75,6 +95,20 @@ void SteamGridDbBackdrop::setPreloadTitles(std::vector<std::uint64_t> titleIds) 
     }
 }
 
+void SteamGridDbBackdrop::setPreloadMinInterval(float seconds) {
+    m_preloadMinInterval = std::max(0.f, seconds);
+}
+
+void SteamGridDbBackdrop::setPreloadPaused(bool paused) {
+    m_preloadPaused = paused;
+}
+
+bool SteamGridDbBackdrop::isArtworkBusy() const {
+    return m_pendingDecode.has_value()
+        || m_readyArtwork.has_value()
+        || m_uploadStage > 0;
+}
+
 void SteamGridDbBackdrop::showTitle(std::uint64_t titleId, bool forceReload) {
     if (!m_enabled) return;
     if (!forceReload && m_requestedTitleId == titleId) return;
@@ -87,7 +121,20 @@ void SteamGridDbBackdrop::showTitle(std::uint64_t titleId, bool forceReload) {
         m_requestedTitleId = 0;
         ++m_requestGeneration;
         m_appliedGeneration = m_requestGeneration;
-        m_artworkOpacity.set(0.f, 0.22f, nxui::Easing::outCubic);
+        m_showPreviousDuringCrossfade = false;
+        if (forceReload) {
+            // Instant wipe (folder close) — no fade of the previous hero.
+            for (auto& set : m_sets) {
+                set.titleId = 0;
+                set.hasHero = false;
+                set.hasLogo = false;
+                set.heroLuminance = -1.f;
+            }
+            m_artworkOpacity.setImmediate(0.f);
+            m_fade.setImmediate(1.f);
+        } else {
+            m_artworkOpacity.set(0.f, 0.22f, nxui::Easing::outCubic);
+        }
         DebugLog::log("[steamgriddb-ui] artwork cleared: selection has no title");
         return;
     }
@@ -219,6 +266,50 @@ SteamGridDbBackdrop::DecodedImage SteamGridDbBackdrop::decodeImage(
     return out;
 }
 
+float SteamGridDbBackdrop::sampleLuminance(const DecodedImage& image) {
+    if (image.rgba.empty() || image.width <= 0 || image.height <= 0)
+        return -1.f;
+    // Sparse grid (~32×18) — cheap enough for the decode worker thread.
+    const int stepX = std::max(1, image.width / 32);
+    const int stepY = std::max(1, image.height / 18);
+    double sum = 0.0;
+    int count = 0;
+    for (int y = 0; y < image.height; y += stepY) {
+        for (int x = 0; x < image.width; x += stepX) {
+            const std::size_t i = (static_cast<std::size_t>(y) * static_cast<std::size_t>(image.width)
+                                   + static_cast<std::size_t>(x)) * 4u;
+            if (i + 2 >= image.rgba.size())
+                continue;
+            const float r = image.rgba[i] / 255.f;
+            const float g = image.rgba[i + 1] / 255.f;
+            const float b = image.rgba[i + 2] / 255.f;
+            sum += 0.2126 * r + 0.7152 * g + 0.0722 * b;
+            ++count;
+        }
+    }
+    return count > 0 ? static_cast<float>(sum / count) : -1.f;
+}
+
+bool SteamGridDbBackdrop::useFullHeroOpacity() const {
+    // Full-opacity heroes are single-row only; folder grid stays dimmed.
+    return m_layoutMode == AppLayoutMode::DynamicLine;
+}
+
+bool SteamGridDbBackdrop::hasDisplayedHero() const {
+    if (!m_enabled || !isVisible())
+        return false;
+    if (m_artworkOpacity.value() <= 0.05f)
+        return false;
+    const auto& set = m_sets[m_current];
+    return set.hasHero && set.hero.valid();
+}
+
+float SteamGridDbBackdrop::displayedHeroLuminance() const {
+    if (!hasDisplayedHero())
+        return -1.f;
+    return m_sets[m_current].heroLuminance;
+}
+
 void SteamGridDbBackdrop::startPendingDecode(std::uint64_t titleId) {
     auto state = std::make_shared<DecodeState>();
     state->artwork.titleId = titleId;
@@ -230,11 +321,18 @@ void SteamGridDbBackdrop::startPendingDecode(std::uint64_t titleId) {
             // Fixed canvases let both double-buffer slots reuse their existing
             // MemBlocks. Variable source dimensions previously triggered a
             // free + waitIdle on the render thread during focus changes.
+            //
+            // 640×360 (not 1280×720): same canvas SteamGridDbManager preps for
+            // UI cards. Full-screen fillRect stretch looks fine with the soft
+            // scrim; quarter the RGBA (~0.9 MiB vs ~3.6 MiB) cuts the SD hitch
+            // that made single-row + heroes feel sticky vs theme-only.
             state->artwork.hero = decodeImage(
-                SteamGridDbManager::heroPath(titleId), 1280, 720, true);
+                SteamGridDbManager::heroPath(titleId), 640, 360, true);
+            if (!state->cancelled.load())
+                state->artwork.heroLuminance = sampleLuminance(state->artwork.hero);
             if (!state->cancelled.load())
                 state->artwork.logo = decodeImage(
-                    SteamGridDbManager::logoPath(titleId), 640, 180, false);
+                    SteamGridDbManager::logoPath(titleId), 384, 192, false);
         }
         state->artwork.decodeMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - started).count();
@@ -284,7 +382,7 @@ void SteamGridDbBackdrop::drawSet(nxui::Renderer& renderer,
     if (set.hasHero && set.hero.valid()) {
         // The paged grid keeps the hero as a faint wash under the fork's 0.40
         // ceiling; every carousel/3D view showcases it and follows the 2.6.5
-        // opacity slider directly.
+        // opacity slider directly (PoloNX's fixed 0.94 / 0.24 would ignore it).
         const float heroAlpha = m_layoutMode == AppLayoutMode::Grid
             ? 0.40f * m_artworkOpacityScale
             : std::clamp(m_artworkOpacityScale, 0.f, 1.f);
@@ -292,7 +390,9 @@ void SteamGridDbBackdrop::drawSet(nxui::Renderer& renderer,
         renderer.drawTexture(&set.hero, fillRect(set.hero, screen),
                              nxui::Color::white().withAlpha(alpha * heroAlpha));
         renderer.popClipRect();
-        if (m_layoutMode == AppLayoutMode::DynamicLine || m_layoutMode == AppLayoutMode::Deck || m_layoutMode == AppLayoutMode::Cover || m_layoutMode == AppLayoutMode::List) {
+        // Soft bottom scrim so chrome stays legible over bright/dark heroes.
+        if (useFullHeroOpacity() || m_layoutMode == AppLayoutMode::Deck
+            || m_layoutMode == AppLayoutMode::Cover || m_layoutMode == AppLayoutMode::List) {
             renderer.drawGradientRect(
                 screen,
                 nxui::Color(0.f, 0.f, 0.f, 0.04f * alpha),
@@ -304,12 +404,14 @@ void SteamGridDbBackdrop::drawSet(nxui::Renderer& renderer,
     // Flow/Shelf keep the backdrop minimal to avoid drawing over 3D cases/reflections.
     if (m_layoutMode != AppLayoutMode::DynamicLine && m_layoutMode != AppLayoutMode::Deck) return;
 
-    if (set.hasLogo && set.logo.valid()) {
-        // Visually position the logo in the upper open space (top-left for Deck,
-        // center for DynamicLine, between the profile strip and the carousel).
+    if (m_showLogo && set.hasLogo && set.logo.valid()) {
+        // Visually position the logo in the upper open space (top-left for Deck;
+        // for DynamicLine the band the app sets, between the profile strip and
+        // the carousel, raised above the folder title bubble when a folder is
+        // open). containRect centres and constrains the logo inside it.
         const nxui::Rect logoArea = (m_layoutMode == AppLayoutMode::Deck)
             ? nxui::Rect{80.f, 90.f, 440.f, 130.f}
-            : nxui::Rect{370.f, 149.f, 540.f, 150.f};
+            : m_logoArea;
         const float logoAlpha = std::clamp(m_artworkOpacityScale * 1.5f, 0.f, 0.96f);
         renderer.drawTexture(&set.logo, containRect(set.logo, logoArea),
                              nxui::Color::white().withAlpha(logoAlpha * alpha));
@@ -319,6 +421,8 @@ void SteamGridDbBackdrop::drawSet(nxui::Renderer& renderer,
 void SteamGridDbBackdrop::onUpdate(float dt) {
     m_fade.update(std::min(dt, 0.04f));
     m_artworkOpacity.update(std::min(dt, 0.04f));
+    if (m_preloadGapSec > 0.f)
+        m_preloadGapSec = std::max(0.f, m_preloadGapSec - dt);
 
     if (m_pendingDecode
         && m_pendingDecode->future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -402,6 +506,7 @@ void SteamGridDbBackdrop::onUpdate(float dt) {
             target.hasHero = !decoded.hero.rgba.empty()
                 && target.hero.loadFromPixels(m_gpu, m_renderer, decoded.hero.rgba.data(),
                                               decoded.hero.width, decoded.hero.height);
+            target.heroLuminance = target.hasHero ? decoded.heroLuminance : -1.f;
             decoded.hero.rgba.clear();
         } else if (m_uploadStage == 1) {
             target.hasLogo = !decoded.logo.rgba.empty()
@@ -425,7 +530,8 @@ void SteamGridDbBackdrop::onUpdate(float dt) {
         m_decodeDebounce = std::max(0.f, m_decodeDebounce - dt);
         if (m_decodeDebounce <= 0.f)
             startPendingDecode(m_requestedTitleId);
-    } else if (!m_pendingDecode && !m_readyArtwork) {
+    } else if (!m_pendingDecode && !m_readyArtwork
+               && !m_preloadPaused && m_preloadGapSec <= 0.f) {
         for (std::uint64_t titleId : m_preloadTitleIds) {
             const bool decoded = std::any_of(
                 m_decodedCache.begin(), m_decodedCache.end(),
@@ -437,6 +543,7 @@ void SteamGridDbBackdrop::onUpdate(float dt) {
                 DebugLog::log("[steamgriddb-ui] prefetch scheduled title=%016llX",
                               static_cast<unsigned long long>(titleId));
                 startPendingDecode(titleId);
+                m_preloadGapSec = m_preloadMinInterval;
                 break;
             }
         }

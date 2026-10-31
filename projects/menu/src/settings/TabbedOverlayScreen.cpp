@@ -278,13 +278,18 @@ void TabbedOverlayScreen::setTheme(const nxui::Theme* t) {
     setLiquidGlassShade(m_theme->mode == nxui::ThemeMode::Dark ? 0.08f : -0.03f);
     invalidateBackdropCache();
 
-    if (!usesCustomContentLayout()) {
-        m_cachedTabContentWidgets.clear();
-        m_cachedTabContentWidgets.resize(m_tabs.size());
+    // Row widgets cache the colours they took from the theme (label/description
+    // text, values), and they key that cache on the theme pointer. The menu
+    // recolours one and the same Theme object in place, so those colours would
+    // otherwise survive a theme switch: Theme Shop -> Sounds / Interface kept
+    // black text over a black theme (or white on white). Drop the cache for
+    // every tab, including the ones a custom layout renders itself, so the
+    // settings-style tabs rebuild on next use.
+    m_cachedTabContentWidgets.clear();
+    m_cachedTabContentWidgets.resize(m_tabs.size());
 
-        if (isActive())
-            rebuildContentItems();
-    }
+    if (!usesCustomContentLayout() && isActive())
+        rebuildContentItems();
 }
 
 void TabbedOverlayScreen::show() {
@@ -402,10 +407,22 @@ float TabbedOverlayScreen::tabCardHeight(int tabCount, const nxui::Rect& rail) c
     const float natural = kTabRowHeight - kTabCardGap;
     if (tabCount <= 1)
         return natural;
-    const float available = std::max(0.f, rail.height - kTabRailInset * 2.f);
+    // Nested branch rows (Theme Shop "Shop") take their space first; the tab
+    // cards shrink to fit the rest instead of the rail scrolling.
+    float branches = 0.f;
+    for (int i = 0; i < tabCount && i < (int)m_tabs.size(); ++i)
+        branches += tabBranchExtraHeight(i);
+    const float available = std::max(0.f, rail.height - kTabRailInset * 2.f - branches);
     const float fitted = (available - kTabCardGap * static_cast<float>(tabCount - 1))
                        / static_cast<float>(tabCount);
     return std::clamp(fitted, kTabCardMinHeight, natural);
+}
+
+float TabbedOverlayScreen::tabRailContentHeight() const {
+    float height = kTabRailInset * 2.f + kTabRowHeight * (float)m_tabs.size();
+    for (int i = 0; i < (int)m_tabs.size(); ++i)
+        height += tabBranchExtraHeight(i);
+    return height;
 }
 
 void TabbedOverlayScreen::rebuildTabBar() {
@@ -429,7 +446,7 @@ void TabbedOverlayScreen::rebuildTabBar() {
         tabBox->setRect({tabX, currentY, tabW, tabH});
         m_tabBar->addChild(tabBox);
         if (!(hasBottomPinnedTab && i == (int)m_tabs.size() - 1)) {
-            tabY += tabH + kTabCardGap;
+            tabY += tabH + kTabCardGap + tabBranchExtraHeight(i);
         }
     }
 }
@@ -443,6 +460,10 @@ void TabbedOverlayScreen::rebuildContentItems() {
         return;
 
     if (m_tabIndex < 0 || m_tabIndex >= (int)m_tabs.size()) return;
+    // Screens that build tabs after setTheme() can leave this cache at size 0
+    // while m_tabs is already populated (Theme Shop Sounds/Interface path).
+    if (m_cachedTabContentWidgets.size() != m_tabs.size())
+        m_cachedTabContentWidgets.resize(m_tabs.size());
     auto& items = m_tabs[m_tabIndex].items;
     auto& cache = m_cachedTabContentWidgets[(size_t)m_tabIndex];
     DebugLog::log("[settings] rebuildContent tab=%d items=%d cache=%s",
@@ -660,7 +681,7 @@ void TabbedOverlayScreen::syncDebugWireframeRects(const nxui::Rect& panel) {
             : tabY;
         tabChildren[i]->setRect({tr.x + kTabRailInset, currentY, tabW, tabH});
         if (!(hasBottomPinnedTab && i == (int)tabChildren.size() - 1)) {
-            tabY += tabH + kTabCardGap;
+            tabY += tabH + kTabCardGap + tabBranchExtraHeight(i);
         }
     }
 
@@ -723,6 +744,11 @@ void TabbedOverlayScreen::drawTabs(nxui::Renderer& ren, const nxui::Rect& panel,
     float tabH = tabCardHeight((int)std::min(tabChildren.size(), m_tabs.size()), tr);
     float rowOpacity = opacity * reveal;
     float rowYOffset = (1.f - reveal) * 6.f;
+    struct BranchDraw {
+        int index = -1;
+        nxui::Rect rect;
+    };
+    BranchDraw branchDraw;
 
     const bool hasBottomPinnedTab = (m_mode == ScreenMode::ThemeShop && tabChildren.size() > 1);
 
@@ -733,23 +759,45 @@ void TabbedOverlayScreen::drawTabs(nxui::Renderer& ren, const nxui::Rect& panel,
             : tabY;
         tab->setRect({tr.x + kTabRailInset, currentY + rowYOffset, tabW, tabH});
         tab->setOpacity(rowOpacity);
+        const bool branchFocus = (i == m_tabIndex) && tabBranchConsumesFocus();
         tab->sync(m_tabs[i].name,
                   m_font,
                   m_theme,
                   i == m_tabIndex,
-                  m_focusArea == FocusArea::Tabs && i == m_tabIndex,
+                  m_focusArea == FocusArea::Tabs && i == m_tabIndex && !branchFocus,
                   m_uiTime,
                   m_tabAccentW.value());
         if (!(hasBottomPinnedTab && i == (int)tabChildren.size() - 1)) {
             tabY += tabH + kTabCardGap;
+            const float extra = tabBranchExtraHeight(i);
+            if (extra > 0.5f) {
+                // Same card height as parent tabs (pitch minus gap), just indented.
+                const float branchH = std::max(0.f, std::min(tabH, extra - kTabCardGap));
+                branchDraw = {
+                    i,
+                    {
+                        tr.x + kTabRailInset + 20.f,
+                        tabY + rowYOffset,
+                        std::max(0.f, tabW - 20.f),
+                        branchH
+                    }
+                };
+                tabY += extra;
+            }
         }
     }
 
     if (m_focusArea == FocusArea::Tabs && m_tabIndex >= 0 && m_tabIndex < (int)tabChildren.size()) {
-        m_focusCursor.moveTo(tabChildren[m_tabIndex]->rect().expanded(1.f), 16.f, 0.08f);
+        nxui::Rect focusRect = tabChildren[m_tabIndex]->rect().expanded(1.f);
+        (void)tabFocusCursorRect(focusRect);
+        m_focusCursor.moveTo(focusRect, 16.f, 0.08f);
     }
 
     m_tabBar->render(ren);
+    // The fork fits every tab card into the rail (tabCardHeight) rather than
+    // scrolling it, so there is no rail scrollbar here.
+    if (branchDraw.index >= 0)
+        drawTabBranch(ren, branchDraw.index, branchDraw.rect, rowOpacity);
 }
 
 void TabbedOverlayScreen::drawContent(nxui::Renderer& ren, const nxui::Rect& panel, float opacity) {

@@ -6,6 +6,8 @@
 #include <nxui/core/Input.hpp>
 #include <nxui/focus/FocusManager.hpp>
 #include <switch.h>
+#include <algorithm>
+#include <cmath>
 
 namespace nxui {
 
@@ -170,6 +172,24 @@ void Application::dispatchInput() {
         m_navDebounce = stickOnly ? 10 : 6;  // ~170 / ~100 ms at 60 fps
 
         Widget* cur = fm.current();
+
+        // Hardware stick "buttons" light up on mild diagonals. Prefer the
+        // dominant axis from the analog sample so a mostly-horizontal flick
+        // with a little upward drift does not also step into top chrome.
+        // D-pad is unaffected (always deliberate).
+        // Ratio > 1 means vertical must clearly beat horizontal to count as UP.
+        constexpr float kStickAxisDominance = 1.55f;
+        const float lx = m_input.leftStickX();
+        const float ly = m_input.leftStickY();
+        const float rx = m_input.rightStickX();
+        const float ry = m_input.rightStickY();
+        const float ax = (std::abs(lx) >= std::abs(rx)) ? lx : rx;
+        const float ay = (std::abs(ly) >= std::abs(ry)) ? ly : ry;
+        const float absX = std::abs(ax);
+        const float absY = std::abs(ay);
+        const bool stickHorizOk = absX >= absY / kStickAxisDominance;
+        const bool stickVertOk  = absY >= absX * kStickAxisDominance;
+
         auto tryDir = [&](Button dpad, Button leftStick, Button rightStick, FocusDirection dir) {
             // While repeating, held counts as pressed -- otherwise nothing
             // would be true on a frame where no button changed.
@@ -178,6 +198,19 @@ void Application::dispatchInput() {
                               || (repeating && m_input.isHeld(leftStick));
             bool rightStickDown = m_input.isDown(rightStick)
                               || (repeating && m_input.isHeld(rightStick));
+
+            // Diagonal stick: only the dominant axis counts (PoloNX).
+            const bool vertical = (dir == FocusDirection::UP || dir == FocusDirection::DOWN);
+            if (vertical) {
+                if (!stickVertOk) {
+                    leftStickDown = false;
+                    rightStickDown = false;
+                }
+            } else if (!stickHorizOk) {
+                leftStickDown = false;
+                rightStickDown = false;
+            }
+
             if (!dpadDown && !leftStickDown && !rightStickDown) return;
 
             // Focused widget's action takes priority (no bubbling for D-pad)

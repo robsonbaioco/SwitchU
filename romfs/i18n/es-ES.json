@@ -108,7 +108,13 @@
       "cover": "Modo portada",
       "xmb": "Modo XMB",
       "list": "Modo lista",
-      "metro": "Modo Metro de mosaicos dinámicos"
+      "metro": "Modo Metro de mosaicos dinámicos",
+      "flip_to_line": "Cambiar a la vista de una fila.",
+      "flip_to_grid": "Cambiar a la vista de cuadrícula."
+    },
+    "themeshop": {
+      "shelf_branch": "A o derecha para entrar. Abajo para la tienda. Arriba y abajo para cambiar de pestaña. B para cerrar.",
+      "shop_branch": "A o derecha para entrar en la tienda. Arriba para los instalados. Abajo para la siguiente pestaña. B para cerrar."
     }
   },
   "tutorial": {
@@ -394,7 +400,17 @@
     "steamgriddb": {
       "section": "Ilustraciones de juegos",
       "enabled": "Mostrar ilustraciones de SteamGridDB",
-      "enabled_desc": "Muestra heroes y logos detrás del menú de aplicaciones.",
+      "enabled_desc": "Elige abajo dónde aparecen las ilustraciones.",
+      "show_grid": "Mostrar en el menú de cuadrícula",
+      "show_grid_desc": "Hero de fondo detrás de la cuadrícula estándar del HOME.",
+      "show_line": "Mostrar en el menú de una fila",
+      "show_line_desc": "Hero y logo detrás del carrusel de una fila.",
+      "show_folders": "Mostrar dentro de las carpetas",
+      "show_folders_desc": "Ilustraciones al explorar los juegos de una carpeta abierta.",
+      "show_poster_line": "Mostrar póster en la vista de una fila",
+      "show_poster_line_desc": "Usa las portadas verticales de SteamGridDB en el carrusel. La cuadrícula sigue con los iconos.",
+      "show_logo_line": "Mostrar logo en la vista de una fila",
+      "show_logo_line_desc": "Logo del juego encima del carrusel. Desactívalo para dejar solo el hero y las portadas.",
       "api_key": "Clave de API",
       "api_key_set": "Configurada (oculta)",
       "api_key_missing": "No configurada",
@@ -415,7 +431,8 @@
       "started": "Análisis de SteamGridDB iniciado.",
       "download_title": "Descargando ilustraciones",
       "download_start": "Buscando en SteamGridDB...",
-      "https_clock_hint": "Error de HTTPS. Si el reloj de la consola es incorrecto, corrígelo en Ajustes > Sistema (sincronizar el reloj por Internet o ajustar la fecha y la hora a mano)."
+      "https_clock_hint": "Error de HTTPS. Si el reloj de la consola es incorrecto, corrígelo en Ajustes > Sistema (sincronizar el reloj por Internet o ajustar la fecha y la hora a mano).",
+      "need_query": "Escribe primero un nombre para buscar."
     },
     "controllers": {
       "test": "Probar dispositivos de entrada",
@@ -625,6 +642,10 @@
       "hero_desc": "Abre la galería de heroes y elige la imagen que usar.",
       "logo": "Logo",
       "logo_desc": "Abre la galería de logos y elige la imagen que usar.",
+      "poster": "Póster",
+      "poster_desc": "Portada vertical para la vista de una fila y los mosaicos 2x3 de la cuadrícula.",
+      "poster_wide": "Póster ancho",
+      "poster_wide_desc": "Ilustración horizontal de la cuadrícula para este mosaico 2x1.",
       "icon": "Icono sustituto",
       "icon_desc": "Abre la galería de iconos y elige una sustitución para este juego.",
       "cover": "Portrait cover",
@@ -701,7 +722,15 @@
     "style_manila": "Manila",
     "style_label": "Etiqueta",
     "show_cover": "Mostrar portada",
-    "show_cover_desc": "Muestra el primer juego en cada carpeta. El estilo Clásico conserva el mosaico."
+    "show_cover_desc": "Muestra el primer juego en cada carpeta. El estilo Clásico conserva el mosaico.",
+    "custom_poster": "Póster personalizado",
+    "custom_poster_desc": "Busca un póster vertical en SteamGridDB (vista de una fila).",
+    "custom_poster_set_desc": "El póster de SteamGridDB está activo en esta carpeta en la vista de una fila.",
+    "default_view": "Vista predeterminada de carpetas",
+    "default_view_auto": "Automática",
+    "default_view_desc": "Diseño usado al abrir cualquier carpeta.",
+    "default_view_grid": "Cuadrícula",
+    "default_view_line": "Una fila"
   },
   "add": {
     "title": "Añadir"
@@ -837,7 +866,18 @@
       "options": "Opciones",
       "update": "Actualización",
       "uninstall": "Desinstalar",
-      "music": "Música (YouTube)"
+      "music": "Música (YouTube)",
+      "sounds": "Sonidos",
+      "interface": "Interfaz",
+      "icons": "Iconos",
+      "themes": "Temas"
+    },
+    "badge": {
+      "icons": "Iconos",
+      "music": "Música",
+      "sounds": "Sonidos",
+      "tint": "Tono",
+      "auto": "Auto"
     },
     "accessibility": {
       "fullscreen_preview": "Vista previa a pantalla completa",
@@ -861,7 +901,8 @@
       "guide": "Buscar temas",
       "unavailable": "El teclado de búsqueda no está disponible.",
       "no_results": "No hay temas para esta búsqueda.",
-      "no_results_hint": "Pulsa X o usa Buscar para cambiar o borrar el filtro."
+      "no_results_hint": "Pulsa X o usa Buscar para cambiar o borrar el filtro.",
+      "title": "Buscar temas"
     },
     "installed": {
       "title": "Temas instalados",
@@ -875,7 +916,10 @@
       "remove_hint": "Este tema se puede eliminar de la consola.",
       "builtin_hint": "Este tema forma parte de la app.",
       "apply": "Aplicar tema",
-      "remove": "Eliminar tema"
+      "remove": "Eliminar tema",
+      "remove_confirm": "¿Eliminar este tema de la consola?",
+      "remove_confirm_yes": "Eliminar",
+      "cover_single": "Pulsa A para abrir esta captura a pantalla completa."
     },
     "catalog": {
       "theme_one": "tema",
@@ -907,6 +951,8 @@
       "install": "Instalar",
       "installed": "Instalado",
       "download_apply": "Descargar + aplicar",
+      "download_apply_confirm_title": "Descargar y aplicar",
+      "download_apply_confirm": "¿Descargar este tema y aplicarlo al HOME ahora?",
       "transfer_busy": "Ya hay una transferencia de tema en curso.",
       "install_pending": "Instalación aún no conectada.",
       "download_apply_pending": "Descargar + aplicar aún no conectado.",
@@ -956,9 +1002,77 @@
       "title": "Temas animados",
       "subtitle": "Fondos en movimiento, con sonido cuando el tema lo trae."
     },
+    "icons": {
+      "title": "Iconos",
+      "subtitle": "Packs de iconos de la barra lateral.",
+      "apply": "Aplicar pack de iconos",
+      "remove": "Eliminar pack de iconos",
+      "remove_confirm": "¿Borrar este pack de iconos de la consola?",
+      "remove_failed": "No se pudo eliminar este pack de iconos.",
+      "removed": "Pack de iconos eliminado.",
+      "installed": "Pack de iconos instalado.",
+      "status_online": "Disponible en línea",
+      "download_hint": "Instálalo para descargar este pack en la consola.",
+      "remove_hint": "Pack descargado: se puede eliminar de la consola.",
+      "download_apply_confirm_title": "Descargar y aplicar",
+      "download_apply_confirm": "¿Descargar este pack de iconos y aplicarlo ahora?",
+      "dialog_title": "Descargando pack de iconos",
+      "prepare_download": "Preparando la descarga del pack de iconos...",
+      "finalize_download": "Terminando la instalación del pack de iconos...",
+      "fallback": "Los iconos que falten usan los de Default.",
+      "apply_hint": "Aplícalo para cambiar los iconos de la barra lateral al momento.",
+      "applied": "Pack de iconos aplicado.",
+      "builtin_hint": "Pack integrado: Aplícalo para usarlo. Los integrados no se pueden eliminar.",
+      "cover_single": "Pulsa A para verlo de cerca y luego Aplicar para cambiar los iconos.",
+      "custom_tint": "Tono personalizado",
+      "empty": "No hay packs de iconos instalados.",
+      "empty_hint": "Ve a la Tienda para descargar packs, o instala un tema que incluya iconos.",
+      "empty_shop": "No hay packs de iconos disponibles para descargar.",
+      "empty_shop_hint": "Actualiza el catálogo, o ve a Instalados para ver los packs de esta consola.",
+      "flatten": "Sólido",
+      "grayscale": "Escala de grises",
+      "match_theme": "Combinar con el tema",
+      "preview_loading": "Cargando vista previa...",
+      "preview_missing": "Sin vista previa",
+      "preview_unavailable": "Vista previa no disponible",
+      "shop_item": "Tienda de iconos",
+      "subtitle_installed": "Packs de iconos de esta consola.",
+      "subtitle_shop": "Descarga packs de iconos del catálogo.",
+      "tint_hue": "Matiz",
+      "tint_lightness": "Luminosidad",
+      "tint_saturation": "Saturación",
+      "title_installed": "Iconos instalados",
+      "title_shop": "Tienda de iconos"
+    },
     "options": {
       "auto_theme": "Tema automático",
-      "auto_theme_desc": "Alterna automáticamente entre un tema de día y uno de noche."
+      "auto_theme_desc": "Alterna automáticamente entre un tema de día y uno de noche.",
+      "action_hints": "Indicaciones de acción",
+      "action_hints_desc": "Elige cómo aparecen los controles contextuales en la esquina inferior derecha.",
+      "sort_large_tiles": "Ordenar también los mosaicos grandes",
+      "sort_large_tiles_desc": "A-Z y Recientes también mueven las aplicaciones que usan un mosaico más grande.",
+      "hint_panel": "Panel",
+      "hint_capsules": "Cápsulas",
+      "theme_music_override": "Permitir que los temas reemplacen mi lista",
+      "theme_music_override_desc": "Activado: aplicar un tema con música cambia tu lista por las pistas del tema. Desactivado: conserva tu biblioteca y usa las opciones de abajo.",
+      "theme_music_add": "Añadir la música del tema a mi lista",
+      "theme_music_add_desc": "Con el reemplazo desactivado, añade las pistas del tema a tu lista actual en lugar de ignorarlas.",
+      "theme_music_play": "Reproducir la música del tema al aplicarlo",
+      "theme_music_play_desc": "Con el reemplazo desactivado y la música del tema añadida, reproduce esa pista después de Aplicar. (El modo de reemplazo siempre inicia la lista del tema cuando la música está activada.)",
+      "battery_saver": "Ahorro de batería",
+      "battery_saver_desc": "Reduce el uso de memoria y GPU del HOME. También disponible en Ajustes rápidos.",
+      "frame_tap_engaged": "Frame Tap en uso",
+      "frame_tap_engaged_desc": "El modo ligero se mantiene mientras Frame Tap está transmitiendo. Desconecta el visor para cambiar el Ahorro de batería.",
+      "icon_contrast": "Contraste adaptable de los iconos",
+      "icon_contrast_desc": "En una fila con una imagen destacada, los iconos de color del HOME siguen el modo claro/oscuro de la interfaz. Sin imagen destacada conservan sus colores originales (o tu tono personalizado)."
+    },
+    "themes": {
+      "empty_installed_hint": "Ve a la Tienda para ver y descargar temas.",
+      "shop_item": "Tienda de temas",
+      "subtitle_installed": "Temas de esta consola.",
+      "subtitle_shop": "Descarga temas del catálogo.",
+      "title_installed": "Temas instalados",
+      "title_shop": "Tienda de temas"
     }
   },
   "dialog": {
@@ -1184,7 +1298,17 @@
     "reboot": "Reiniciar",
     "power_off": "Apagar",
     "hint_adjust": "Ajustar",
-    "hint_shortcut": "Ajustes rápidos"
+    "hint_shortcut": "Ajustes rápidos",
+    "music_empty": "No hay música cargada",
+    "music_idle": "Sin reproducir",
+    "prev": "Anterior",
+    "next": "Siguiente",
+    "play_pause": "Reproducir/Pausa",
+    "repeat": "Repetir",
+    "shuffle": "Aleatorio",
+    "playlist": "Lista",
+    "battery_saver": "Ahorro de batería",
+    "frame_tap_engaged": "Frame Tap activo"
   },
   "activity_log": {
     "title": "Registro de actividad diario",
@@ -1247,5 +1371,16 @@
     "body": "El menú se cerró de forma inesperada varias veces al iniciar, así que se está ejecutando con el tema integrado, sin fondo de vídeo y sin música. Tu tema y tus ajustes no se han cambiado. Quita o sustituye el tema que lo causó y luego sal del modo seguro.",
     "stay": "Seguir en modo seguro",
     "leave": "Salir del modo seguro (reiniciar)"
+  },
+  "battery": {
+    "hint": "A para abrir los Ajustes rápidos.",
+    "label": "Batería"
+  },
+  "layout": {
+    "flip_to_grid": "Cambiar a la vista de cuadrícula.",
+    "flip_to_line": "Cambiar a la vista de una fila."
+  },
+  "quick_settings": {
+    "title": "Ajustes rápidos"
   }
 }

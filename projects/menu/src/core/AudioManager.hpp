@@ -80,6 +80,9 @@ private:
     void applyMusicVolume();
     void rebuildShuffleOrderLocked();
     void playCurrentTrackLocked();
+    /// Reject MP4/AAC (ftyp…) and other non-decodable-on-Switch containers that
+    /// are often mislabeled .mp3 — Mix_PlayMusic can soft-lock the console.
+    static bool audioContainerLooksSafe(const std::string& path);
 
     mutable std::mutex m_trackMutex;
     std::vector<TrackInfo> m_tracks;

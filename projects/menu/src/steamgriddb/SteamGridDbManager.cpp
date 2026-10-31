@@ -22,6 +22,84 @@ namespace {
 constexpr const char* kApiBase = "https://www.steamgriddb.com/api/v2";
 constexpr int kMatcherVersion = 3; // v3 always matches against the cached English title.
 
+struct ArtworkKindInfo {
+    const char* endpoint = "/icons";
+    const char* label = "Icon";
+    const char* flag = "icon";
+    const char* idKey = "selectedIconId";
+    const char* indexKey = "selectedIconIndex";
+    // Appended after nsfw/humor (and optional types=static).
+    const char* querySuffix = "&mimes=image/png";
+    bool useStaticTypes = false;
+    bool requireLandscape = false;
+    bool requirePortrait = false;
+    bool prepareCache = false;
+    int prepW = 0;
+    int prepH = 0;
+};
+
+ArtworkKindInfo kindInfo(SteamGridDbManager::ArtworkKind kind) {
+    using Kind = SteamGridDbManager::ArtworkKind;
+    switch (kind) {
+    case Kind::Hero:
+        // Cap to ~1080p-class heroes (skip 3840x1240). UI cards use 640x360.
+        return {"/heroes", "Hero", "hero", "selectedHeroId", "selectedHeroIndex",
+                "&mimes=image/png,image/jpeg&dimensions=1920x620,1600x650",
+                true, true, false, true, 640, 360};
+    case Kind::Logo:
+        // Logos have no SGDB dimension enum; PNG for alpha. UI uses 384x192.
+        return {"/logos", "Logo", "logo", "selectedLogoId", "selectedLogoIndex",
+                "&mimes=image/png", true, false, false, true, 384, 192};
+    case Kind::Cover: // == Kind::Poster
+        // SteamGridDB "grids", portrait 600x900 only: the same file feeds the
+        // fork's Cover/Shelf/Flow views (decoded at up to 720px) and PoloNX's
+        // single-row poster tiles. prepW/H are the IconStreamer fit box (see
+        // prepareFit), not letterboxed. The "cover" flag matches the metadata
+        // the fork's scan already wrote.
+        return {"/grids", "Cover", "cover", "selectedCoverId", "selectedCoverIndex",
+                "&mimes=image/png,image/jpeg&dimensions=600x900",
+                true, false, true, true, 320, 480};
+    case Kind::GridWide:
+        // Landscape SGDB grids for 2x1 / 4x2 HOME tiles (separate from Hero+Logo).
+        return {"/grids", "Poster wide", "gridWide", "selectedGridWideId",
+                "selectedGridWideIndex",
+                "&mimes=image/png,image/jpeg&dimensions=460x215,920x430",
+                true, true, false, true, 460, 215};
+    case Kind::Icon:
+    default:
+        // Icons are PNG-only on SGDB. Grid icons draw at 160px; prefer 256/512,
+        // keep 1024 so games without smaller uploads still appear (ranked down).
+        return {"/icons", "Icon", "icon", "selectedIconId", "selectedIconIndex",
+                "&mimes=image/png&dimensions=256,512,1024",
+                false, false, false, false, 0, 0};
+    }
+}
+
+std::string pathForKind(SteamGridDbManager::ArtworkKind kind, std::uint64_t titleId) {
+    using Kind = SteamGridDbManager::ArtworkKind;
+    switch (kind) {
+    case Kind::Hero:     return SteamGridDbManager::heroPath(titleId);
+    case Kind::Logo:     return SteamGridDbManager::logoPath(titleId);
+    case Kind::Cover:    return SteamGridDbManager::coverPath(titleId); // == Poster
+    case Kind::GridWide: return SteamGridDbManager::gridWidePath(titleId);
+    case Kind::Icon:
+    default:             return SteamGridDbManager::iconPath(titleId);
+    }
+}
+
+std::string titleDirectory(std::uint64_t titleId);
+
+// Metadata always lives in the title directory; covers live in their own
+// folder (sdmc:/config/SwitchU/covers/<TID16>.jpg), shared with the views.
+void ensureArtworkDirectories(SteamGridDbManager::ArtworkKind kind, std::uint64_t titleId) {
+    std::error_code ec;
+    std::filesystem::create_directories(titleDirectory(titleId), ec);
+    if (kind == SteamGridDbManager::ArtworkKind::Cover) {
+        ec.clear();
+        std::filesystem::create_directories(SteamGridDbManager::kCoverRoot, ec);
+    }
+}
+
 bool looksLikeHttpsClockFailure(const std::string& error) {
     if (error.empty())
         return true;
@@ -181,17 +259,14 @@ nlohmann::json listArtwork(const Backend& backend, long long gameId,
                            SteamGridDbManager::ArtworkKind kind) {
     using ArtworkKind = SteamGridDbManager::ArtworkKind;
     if (!backend.proxy) {
-        const char* endpoint = kind == ArtworkKind::Hero  ? "/heroes"
-                             : kind == ArtworkKind::Logo  ? "/logos"
-                             : kind == ArtworkKind::Cover ? "/grids" : "/icons";
-        std::string url = std::string(kApiBase) + endpoint + "/game/" + std::to_string(gameId)
-                        + "?nsfw=false&humor=false";
-        if (kind == ArtworkKind::Cover)
-            url += "&dimensions=600x900&types=static&mimes=image/png,image/jpeg";
-        else if (kind != ArtworkKind::Icon)
+        // Endpoint, static-only flag, MIME and dimension filters per kind
+        // (covers stay 600x900; icons ask for 256/512/1024).
+        const auto info = kindInfo(kind);
+        std::string url = std::string(kApiBase) + info.endpoint + "/game/"
+                        + std::to_string(gameId) + "?nsfw=false&humor=false";
+        if (info.useStaticTypes)
             url += "&types=static";
-        url += (kind == ArtworkKind::Hero || kind == ArtworkKind::Cover)
-            ? "&mimes=image/png,image/jpeg" : "&mimes=image/png";
+        url += info.querySuffix;
         return apiData(url, backend.headers);
     }
     if (kind == ArtworkKind::Logo)
@@ -205,6 +280,8 @@ nlohmann::json listArtwork(const Backend& backend, long long gameId,
         url += "?dimensions=1024x1024";
     else if (kind == ArtworkKind::Cover)
         url += "?dimensions=600x900";
+    else if (kind == ArtworkKind::GridWide)
+        url += "?dimensions=460x215,920x430";
     return proxyData(url, member, backend.headers);
 }
 
@@ -269,13 +346,22 @@ void removeCachedArtwork(std::uint64_t titleId) {
     std::error_code ec;
     const std::string hero = SteamGridDbManager::heroPath(titleId);
     const std::string logo = SteamGridDbManager::logoPath(titleId);
+    const std::string gridWide = SteamGridDbManager::gridWidePath(titleId);
     std::filesystem::remove(hero, ec);
     ec.clear();
     std::filesystem::remove(logo, ec);
     ec.clear();
-    std::filesystem::remove(hero + ".1280x720.rgba-cache", ec);
+    std::filesystem::remove(gridWide, ec);
     ec.clear();
-    std::filesystem::remove(logo + ".640x180.rgba-cache", ec);
+    std::filesystem::remove(hero + ".640x360.rgba-cache", ec);
+    ec.clear();
+    std::filesystem::remove(hero + ".1280x720.rgba-cache", ec); // legacy prep size
+    ec.clear();
+    std::filesystem::remove(logo + ".384x192.rgba-cache", ec);
+    ec.clear();
+    std::filesystem::remove(logo + ".640x180.rgba-cache", ec); // legacy prep size
+    ec.clear();
+    std::filesystem::remove(gridWide + ".460x215.rgba-cache", ec);
     ec.clear();
     std::filesystem::remove(titleDirectory(titleId) + "/metadata.json", ec);
 }
@@ -312,7 +398,8 @@ const nlohmann::json* chooseImage(const nlohmann::json& images, bool portrait) {
 }
 
 std::vector<const nlohmann::json*> rankedImages(const nlohmann::json& images,
-                                                bool requireLandscape) {
+                                                bool requireLandscape,
+                                                bool requirePortrait = false) {
     std::vector<const nlohmann::json*> ranked;
     if (!images.is_array()) return ranked;
     for (const auto& image : images) {
@@ -324,7 +411,11 @@ std::vector<const nlohmann::json*> rankedImages(const nlohmann::json& images,
         if (query != std::string::npos) url.resize(query);
         if (!url.ends_with(".png") && !url.ends_with(".jpg") && !url.ends_with(".jpeg"))
             continue;
-        if (requireLandscape && image.value("width", 0) < image.value("height", 0))
+        const int w = image.value("width", 0);
+        const int h = image.value("height", 0);
+        if (requireLandscape && w < h)
+            continue;
+        if (requirePortrait && h <= w)
             continue;
         ranked.push_back(&image);
     }
@@ -348,6 +439,15 @@ nlohmann::json readMetadata(std::uint64_t titleId) {
     } catch (...) {
         return nlohmann::json::object();
     }
+}
+
+void writeMetadata(std::uint64_t titleId, const nlohmann::json& metadata) {
+    if (titleId == 0) return;
+    std::error_code ec;
+    std::filesystem::create_directories(titleDirectory(titleId), ec);
+    std::ofstream output(titleDirectory(titleId) + "/metadata.json", std::ios::trunc);
+    if (output.is_open())
+        output << metadata.dump(2);
 }
 
 bool saveBytes(const std::string& path, const std::vector<std::uint8_t>& bytes) {
@@ -378,11 +478,27 @@ bool fetchImage(const nlohmann::json& images, bool portrait,
 }
 
 bool prepareArtwork(SteamGridDbManager::ArtworkKind kind, const std::string& path) {
-    if (kind == SteamGridDbManager::ArtworkKind::Hero)
-        return steamgriddb::artwork::prepare(path, 1280, 720, true);
-    if (kind == SteamGridDbManager::ArtworkKind::Logo)
-        return steamgriddb::artwork::prepare(path, 640, 180, false);
-    return true;
+    const auto info = kindInfo(kind);
+    if (!info.prepareCache)
+        return true;
+    if (kind == SteamGridDbManager::ArtworkKind::Poster)
+        return steamgriddb::artwork::prepareFit(path, info.prepW, info.prepH);
+    return steamgriddb::artwork::prepare(path, info.prepW, info.prepH,
+                                         kind == SteamGridDbManager::ArtworkKind::Hero
+                                         || kind == SteamGridDbManager::ArtworkKind::GridWide);
+}
+
+void removePreparedArtwork(SteamGridDbManager::ArtworkKind kind, const std::string& path) {
+    const auto info = kindInfo(kind);
+    if (!info.prepareCache)
+        return;
+    if (kind == SteamGridDbManager::ArtworkKind::Poster) {
+        steamgriddb::artwork::removeFit(path, info.prepW, info.prepH);
+        // Legacy fixed-canvas cache from earlier poster prep.
+        steamgriddb::artwork::remove(path, 600, 900);
+        return;
+    }
+    steamgriddb::artwork::remove(path, info.prepW, info.prepH);
 }
 
 std::string expandQueryAlias(const std::string& query) {
@@ -529,6 +645,7 @@ SteamGridDbManager::BrowseResult SteamGridDbManager::browse(
             return a.score > b.score;
         });
 
+        const auto info = kindInfo(kind);
         constexpr std::size_t kMaxCandidates = 18;
         for (const auto& sg : scored) {
             if (result.candidates.size() >= kMaxCandidates) break;
@@ -536,7 +653,8 @@ SteamGridDbManager::BrowseResult SteamGridDbManager::browse(
 
             try {
                 const auto images = listArtwork(backend, sg.id, kind);
-                const auto ranked = rankedImages(images, kind == ArtworkKind::Hero);
+                const auto ranked = rankedImages(images, info.requireLandscape,
+                                                 info.requirePortrait);
                 for (std::size_t i = 0; i < ranked.size() && result.candidates.size() < kMaxCandidates; ++i) {
                     Candidate candidate;
                     candidate.id = ranked[i]->value("id", 0LL);
@@ -558,7 +676,8 @@ SteamGridDbManager::BrowseResult SteamGridDbManager::browse(
         }
 
         if (result.candidates.empty()) {
-            throw std::runtime_error("No artwork available for '" + result.query + "'");
+            throw std::runtime_error("No " + std::string(info.label)
+                                     + " artwork available for '" + result.query + "'");
         }
         DebugLog::log("[steamgriddb] browse '%s' games=%d best='%s' score=%.2f candidates=%d",
                       result.query.c_str(), static_cast<int>(scored.size()),
@@ -575,26 +694,32 @@ SteamGridDbManager::BrowseResult SteamGridDbManager::browse(
 
 SteamGridDbManager::ApplyResult SteamGridDbManager::applyCandidate(
     const BrowseResult& browseResult, const Candidate& candidate,
-    const ProgressCallback& onProgress) {
+    const ProgressCallback& onProgress,
+    const AbortCheck& shouldAbort) {
     ApplyResult result;
     result.titleId = browseResult.titleId;
     result.kind = browseResult.kind;
+    auto aborted = [&]() {
+        return shouldAbort && shouldAbort();
+    };
     try {
-        const std::string destination = result.kind == ArtworkKind::Hero
-            ? heroPath(result.titleId)
-            : result.kind == ArtworkKind::Logo ? logoPath(result.titleId)
-            : result.kind == ArtworkKind::Cover ? coverPath(result.titleId)
-                                               : iconPath(result.titleId);
-        std::error_code ec;
-        if (result.kind == ArtworkKind::Cover)
-            std::filesystem::create_directories("sdmc:/config/SwitchU/covers", ec);
-        else
-            std::filesystem::create_directories(titleDirectory(result.titleId), ec);
-        if (result.kind == ArtworkKind::Hero)
-            steamgriddb::artwork::remove(destination, 1280, 720);
-        else if (result.kind == ArtworkKind::Logo)
-            steamgriddb::artwork::remove(destination, 640, 180);
+        if (aborted()) {
+            result.cancelled = true;
+            result.message = "Cancelled";
+            return result;
+        }
+        const auto info = kindInfo(result.kind);
+        const std::string destination = pathForKind(result.kind, result.titleId);
+        ensureArtworkDirectories(result.kind, result.titleId);
+        if (info.prepareCache)
+            removePreparedArtwork(result.kind, destination);
         if (onProgress) onProgress("Downloading artwork...", 0.02f);
+        DebugLog::log("[steamgriddb] apply start title=%016llX kind=%d url=%s %dx%d",
+                      static_cast<unsigned long long>(result.titleId),
+                      static_cast<int>(result.kind),
+                      candidate.url.c_str(),
+                      candidate.width,
+                      candidate.height);
         auto downloadProgress = [&](std::uint64_t downloaded, std::uint64_t total) {
             if (!onProgress) return;
             const float networkProgress = total > 0
@@ -602,15 +727,38 @@ SteamGridDbManager::ApplyResult SteamGridDbManager::applyCandidate(
                 : 0.f;
             onProgress("Downloading artwork...", 0.02f + networkProgress * 0.68f);
         };
-        if (candidate.url.empty()
-            || !saveBytes(destination,
-                          themeshop::http::getBytes(candidate.url, {}, downloadProgress)))
+        if (candidate.url.empty())
             throw std::runtime_error("Artwork download failed");
+        // The fork's ThemeHttp has no abort hook, so a Cancel is honoured once
+        // the transfer returns and before anything is written.
+        auto bytes = themeshop::http::getBytes(candidate.url, {}, downloadProgress);
+        if (aborted()) {
+            result.cancelled = true;
+            result.message = "Cancelled";
+            DebugLog::log("[steamgriddb] apply cancelled during download title=%016llX",
+                          static_cast<unsigned long long>(result.titleId));
+            return result;
+        }
+        if (bytes.empty() || !saveBytes(destination, bytes))
+            throw std::runtime_error("Artwork download failed");
+        DebugLog::log("[steamgriddb] apply downloaded title=%016llX bytes=%zu",
+                      static_cast<unsigned long long>(result.titleId),
+                      bytes.size());
 
-        if (result.kind != ArtworkKind::Icon) {
+        if (info.prepareCache) {
+            if (aborted()) {
+                result.cancelled = true;
+                result.message = "Cancelled";
+                return result;
+            }
             if (onProgress) onProgress("Preparing artwork cache...", 0.74f);
             if (!prepareArtwork(result.kind, destination))
                 throw std::runtime_error("Artwork decode failed");
+        }
+        if (aborted()) {
+            result.cancelled = true;
+            result.message = "Cancelled";
+            return result;
         }
         if (onProgress) onProgress("Saving artwork...", 0.96f);
 
@@ -621,23 +769,27 @@ SteamGridDbManager::ApplyResult SteamGridDbManager::applyCandidate(
         metadata["steamGridDbName"] = browseResult.gameName;
         metadata["matcherVersion"] = kMatcherVersion;
         metadata["matchScore"] = browseResult.matchScore;
-        const char* flag = result.kind == ArtworkKind::Hero ? "hero"
-                         : result.kind == ArtworkKind::Logo ? "logo" : "icon";
-        const char* idKey = result.kind == ArtworkKind::Hero ? "selectedHeroId"
-                          : result.kind == ArtworkKind::Logo ? "selectedLogoId"
-                                                            : "selectedIconId";
-        metadata[flag] = true;
-        metadata[idKey] = candidate.id;
-        std::ofstream output(titleDirectory(result.titleId) + "/metadata.json", std::ios::trunc);
-        if (output.is_open()) output << metadata.dump(2);
+        if (!browseResult.query.empty())
+            metadata["searchQuery"] = browseResult.query;
+        metadata[info.flag] = true;
+        metadata[info.idKey] = candidate.id;
+        writeMetadata(result.titleId, metadata);
         result.success = true;
-        result.message = std::string(result.kind == ArtworkKind::Hero ? "Hero"
-                                   : result.kind == ArtworkKind::Logo ? "Logo" : "Icon")
-                       + " applied";
+        result.message = std::string(info.label) + " applied";
         if (onProgress) onProgress(result.message, 1.f);
+        DebugLog::log("[steamgriddb] apply done title=%016llX kind=%d",
+                      static_cast<unsigned long long>(result.titleId),
+                      static_cast<int>(result.kind));
     } catch (const std::exception& ex) {
-        result.message = ex.what();
-        DebugLog::log("[steamgriddb] apply candidate failed: %s", ex.what());
+        if (aborted()) {
+            result.cancelled = true;
+            result.message = "Cancelled";
+            DebugLog::log("[steamgriddb] apply cancelled title=%016llX",
+                          static_cast<unsigned long long>(result.titleId));
+        } else {
+            result.message = ex.what();
+            DebugLog::log("[steamgriddb] apply candidate failed: %s", ex.what());
+        }
     }
     return result;
 }
@@ -666,7 +818,11 @@ std::string SteamGridDbManager::iconPath(std::uint64_t titleId) {
 std::string SteamGridDbManager::coverPath(std::uint64_t titleId) {
     char hex[17];
     std::snprintf(hex, sizeof(hex), "%016llX", static_cast<unsigned long long>(titleId));
-    return std::string("sdmc:/config/SwitchU/covers/") + hex + ".jpg";
+    return std::string(kCoverRoot) + "/" + hex + ".jpg";
+}
+
+std::string SteamGridDbManager::gridWidePath(std::uint64_t titleId) {
+    return titleDirectory(titleId) + "/gridwide.img";
 }
 
 bool SteamGridDbManager::hasArtwork(std::uint64_t titleId) {
@@ -674,6 +830,129 @@ bool SteamGridDbManager::hasArtwork(std::uint64_t titleId) {
     return cacheUsesCurrentMatcher(titleId)
         && (std::filesystem::exists(heroPath(titleId), ec)
         || std::filesystem::exists(logoPath(titleId), ec));
+}
+
+bool SteamGridDbManager::hasIcon(std::uint64_t titleId) {
+    std::error_code ec;
+    return titleId != 0 && std::filesystem::exists(iconPath(titleId), ec);
+}
+
+bool SteamGridDbManager::hasPoster(std::uint64_t titleId) {
+    std::error_code ec;
+    return titleId != 0 && std::filesystem::exists(coverPath(titleId), ec);
+}
+
+bool SteamGridDbManager::hasGridWide(std::uint64_t titleId) {
+    std::error_code ec;
+    return titleId != 0 && std::filesystem::exists(gridWidePath(titleId), ec);
+}
+
+std::string SteamGridDbManager::savedSearchQuery(std::uint64_t titleId) {
+    if (titleId == 0) return {};
+    return readMetadata(titleId).value("searchQuery", std::string());
+}
+
+void SteamGridDbManager::saveSearchQuery(std::uint64_t titleId, const std::string& query) {
+    if (titleId == 0) return;
+    std::string trimmed = query;
+    while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.front())))
+        trimmed.erase(trimmed.begin());
+    while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.back())))
+        trimmed.pop_back();
+    if (trimmed.empty()) return;
+    nlohmann::json metadata = readMetadata(titleId);
+    metadata["titleId"] = titleId;
+    metadata["searchQuery"] = trimmed;
+    writeMetadata(titleId, metadata);
+}
+
+bool SteamGridDbManager::clearArtwork(std::uint64_t titleId, ArtworkKind kind) {
+    if (titleId == 0)
+        return false;
+
+    std::error_code ec;
+    bool removed = false;
+    auto removeFile = [&](const std::string& path) {
+        if (std::filesystem::remove(path, ec))
+            removed = true;
+        ec.clear();
+    };
+
+    const bool clearHero = kind == ArtworkKind::None || kind == ArtworkKind::Hero;
+    const bool clearLogo = kind == ArtworkKind::None || kind == ArtworkKind::Logo;
+    const bool clearIcon = kind == ArtworkKind::None || kind == ArtworkKind::Icon;
+    const bool clearPoster = kind == ArtworkKind::None || kind == ArtworkKind::Cover;
+    const bool clearGridWide = kind == ArtworkKind::None || kind == ArtworkKind::GridWide;
+
+    if (clearHero) {
+        removeFile(heroPath(titleId));
+        removeFile(heroPath(titleId) + ".640x360.rgba-cache");
+        removeFile(heroPath(titleId) + ".1280x720.rgba-cache"); // legacy
+    }
+    if (clearLogo) {
+        removeFile(logoPath(titleId));
+        removeFile(logoPath(titleId) + ".384x192.rgba-cache");
+        removeFile(logoPath(titleId) + ".640x180.rgba-cache"); // legacy
+    }
+    if (clearIcon)
+        removeFile(iconPath(titleId));
+    if (clearPoster) {
+        removeFile(coverPath(titleId));
+        removeFile(coverPath(titleId) + ".fit320x480.rgba-cache");
+        removeFile(coverPath(titleId) + ".600x900.rgba-cache"); // legacy poster prep
+    }
+    if (clearGridWide) {
+        removeFile(gridWidePath(titleId));
+        removeFile(gridWidePath(titleId) + ".460x215.rgba-cache");
+    }
+
+    nlohmann::json metadata = readMetadata(titleId);
+    if (clearHero) {
+        metadata["hero"] = false;
+        metadata.erase("selectedHeroId");
+        metadata.erase("selectedHeroIndex");
+    }
+    if (clearLogo) {
+        metadata["logo"] = false;
+        metadata.erase("selectedLogoId");
+        metadata.erase("selectedLogoIndex");
+    }
+    if (clearIcon) {
+        metadata["icon"] = false;
+        metadata.erase("selectedIconId");
+        metadata.erase("selectedIconIndex");
+    }
+    if (clearPoster) {
+        metadata["cover"] = false;
+        metadata.erase("selectedCoverId");
+        metadata.erase("selectedCoverIndex");
+    }
+    if (clearGridWide) {
+        metadata["gridWide"] = false;
+        metadata.erase("selectedGridWideId");
+        metadata.erase("selectedGridWideIndex");
+    }
+
+    const bool anyLeft = metadata.value("hero", false)
+                      || metadata.value("logo", false)
+                      || metadata.value("icon", false)
+                      || metadata.value("cover", false)
+                      || metadata.value("gridWide", false)
+                      || std::filesystem::exists(heroPath(titleId), ec)
+                      || std::filesystem::exists(logoPath(titleId), ec)
+                      || std::filesystem::exists(iconPath(titleId), ec)
+                      || std::filesystem::exists(coverPath(titleId), ec)
+                      || std::filesystem::exists(gridWidePath(titleId), ec);
+    ec.clear();
+    if (!anyLeft) {
+        removeFile(titleDirectory(titleId) + "/metadata.json");
+        std::filesystem::remove(titleDirectory(titleId), ec);
+    } else {
+        std::ofstream output(titleDirectory(titleId) + "/metadata.json", std::ios::trunc);
+        if (output.is_open())
+            output << metadata.dump(2);
+    }
+    return removed;
 }
 
 bool SteamGridDbManager::start(const std::string& apiKey,
@@ -757,31 +1036,23 @@ void SteamGridDbManager::selectNext(std::string apiKey, std::uint64_t titleId,
             matchedName = game->value("name", title);
         }
 
-        const char* key = kind == ArtworkKind::Hero ? "selectedHeroIndex"
-                        : kind == ArtworkKind::Logo ? "selectedLogoIndex"
-                                                   : "selectedIconIndex";
-        const char* flag = kind == ArtworkKind::Hero ? "hero"
-                         : kind == ArtworkKind::Logo ? "logo" : "icon";
-        const std::string destination = kind == ArtworkKind::Hero ? heroPath(titleId)
-                                      : kind == ArtworkKind::Logo ? logoPath(titleId)
-                                                                 : iconPath(titleId);
+        const auto info = kindInfo(kind);
+        const std::string destination = pathForKind(kind, titleId);
         const auto images = listArtwork(backend, gameId, kind);
-        const auto ranked = rankedImages(images, kind == ArtworkKind::Hero);
+        const auto ranked = rankedImages(images, info.requireLandscape,
+                                         info.requirePortrait);
         selectionCount = static_cast<int>(ranked.size());
         if (ranked.empty()) throw std::runtime_error("No artwork available");
         std::error_code existingEc;
-        const bool hasCurrent = metadata.value(flag, false)
+        const bool hasCurrent = metadata.value(info.flag, false)
             && std::filesystem::exists(destination, existingEc);
-        const int currentIndex = hasCurrent ? metadata.value(key, 0)
+        const int currentIndex = hasCurrent ? metadata.value(info.indexKey, 0)
                                            : (direction > 0 ? -1 : 0);
         selectedIndex = (currentIndex + direction + selectionCount) % selectionCount;
         const std::string imageUrl = ranked[(size_t)selectedIndex]->value("url", std::string());
-        std::error_code ec;
-        std::filesystem::create_directories(titleDirectory(titleId), ec);
-        if (kind == ArtworkKind::Hero)
-            steamgriddb::artwork::remove(destination, 1280, 720);
-        else if (kind == ArtworkKind::Logo)
-            steamgriddb::artwork::remove(destination, 640, 180);
+        ensureArtworkDirectories(kind, titleId);
+        if (info.prepareCache)
+            removePreparedArtwork(kind, destination);
         saved = !imageUrl.empty() && saveBytes(destination, themeshop::http::getBytes(imageUrl));
         if (!saved) throw std::runtime_error("Artwork download failed");
         if (!prepareArtwork(kind, destination))
@@ -793,13 +1064,11 @@ void SteamGridDbManager::selectNext(std::string apiKey, std::uint64_t titleId,
         metadata["steamGridDbName"] = matchedName;
         metadata["matcherVersion"] = kMatcherVersion;
         metadata["matchScore"] = matchScore;
-        metadata[key] = selectedIndex;
-        metadata[flag] = true;
+        metadata[info.indexKey] = selectedIndex;
+        metadata[info.flag] = true;
         std::ofstream output(titleDirectory(titleId) + "/metadata.json", std::ios::trunc);
         if (output.is_open()) output << metadata.dump(2);
-        message = std::string(kind == ArtworkKind::Hero ? "Hero" :
-                              kind == ArtworkKind::Logo ? "Logo" : "Icon")
-                + " " + std::to_string(selectedIndex + 1) + "/"
+        message = std::string(info.label) + " " + std::to_string(selectedIndex + 1) + "/"
                 + std::to_string(selectionCount) + " applied";
     } catch (const std::exception& ex) {
         message = ex.what();
@@ -840,7 +1109,7 @@ void SteamGridDbManager::scrape(std::string apiKey, std::vector<AppEntry> apps) 
 
     std::error_code ec;
     std::filesystem::create_directories(kCacheRoot, ec);
-    std::filesystem::create_directories("sdmc:/config/SwitchU/covers", ec);
+    std::filesystem::create_directories(kCoverRoot, ec);
     std::string fatalError;
 
     for (const auto& app : apps) {
@@ -878,6 +1147,7 @@ void SteamGridDbManager::scrape(std::string apiKey, std::vector<AppEntry> apps) 
             && hasArtwork(app.titleId)
             && !std::filesystem::exists(logoPath(app.titleId), logoEc)
             && !artworkWasChosenByHand(app.titleId);
+        // The cover is also the single-row poster (ArtworkKind::Poster).
         std::error_code coverEc;
         const bool topUpCover = hasArtwork(app.titleId)
             && !std::filesystem::exists(coverPath(app.titleId), coverEc)
@@ -892,10 +1162,20 @@ void SteamGridDbManager::scrape(std::string apiKey, std::vector<AppEntry> apps) 
         const bool topUpHero = hasArtwork(app.titleId)
             && !std::filesystem::exists(heroPath(app.titleId), heroEc)
             && !artworkWasChosenByHand(app.titleId);
+        // Landscape SGDB grid for 2x1 / 4x2 HOME tiles (PoloNX), only for
+        // titles whose tile has that shape.
+        const bool wantsGridWide =
+            (app.widgetColumns == 2 && app.widgetRows == 1)
+            || (app.widgetColumns == 4 && app.widgetRows == 2);
+        const bool topUpGridWide = wantsGridWide
+            && hasArtwork(app.titleId)
+            && !hasGridWide(app.titleId)
+            && !artworkWasChosenByHand(app.titleId);
+        const bool topUp = topUpLogo || topUpCover || topUpHero || topUpGridWide;
         // The global Settings scan is incremental: once an application has a
         // trusted hero, logo, or cover, leave its manual/default choices untouched.
         // Per-title browsing is the explicit path for replacing artwork.
-        if (hasArtwork(app.titleId) && !topUpLogo && !topUpCover && !topUpHero) {
+        if (hasArtwork(app.titleId) && !topUp) {
             updateStatus([](Status& s) {
                 ++s.completed;
                 ++s.matched;
@@ -907,7 +1187,7 @@ void SteamGridDbManager::scrape(std::string apiKey, std::vector<AppEntry> apps) 
 
         // Version 1 accepted the first autocomplete result as a fallback. Its
         // cached files cannot be trusted (for example Nintendo Labo -> Land).
-        if (!topUpLogo && !topUpCover && !topUpHero)
+        if (!topUp)
             removeCachedArtwork(app.titleId);
 
         try {
@@ -943,13 +1223,19 @@ void SteamGridDbManager::scrape(std::string apiKey, std::vector<AppEntry> apps) 
 
             const std::string dir = titleDirectory(app.titleId);
             std::filesystem::create_directories(dir, ec);
-            auto fetchArtwork = [&](const char* label,
+            auto fetchArtwork = [&](ArtworkKind kind,
                                     bool portrait,
-                                    ArtworkKind kind,
                                     const std::string& destination,
                                     float phaseStart, float phaseSpan) {
+                if (m_cancelRequested.load())
+                    throw std::runtime_error("Cancelled");
+                const auto info = kindInfo(kind);
+                // "heroes", "logos", "grids", "icons" -- the fork's log wording.
+                const char* label = info.endpoint + 1;
                 try {
                     const auto images = listArtwork(backend, gameId, kind);
+                    if (m_cancelRequested.load())
+                        throw std::runtime_error("Cancelled");
                     auto networkProgress = [&](std::uint64_t downloaded, std::uint64_t total) {
                         const float fraction = total > 0
                             ? std::clamp(static_cast<float>(downloaded)
@@ -965,7 +1251,9 @@ void SteamGridDbManager::scrape(std::string apiKey, std::vector<AppEntry> apps) 
                         });
                     };
                     const bool saved = fetchImage(images, portrait, destination, networkProgress);
-                    if (saved && kind != ArtworkKind::Icon) {
+                    if (m_cancelRequested.load())
+                        throw std::runtime_error("Cancelled");
+                    if (saved && info.prepareCache) {
                         updateStatus([&](Status& s) {
                             s.message = "Preparing artwork for " + app.title;
                             s.progress01 = s.total > 0
@@ -982,38 +1270,46 @@ void SteamGridDbManager::scrape(std::string apiKey, std::vector<AppEntry> apps) 
                                   saved ? 1 : 0);
                     return saved;
                 } catch (const std::exception& ex) {
-                    // A missing or unsupported logo must not discard a valid
-                    // hero for the same game.
+                    if (std::string(ex.what()) == "Cancelled" || m_cancelRequested.load())
+                        throw;
+                    // A missing or unsupported asset (a logo, a wide grid) must
+                    // not discard a valid hero or cover for the same game.
                     DebugLog::log("[steamgriddb] '%s' %s failed: %s",
                                   app.title.c_str(), label, ex.what());
                     return false;
                 }
             };
 
-            // On a logo top-up the hero on disk is the one already chosen for
-            // this title; downloading it again would spend the bandwidth to
+            // On a top-up the files already on disk are the ones chosen for
+            // this title; downloading them again would spend the bandwidth to
             // replace a file with itself, and could land on a different image.
-            std::error_code heroExistEc;
-            const bool heroOk = (!topUpHero && (topUpLogo || topUpCover))
-                ? std::filesystem::exists(heroPath(app.titleId), heroExistEc)
-                : fetchArtwork("heroes", false,
-                               ArtworkKind::Hero, heroPath(app.titleId),
-                               0.10f, 0.25f);
-            std::error_code logoExistEc;
-            const bool logoOk = ((topUpCover || topUpHero)
-                                 && std::filesystem::exists(logoPath(app.titleId), logoExistEc))
-                ? true
-                : fetchArtwork("logos", false,
-                               ArtworkKind::Logo, logoPath(app.titleId),
-                               0.35f, 0.25f);
-            std::error_code coverExistEc;
-            const bool coverOk = ((topUpLogo || topUpHero)
-                                  && std::filesystem::exists(coverPath(app.titleId), coverExistEc))
-                ? true
-                : fetchArtwork("grids", true,
-                               ArtworkKind::Cover, coverPath(app.titleId),
-                               0.60f, 0.35f);
-            matched = heroOk || logoOk || coverOk;
+            // Only the missing kinds are fetched.
+            auto keepOrFetch = [&](ArtworkKind kind, bool portrait,
+                                   const std::string& destination,
+                                   float phaseStart, float phaseSpan) {
+                std::error_code existEc;
+                if (topUp && std::filesystem::exists(destination, existEc))
+                    return true;
+                return fetchArtwork(kind, portrait, destination, phaseStart, phaseSpan);
+            };
+            const bool heroOk = keepOrFetch(ArtworkKind::Hero, false,
+                                            heroPath(app.titleId), 0.08f, 0.20f);
+            if (m_cancelRequested.load()) break;
+            const bool logoOk = keepOrFetch(ArtworkKind::Logo, false,
+                                            logoPath(app.titleId), 0.30f, 0.20f);
+            if (m_cancelRequested.load()) break;
+            // One 600x900 grid serves as both the Cover view art and the
+            // single-row poster.
+            const bool coverOk = keepOrFetch(ArtworkKind::Cover, true,
+                                             coverPath(app.titleId), 0.52f, 0.20f);
+            if (m_cancelRequested.load()) break;
+            bool gridWideOk = false;
+            if (wantsGridWide) {
+                gridWideOk = keepOrFetch(ArtworkKind::GridWide, false,
+                                         gridWidePath(app.titleId), 0.74f, 0.20f);
+                if (m_cancelRequested.load()) break;
+            }
+            matched = heroOk || logoOk || coverOk || gridWideOk;
 
             nlohmann::json metadata;
             metadata["titleId"] = app.titleId;
@@ -1026,13 +1322,14 @@ void SteamGridDbManager::scrape(std::string apiKey, std::vector<AppEntry> apps) 
             metadata["hero"] = heroOk;
             metadata["logo"] = logoOk;
             metadata["cover"] = coverOk;
+            metadata["gridWide"] = gridWideOk;
             std::ofstream meta(dir + "/metadata.json", std::ios::trunc);
             if (meta.is_open()) meta << metadata.dump(2);
         } catch (const std::exception& ex) {
             DebugLog::log("[steamgriddb] '%s' failed: %s", app.title.c_str(), ex.what());
             // The cache was left intact for a top-up, so the title still has the
             // artwork it had before and must not be reported as missing.
-            if (topUpLogo || topUpCover || topUpHero)
+            if (topUp)
                 matched = true;
             const std::string error = ex.what();
             if (error.find("HTTP error 401") != std::string::npos

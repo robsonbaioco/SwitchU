@@ -710,6 +710,7 @@ void TabbedOverlayScreen::handleTouch(nxui::Input& input) {
         float ty = input.touchY();
         m_touchTarget = TouchTarget::None;
         m_touchHitIndex = -1;
+        m_touchTabBranch = false;
         m_touchOnSelected = false;
         m_touchDirectControl = false;
         m_touchStartX = tx;
@@ -739,9 +740,24 @@ void TabbedOverlayScreen::handleTouch(nxui::Input& input) {
             if (m_tabBar) {
                 const auto& tabChildren = m_tabBar->children();
                 for (int i = 0; i < (int)tabChildren.size(); ++i) {
-                    if (tabChildren[i]->rect().contains(tx, ty)) {
+                    const nxui::Rect tabRect = tabChildren[i]->rect();
+                    if (tabRect.contains(tx, ty)) {
                         hit = i;
                         break;
+                    }
+                    // Optional nested row drawn right under this tab (e.g.
+                    // Theme Shop "Shop"); same slot drawTabs() gives it.
+                    const float extra = tabBranchExtraHeight(i);
+                    if (extra > 0.5f) {
+                        // 10 = kTabCardGap in TabbedOverlayScreen.cpp (file-local there).
+                        constexpr float kBranchGap = 10.f;
+                        const float branchTop = tabRect.bottom() + kBranchGap;
+                        if (ty >= branchTop && ty < branchTop + extra
+                            && tx >= tabRect.x && tx < tabRect.right()) {
+                            hit = i;
+                            m_touchTabBranch = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -750,7 +766,8 @@ void TabbedOverlayScreen::handleTouch(nxui::Input& input) {
                 hit = std::clamp(idx, 0, (int)m_tabs.size() - 1);
             }
             m_touchHitIndex = hit;
-            m_touchOnSelected = (hit == m_tabIndex && m_focusArea == FocusArea::Tabs);
+            m_touchOnSelected = (hit == m_tabIndex && m_focusArea == FocusArea::Tabs
+                && m_touchTabBranch == tabBranchConsumesFocus());
             return;
         }
 
@@ -887,8 +904,30 @@ void TabbedOverlayScreen::handleTouch(nxui::Input& input) {
             switch (m_touchTarget) {
             case TouchTarget::Tab:
                 if (m_touchHitIndex >= 0 && m_touchHitIndex < (int)m_tabs.size()) {
-                    if (m_touchOnSelected) {
-                        if (focusableCount() > 0) {
+                    if (m_touchTabBranch) {
+                        m_focusArea = FocusArea::Tabs;
+                        if (m_tabIndex != m_touchHitIndex) {
+                            m_tabSwitchDir = (m_touchHitIndex > m_tabIndex) ? 1 : -1;
+                            m_tabIndex = m_touchHitIndex;
+                            m_contentIdx = 0;
+                            m_scrollY = 0;
+                            m_scrollTarget = 0;
+                            m_tabReveal.setImmediate(0.f);
+                            m_tabReveal.set(1.f, 0.24f, nxui::Easing::outCubic);
+                            m_contentSlideAnim.setImmediate(0.f);
+                            m_contentSlideAnim.set(1.f, 0.28f, nxui::Easing::outCubic);
+                            m_tabAccentW.setImmediate(1.f);
+                            m_tabAccentW.set(3.f, 0.32f, nxui::Easing::outExpo);
+                            closeDropdown(false);
+                            rebuildContentItems();
+                        }
+                        if (onTabRailBranchActivated(m_touchHitIndex)) {
+                            if (m_activateSfxCb) m_activateSfxCb();
+                        } else if (m_navSfxCb) {
+                            m_navSfxCb();
+                        }
+                    } else if (m_touchOnSelected) {
+                        if (usesCustomContentLayout() || focusableCount() > 0) {
                             m_focusArea = FocusArea::Content;
                             m_contentIdx = 0;
                             scrollToFocused();
@@ -911,6 +950,7 @@ void TabbedOverlayScreen::handleTouch(nxui::Input& input) {
                             closeDropdown(false);
                             rebuildContentItems();
                         }
+                        onTabRailParentActivated(m_touchHitIndex);
                         if (m_navSfxCb) m_navSfxCb();
                     }
                 }

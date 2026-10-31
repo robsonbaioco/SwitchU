@@ -17,8 +17,11 @@ public:
     // application tile, but a folder is clear glass and it reads as a tint
     // around the contents, so folders turn it off and keep the ring.
     void setBloomEnabled(bool enabled) { m_bloomEnabled = enabled; }
-    void setMotionPaused(bool paused) { m_motionPaused = paused; }
+    void setMotionPaused(bool paused);
     bool motionPaused() const { return m_motionPaused; }
+    // PoloNX: jump straight to each target instead of tweening.
+    void setInstantMotion(bool instant);
+    bool instantMotion() const { return m_instantMotion; }
 
 protected:
     void onUpdate(float dt) override;
@@ -36,5 +39,6 @@ private:
     float m_waveSpeed = 3.5f;
     bool  m_initialized = false;
     bool  m_motionPaused = false;
+    bool  m_instantMotion = false;
 };
 

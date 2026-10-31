@@ -107,7 +107,13 @@
       "cover": "Cover mode",
       "xmb": "XMB mode",
       "list": "List mode",
-      "metro": "Metro live tiles mode"
+      "metro": "Metro live tiles mode",
+      "flip_to_line": "Switch to single-row view.",
+      "flip_to_grid": "Switch to grid view."
+    },
+    "themeshop": {
+      "shelf_branch": "A or right to enter. Down for shop. Up and down to change tab. B to close.",
+      "shop_branch": "A or right to enter shop. Up for installed. Down for next tab. B to close."
     }
   },
   "tutorial": {
@@ -246,7 +252,7 @@
       "send_logs_empty": "There are no logs to send.",
       "send_logs_failed": "Could not send the logs. Check the internet connection, or use \"Save logs for copying\" instead.",
       "usb30_restart": "USB 3.0 changes take effect after a restart.",
-      "usb30_desc": "Enable USB 3.0 for faster transfer speeds.",
+      "usb30_desc": "Faster USB for optional SwitchU-MTP (SD mount while HOME is open).",
       "memory_section": "Sysmodules and Memory",
       "system_pool": "System Memory Pool",
       "system_pool_desc": "Shared by every sysmodule on the card and by the services a game needs to start.",
@@ -399,7 +405,17 @@
     "steamgriddb": {
       "section": "Game artwork",
       "enabled": "Display SteamGridDB artwork",
-      "enabled_desc": "Show heroes and logos behind the application menu.",
+      "enabled_desc": "Choose where artwork appears below.",
+      "show_grid": "Show on grid menu",
+      "show_grid_desc": "Hero backdrop behind the standard HOME grid.",
+      "show_line": "Show on single-row menu",
+      "show_line_desc": "Hero and logo behind the single-row carousel.",
+      "show_folders": "Show inside folders",
+      "show_folders_desc": "Artwork while browsing games inside an open folder.",
+      "show_poster_line": "Show Poster artwork in single-row view",
+      "show_poster_line_desc": "Use tall SteamGridDB covers on the carousel. Grid layout stays on icons.",
+      "show_logo_line": "Show logo in single-row view",
+      "show_logo_line_desc": "Game logo above the carousel. Turn off to keep only the hero and covers.",
       "api_key": "API key",
       "api_key_set": "Configured (hidden)",
       "api_key_missing": "Not configured",
@@ -424,7 +440,8 @@
       "new_game_detected": "New game detected: ",
       "new_game_ask": "Would you like to check and download covers and artwork from SteamGridDB?",
       "new_games_detected": "new games or shortcuts detected.\n\nWould you like to check and download covers and artwork from SteamGridDB?",
-      "https_clock_hint": "HTTPS failed. If the console clock is wrong, fix it in Settings > System (Synchronize Clock via Internet, or set the date and time yourself)."
+      "https_clock_hint": "HTTPS failed. If the console clock is wrong, fix it in Settings > System (Synchronize Clock via Internet, or set the date and time yourself).",
+      "need_query": "Enter a search name first."
     },
     "controllers": {
       "test": "Test Input Devices",
@@ -642,6 +659,10 @@
       "hero_desc": "Open the hero gallery and choose the image to use.",
       "logo": "Logo",
       "logo_desc": "Open the logo gallery and choose the image to use.",
+      "poster": "Poster",
+      "poster_desc": "Tall cover for single-row and 2x3 grid tiles.",
+      "poster_wide": "Poster wide",
+      "poster_wide_desc": "Landscape grid art for this 2x1 tile.",
       "icon": "Replacement icon",
       "icon_desc": "Open the icon gallery and choose an override for this game.",
       "cover": "Portrait cover",
@@ -718,7 +739,15 @@
     "style_manila": "Manila",
     "style_label": "Label",
     "show_cover": "Show cover",
-    "show_cover_desc": "Shows the first game on every folder. Classic keeps the mosaic instead."
+    "show_cover_desc": "Shows the first game on every folder. Classic keeps the mosaic instead.",
+    "custom_poster": "Custom poster",
+    "custom_poster_desc": "Search SteamGridDB for a tall poster (single-row view).",
+    "custom_poster_set_desc": "SteamGridDB poster is active for this folder in single-row view.",
+    "default_view": "Default folder view",
+    "default_view_auto": "Auto",
+    "default_view_desc": "Layout used when any folder is opened.",
+    "default_view_grid": "Grid",
+    "default_view_line": "Single-row"
   },
   "add": {
     "title": "Add"
@@ -855,7 +884,40 @@
       "options": "Options",
       "update": "Update",
       "uninstall": "Uninstall",
-      "music": "Music (YouTube)"
+      "music": "Music (YouTube)",
+      "sounds": "Sounds",
+      "interface": "Interface",
+      "icons": "Icons",
+      "themes": "Themes"
+    },
+    "options": {
+      "action_hints": "Action Hints",
+      "action_hints_desc": "Choose how contextual controls appear in the bottom-right corner.",
+      "sort_large_tiles": "Sort Large Tiles Too",
+      "sort_large_tiles_desc": "A-Z and Recent also move applications that use a larger tile size.",
+      "hint_panel": "Panel",
+      "hint_capsules": "Capsules",
+      "theme_music_override": "Allow themes to replace my playlist",
+      "theme_music_override_desc": "On: applying a theme with music swaps your playlist for the theme's tracks. Off: keep your library and use the options below.",
+      "theme_music_add": "Add theme music to my playlist",
+      "theme_music_add_desc": "When replace is off, append the theme's tracks to your current playlist instead of ignoring them.",
+      "theme_music_play": "Play theme music on apply",
+      "theme_music_play_desc": "When replace is off and theme music was added, start that track after Apply. (Replace mode always starts the theme playlist when music is enabled.)",
+      "battery_saver": "Battery Saver",
+      "battery_saver_desc": "Lighten HOME memory and GPU use. Also available in Quick Settings.",
+      "frame_tap_engaged": "Frame Tap Engaged",
+      "frame_tap_engaged_desc": "Lite mode is held while Frame Tap is streaming. Disconnect the viewer to change Battery Saver.",
+      "auto_theme": "Automatic Theme",
+      "auto_theme_desc": "Switch between a day theme and a night theme automatically.",
+      "icon_contrast": "Adaptive icon contrast",
+      "icon_contrast_desc": "In single-row with a hero, colour HOME icons follow the interface light/dark chrome. Without a hero they keep authored colours (or your custom tint)."
+    },
+    "badge": {
+      "icons": "Icons",
+      "music": "Music",
+      "sounds": "Sounds",
+      "tint": "Tint",
+      "auto": "Auto"
     },
     "accessibility": {
       "fullscreen_preview": "Fullscreen preview",
@@ -879,7 +941,8 @@
       "guide": "Search themes",
       "unavailable": "Search keyboard is unavailable.",
       "no_results": "No themes match this search.",
-      "no_results_hint": "Press X or use Search to change or clear the filter."
+      "no_results_hint": "Press X or use Search to change or clear the filter.",
+      "title": "Search Themes"
     },
     "installed": {
       "title": "Installed Theme Library",
@@ -893,7 +956,10 @@
       "remove_hint": "This theme can be removed from the console.",
       "builtin_hint": "This is part of the built-in theme set.",
       "apply": "Apply Theme",
-      "remove": "Remove Theme"
+      "remove": "Remove Theme",
+      "remove_confirm": "Remove this theme from the console?",
+      "remove_confirm_yes": "Remove",
+      "cover_single": "Press A to open this screenshot in fullscreen."
     },
     "catalog": {
       "theme_one": "theme",
@@ -925,6 +991,8 @@
       "install": "Install",
       "installed": "Installed",
       "download_apply": "Download + Apply",
+      "download_apply_confirm_title": "Download And Apply",
+      "download_apply_confirm": "Download this theme and apply it to HOME now?",
       "transfer_busy": "Another theme transfer is already running.",
       "install_pending": "Install flow is not wired yet.",
       "download_apply_pending": "Download + apply flow is not wired yet.",
@@ -1021,6 +1089,56 @@
       "status_downloaded": "Status: Saved in sdmc:/config/SwitchU/music/",
       "status_ready": "Status: Ready to download (.mp3)",
       "status_ready_play": "Status: Ready to play or delete"
+    },
+    "icons": {
+      "title": "Icons",
+      "subtitle": "Sidebar icon packs.",
+      "apply": "Apply Icon Pack",
+      "remove": "Remove Icon Pack",
+      "remove_confirm": "Delete this icon pack from the console?",
+      "remove_failed": "Could not remove this icon pack.",
+      "removed": "Icon pack removed.",
+      "installed": "Icon pack installed.",
+      "status_online": "Available online",
+      "download_hint": "Install to download this pack to the console.",
+      "remove_hint": "Downloaded pack: it can be removed from the console.",
+      "download_apply_confirm_title": "Download And Apply",
+      "download_apply_confirm": "Download this icon pack and apply it now?",
+      "dialog_title": "Downloading Icon Pack",
+      "prepare_download": "Preparing icon pack download...",
+      "finalize_download": "Finishing icon pack install...",
+      "fallback": "Missing icons fall back to Default.",
+      "apply_hint": "Apply to switch sidebar icons immediately.",
+      "applied": "Icon pack applied.",
+      "builtin_hint": "Built-in pack: Apply to use it. Built-ins cannot be removed.",
+      "cover_single": "Press A for a closer look, then Apply to switch icons.",
+      "custom_tint": "Custom tint",
+      "empty": "No icon packs installed.",
+      "empty_hint": "Switch to Shop to download packs, or install a theme that includes icons.",
+      "empty_shop": "No icon packs available to download.",
+      "empty_shop_hint": "Refresh the catalog, or switch to Installed for packs on this console.",
+      "flatten": "Solid",
+      "grayscale": "Grayscale",
+      "match_theme": "Match theme",
+      "preview_loading": "Loading preview...",
+      "preview_missing": "No preview",
+      "preview_unavailable": "Preview unavailable",
+      "shop_item": "Icon Shop",
+      "subtitle_installed": "Icon packs on this console.",
+      "subtitle_shop": "Download icon packs from the catalog.",
+      "tint_hue": "Hue",
+      "tint_lightness": "Lightness",
+      "tint_saturation": "Saturation",
+      "title_installed": "Installed Icons",
+      "title_shop": "Icon Shop"
+    },
+    "themes": {
+      "empty_installed_hint": "Switch to Shop to browse and download themes.",
+      "shop_item": "Theme Shop",
+      "subtitle_installed": "Themes on this console.",
+      "subtitle_shop": "Download themes from the catalog.",
+      "title_installed": "Installed Themes",
+      "title_shop": "Theme Shop"
     }
   },
   "dialog": {
@@ -1250,7 +1368,17 @@
     "reboot": "Reboot",
     "power_off": "Power Off",
     "hint_adjust": "Adjust",
-    "hint_shortcut": "Quick Settings"
+    "hint_shortcut": "Quick Settings",
+    "music_empty": "No music loaded",
+    "music_idle": "Not playing",
+    "prev": "Prev",
+    "next": "Next",
+    "play_pause": "Play/Pause",
+    "repeat": "Repeat",
+    "shuffle": "Shuffle",
+    "playlist": "Playlist",
+    "battery_saver": "Battery Saver",
+    "frame_tap_engaged": "Frame Tap Engaged"
   },
   "activity_log": {
     "title": "Daily Activity Log",
@@ -1280,5 +1408,16 @@
     "body": "The menu stopped unexpectedly several times while starting, so it is running with the built-in theme, no video wallpaper and no music. Your theme and settings were not changed. Remove or replace the theme that caused this, then leave safe mode.",
     "stay": "Stay in safe mode",
     "leave": "Leave safe mode (restart)"
+  },
+  "battery": {
+    "hint": "A to open Quick Settings.",
+    "label": "Battery"
+  },
+  "layout": {
+    "flip_to_grid": "Switch to grid view.",
+    "flip_to_line": "Switch to single-row view."
+  },
+  "quick_settings": {
+    "title": "Quick Settings"
   }
 }

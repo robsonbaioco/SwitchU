@@ -555,8 +555,15 @@ void WiiUMenuApp::editSteamGridDbApiKey() {
             focusManager().setFocus(m_themeShop.get());
         }
         if (m_settings) {
+            // The per-view toggles go along: the 2-argument call reset every
+            // one of them to its default (on) in the Settings rows.
             m_settings->setSteamGridDbState(m_config.steamGridDbEnabled,
-                                            !m_config.steamGridDbApiKey.empty());
+                                            !m_config.steamGridDbApiKey.empty(),
+                                            m_config.steamGridDbShowInGrid,
+                                            m_config.steamGridDbShowInDynamicLine,
+                                            m_config.steamGridDbShowInFolders,
+                                            m_config.steamGridDbShowPosterInDynamicLine,
+                                            m_config.steamGridDbShowLogoInDynamicLine);
             m_settings->refreshCurrentTabWidgets();
         }
     });
@@ -609,7 +616,17 @@ void WiiUMenuApp::startSteamGridDbScrape() {
             m_settings->requestToast(msg);
         return;
     }
-    if (!m_steamGridDb.start(m_config.steamGridDbApiKey, m_allApps)) {
+    // Stamp grid tile sizes so the scrape can pull landscape grids for 2x1/4x2
+    // titles even when HOME is in a view where every tile is 1x1 (PoloNX #167).
+    std::vector<AppEntry> scrapeApps = m_allApps;
+    for (auto& entry : scrapeApps) {
+        if (!entry.isApplication() || entry.titleId == 0)
+            continue;
+        const auto size = gameGridSize(entry.titleId, AppLayoutMode::Grid);
+        entry.widgetColumns = size.columns;
+        entry.widgetRows = size.rows;
+    }
+    if (!m_steamGridDb.start(m_config.steamGridDbApiKey, scrapeApps)) {
         const auto msg = nxui::I18n::instance().tr(
             "settings.steamgriddb.start_failed", "The artwork scan could not be started.");
         if (m_themeShop && m_themeShop->isActive())
@@ -621,6 +638,9 @@ void WiiUMenuApp::startSteamGridDbScrape() {
     m_steamGridDbWasRunning = true;
     if (m_progressDialog) {
         m_progressDialog->setTheme(&m_theme);
+        // PoloNX makes this dialog cancellable; this fork's ProgressDialog has
+        // no Cancel button, so the scan still runs to the end.
+        raiseProgressDialogAboveOverlays();
         m_progressDialog->show(nxui::I18n::instance().tr(
             "settings.steamgriddb.download_title", "Downloading artwork"),
             nxui::I18n::instance().tr(
@@ -638,46 +658,26 @@ void WiiUMenuApp::startSteamGridDbScrape() {
 void WiiUMenuApp::openSteamGridDbPicker(GameOptionsScreen::ArtworkKind kind,
                                         const std::string& requestedQuery) {
     if (!m_gameOptions || m_gameOptionsTitleId == 0) return;
-    if (kind == GameOptionsScreen::ArtworkKind::Logo
-        && m_config.steamGridDbApiKey.empty()) {
-        // Heroes and icons come from this fork's gallery service without a key;
-        // logos have no source there and still need the player's own key.
-        m_gameOptions->requestToast(nxui::I18n::instance().tr(
-            "settings.steamgriddb.need_key_logo",
-            "Logos need a SteamGridDB API key. Configure one in Settings."));
-        return;
-    }
-    SteamGridDbManager::ArtworkKind managerKind = SteamGridDbManager::ArtworkKind::Hero;
-    if (kind == GameOptionsScreen::ArtworkKind::Logo)
-        managerKind = SteamGridDbManager::ArtworkKind::Logo;
-    else if (kind == GameOptionsScreen::ArtworkKind::Icon)
-        managerKind = SteamGridDbManager::ArtworkKind::Icon;
-    else if (kind == GameOptionsScreen::ArtworkKind::Cover)
-        managerKind = SteamGridDbManager::ArtworkKind::Cover;
-
     std::string title;
     std::string defaultQuery;
     for (const auto& appEntry : m_allApps) {
         if (appEntry.titleId == m_gameOptionsTitleId) {
             title = appEntry.title;
+            // The English / renamed search term (topUpHero, rename-as-search).
             defaultQuery = appEntry.steamGridDbTitle();
             break;
         }
     }
-    if (title.empty() || m_steamGridDbBrowseFuture.valid()
-        || m_steamGridDbApplyFuture.valid() || m_steamGridDb.running()) {
-        m_gameOptions->requestToast(nxui::I18n::instance().tr(
-            "settings.steamgriddb.already_running", "A SteamGridDB operation is already running."));
-        return;
-    }
-    const std::string query = requestedQuery.empty() ? defaultQuery : requestedQuery;
-    m_steamGridDbPicker->showLoading(m_gameOptionsTitleId, title, query, managerKind);
-    focusManager().setFocus(m_steamGridDbPicker.get());
-    m_steamGridDbBrowseFuture = std::async(std::launch::async,
-        [apiKey = m_config.steamGridDbApiKey, titleId = m_gameOptionsTitleId,
-         title, query, managerKind]() {
-            return SteamGridDbManager::browse(apiKey, titleId, title, query, managerKind);
-        });
+    // Prefer an explicit query, else the per-title saved search, else the
+    // search title -- so Hero/Logo/Icon/Poster/Poster wide share one search.
+    std::string query = requestedQuery;
+    if (query.empty())
+        query = SteamGridDbManager::savedSearchQuery(m_gameOptionsTitleId);
+    if (query.empty())
+        query = defaultQuery;
+    // Kind mapping (PosterWide -> GridWide), the logo-needs-a-key rule, the
+    // busy check and the browse itself are shared with Folder Options.
+    openSteamGridDbPickerForTitle(m_gameOptionsTitleId, title, kind, query);
 }
 
 void WiiUMenuApp::openImagePinSteamGridDbPicker(int targetSlot, const nxui::Rect& anchor,
@@ -695,6 +695,9 @@ void WiiUMenuApp::openImagePinSteamGridDbPicker(int targetSlot, const nxui::Rect
     m_steamGridDbPicker->showLoading(pickerId, query, query,
                                      SteamGridDbManager::ArtworkKind::Hero);
     focusManager().setFocus(m_steamGridDbPicker.get());
+    // syncSteamGridDb drops a result whose generation is stale (a browse
+    // replaced by X Search); stamp this one as current.
+    m_steamGridDbBrowseFutureGeneration = ++m_steamGridDbBrowseGeneration;
     m_steamGridDbBrowseFuture = std::async(std::launch::async,
         [apiKey = m_config.steamGridDbApiKey, pickerId, query]() {
             return SteamGridDbManager::browse(apiKey, pickerId, query, query,
@@ -706,20 +709,37 @@ void WiiUMenuApp::editSteamGridDbPickerQuery() {
     if (!m_steamGridDbPicker || !m_steamGridDbPicker->isActive()) return;
     auto& i18n = nxui::I18n::instance();
     const auto kind = m_steamGridDbPicker->artworkKind();
+    const auto mappedKind = kind == SteamGridDbManager::ArtworkKind::Logo
+        ? GameOptionsScreen::ArtworkKind::Logo
+        : kind == SteamGridDbManager::ArtworkKind::Icon
+            ? GameOptionsScreen::ArtworkKind::Icon
+            : kind == SteamGridDbManager::ArtworkKind::Poster // == Cover
+                ? GameOptionsScreen::ArtworkKind::Poster
+                : kind == SteamGridDbManager::ArtworkKind::GridWide
+                    ? GameOptionsScreen::ArtworkKind::PosterWide
+                    : GameOptionsScreen::ArtworkKind::Hero;
+    const std::uint64_t titleId = m_steamGridDbPicker->titleId();
+    const std::string title = m_steamGridDbPicker->title();
+    const bool imagePin = m_imagePinTargetSlot >= 0;
+    // The picker's live search string survives re-searches; fall back to the
+    // per-title saved one (image pins have none: their id is a widget slot).
+    std::string initial = m_steamGridDbPicker->query();
+    if (initial.empty() && !imagePin && titleId != 0)
+        initial = SteamGridDbManager::savedSearchQuery(titleId);
     requestTextEntry(i18n.tr("settings.steamgriddb.scan", "Search artwork"),
-                     "SteamGridDB", m_steamGridDbPicker->query(), 128, false,
-                     [this, kind](const std::string& typed) {
+                     "SteamGridDB", initial, 128, false,
+                     [this, mappedKind, titleId, title](const std::string& typed) {
         if (typed.empty()) return;
         if (m_imagePinTargetSlot >= 0) {
             openImagePinSteamGridDbPicker(m_imagePinTargetSlot, m_imagePinAnchor,
                                           m_imagePinSize, typed);
             return;
         }
-        const auto mappedKind = kind == SteamGridDbManager::ArtworkKind::Logo
-            ? GameOptionsScreen::ArtworkKind::Logo
-            : kind == SteamGridDbManager::ArtworkKind::Icon
-                ? GameOptionsScreen::ArtworkKind::Icon : GameOptionsScreen::ArtworkKind::Hero;
-        openSteamGridDbPicker(mappedKind, typed);
+        if (titleId == 0) return;
+        SteamGridDbManager::saveSearchQuery(titleId, typed);
+        // Re-search the same title (game or folder pseudo-id), not only
+        // whatever Game Options last set.
+        openSteamGridDbPickerForTitle(titleId, title, mappedKind, typed);
     });
 }
 
@@ -733,6 +753,7 @@ void WiiUMenuApp::applyImagePinSteamGridDbCandidate(
     m_steamGridDbApplyProgressUiRevision = 0;
     if (m_progressDialog) {
         m_progressDialog->setTheme(&m_theme);
+        raiseProgressDialogAboveOverlays();
         m_progressDialog->show("Downloading image pin", progress->message, 0.f);
         focusManager().setFocus(m_progressDialog.get());
     }
@@ -772,29 +793,58 @@ void WiiUMenuApp::applySteamGridDbCandidate(
     m_steamGridDbApplyProgressUiRevision = 0;
     if (m_progressDialog) {
         m_progressDialog->setTheme(&m_theme);
+        // The picker re-parents itself to the top of the overlay stack, which
+        // would bury this dialog. (PoloNX also gives it a Cancel button wired
+        // to cancelSteamGridDbApply(); this fork's ProgressDialog has none.)
+        raiseProgressDialogAboveOverlays();
         m_progressDialog->show(nxui::I18n::instance().tr(
             "settings.steamgriddb.download_title", "Downloading artwork"),
             progress->message, 0.f);
         focusManager().setFocus(m_progressDialog.get());
     }
     m_steamGridDbApplyFuture = std::async(std::launch::async, [browse, candidate, progress]() {
-        return SteamGridDbManager::applyCandidate(browse, candidate,
+        return SteamGridDbManager::applyCandidate(
+            browse, candidate,
             [progress](const std::string& message, float value) {
                 std::lock_guard<std::mutex> lock(progress->mutex);
                 progress->message = message;
                 progress->progress01 = value;
                 ++progress->revision;
+            },
+            [progress]() {
+                return progress->cancelRequested.load();
             });
     });
 }
 
 void WiiUMenuApp::syncSteamGridDb() {
+    // Browses parked by a newer search: drain them once they finish so their
+    // futures never block the UI thread on destruction.
+    for (auto it = m_steamGridDbRetiredBrowses.begin();
+         it != m_steamGridDbRetiredBrowses.end();) {
+        if (!it->valid()) {
+            it = m_steamGridDbRetiredBrowses.erase(it);
+        } else if (it->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            it->get(); // discard abandoned browse
+            it = m_steamGridDbRetiredBrowses.erase(it);
+        } else {
+            ++it;
+        }
+    }
     if (m_steamGridDbBrowseFuture.valid()
         && m_steamGridDbBrowseFuture.wait_for(std::chrono::seconds(0))
             == std::future_status::ready) {
+        const std::uint64_t futureGen = m_steamGridDbBrowseFutureGeneration;
         auto result = m_steamGridDbBrowseFuture.get();
-        if (m_steamGridDbPicker && m_steamGridDbPicker->isActive()
+        // A result from a browse that a later search already replaced is
+        // dropped (PoloNX returns from the whole sync here; the rest of this
+        // function still runs so an apply finishing on the same frame waits
+        // no longer).
+        const bool superseded = futureGen != m_steamGridDbBrowseGeneration;
+        if (!superseded && m_steamGridDbPicker && m_steamGridDbPicker->isActive()
             && m_steamGridDbPicker->titleId() == result.titleId) {
+            if (result.query.empty())
+                result.query = m_steamGridDbPicker->query();
             m_steamGridDbPicker->setResult(std::move(result));
             focusManager().setFocus(m_steamGridDbPicker.get());
         }
@@ -813,9 +863,11 @@ void WiiUMenuApp::syncSteamGridDb() {
             m_steamGridDbApplyProgressUiRevision = revision;
             m_progressDialog->updateState(message, progress01);
         }
-        if (m_progressDialog && m_progressDialog->isActive()
-            && focusManager().current() != m_progressDialog.get())
-            focusManager().setFocus(m_progressDialog.get());
+        if (m_progressDialog && m_progressDialog->isActive()) {
+            raiseProgressDialogAboveOverlays();
+            if (focusManager().current() != m_progressDialog.get())
+                focusManager().setFocus(m_progressDialog.get());
+        }
     }
     if (m_steamGridDbApplyFuture.valid()
         && m_steamGridDbApplyFuture.wait_for(std::chrono::seconds(0))
@@ -854,31 +906,146 @@ void WiiUMenuApp::syncSteamGridDb() {
                 m_recentWidgetLogo.reset();
                 m_recentWidgetIcon.reset();
             }
-            if (result.kind == SteamGridDbManager::ArtworkKind::Icon && m_grid) {
+            if ((result.kind == SteamGridDbManager::ArtworkKind::Icon
+                 || result.kind == SteamGridDbManager::ArtworkKind::Poster) && m_grid) {
+                // Poster == Cover: the 3D views cache decoded covers, and a
+                // fresh one replaces them (GPU drained above).
+                if (result.kind == SteamGridDbManager::ArtworkKind::Poster)
+                    m_grid->clearFlowCovers();
                 // A folder showing this game as its cover (PoloNX #100) redraws too.
                 m_folderCoverCache.erase(result.titleId);
-                m_iconStreamer.reloadTitle(result.titleId, m_grid->currentPage(),
-                                           m_grid->iconsPerPage(), app().gpu(),
-                                           app().renderer(), m_grid->allIcons());
-                applyFolderCoversToIcons();
-            } else if (result.kind == SteamGridDbManager::ArtworkKind::Cover && m_grid) {
-                // The 3D views cache decoded covers; a fresh cover replaces them.
-                m_grid->clearFlowCovers();
+                m_folderPeekCache.erase(result.titleId);
+                m_folderPeekBorrowed.erase(result.titleId);
+                const bool preferPoster = preferSingleRowPosters();
+                const bool isFolderArt = result.titleId >= kFolderTitleIdPrefix;
+                // Single-row poster mode: a new (or first) poster makes the
+                // tile tall without a view toggle.
+                for (const auto& icon : m_grid->allIcons()) {
+                    if (!icon || icon->titleId() != result.titleId) continue;
+                    if (icon->entryKind() == GridEntryKind::Folder)
+                        icon->setPosterFrame(preferPoster);
+                    else if (icon->entryKind() == GridEntryKind::Application)
+                        icon->setPosterFrame(
+                            preferPoster
+                            && SteamGridDbManager::hasPoster(result.titleId));
+                    break;
+                }
+                m_grid->invalidateLineLayout();
+                if (!isFolderArt) {
+                    m_iconStreamer.reloadTitle(result.titleId, m_grid->currentPage(),
+                                               m_grid->iconsPerPage(), app().gpu(),
+                                               app().renderer(), m_grid->allIcons());
+                }
+                // Folder custom icon/poster: refresh cover tiles (+ enable Show
+                // cover when applying an icon so grid/cover styles can use it).
+                if (isFolderArt) {
+                    invalidateFolderPeekComposite(static_cast<std::uint32_t>(
+                        result.titleId & 0xFFFFFFFFu));
+                    if (result.kind == SteamGridDbManager::ArtworkKind::Icon
+                        && !m_config.folderShowCover) {
+                        m_config.folderShowCover = true;
+                        if (m_configSaveFuture.valid())
+                            m_configSaveFuture.wait();
+                        m_configSaveFuture = m_threadPool.submit([config = m_config]() {
+                            config.save();
+                        });
+                    }
+                    if (m_openFolderId == 0)
+                        applyDisplayModel(buildRootFolderModel(), result.titleId, false);
+                    else
+                        applyFolderCoversToIcons();
+                    if (m_folderOptions && m_folderOptions->isActive()
+                        && m_folderOptionsId != 0) {
+                        if (const auto* folder = m_folderStore.find(m_folderOptionsId)) {
+                            FolderOptionsScreen::FolderInfo info;
+                            info.id = folder->id;
+                            info.name = folder->name;
+                            info.itemCount = static_cast<int>(folder->titleCount());
+                            info.colorIndex = folder->colorIndex;
+                            info.sizeIndex = folder->sizeIndex;
+                            info.pageCount = folder->pageCount;
+                            info.styleIndex = m_config.folderStyle;
+                            info.defaultViewIndex =
+                                std::clamp(m_config.folderDefaultView, 0, 2);
+                            info.showCover = m_config.folderShowCover;
+                            info.hasCustomIcon =
+                                SteamGridDbManager::hasIcon(result.titleId);
+                            info.hasCustomPoster =
+                                SteamGridDbManager::hasPoster(result.titleId);
+                            const auto coverId = resolveFolderCoverTitleId(
+                                *folder, preferPoster);
+                            info.cover = folderCoverTexture(coverId, preferPoster);
+                            m_folderOptions->setFolder(info);
+                        }
+                    }
+                } else {
+                    invalidateFolderPeekCompositesForTitle(result.titleId);
+                    applyFolderCoversToIcons();
+                }
             } else {
                 showFocusedSteamGridDbArtwork(true);
+            }
+            // Wide (2x1 / 4x2) tiles draw the landscape grid or hero + logo.
+            if (result.kind == SteamGridDbManager::ArtworkKind::GridWide
+                || result.kind == SteamGridDbManager::ArtworkKind::Hero
+                || result.kind == SteamGridDbManager::ArtworkKind::Logo) {
+                m_gameArtwork.erase(result.titleId);
+                const auto size = gameGridSize(result.titleId, AppLayoutMode::Grid);
+                if (switchu::widgets::isLandscapeWideGameTile(size))
+                    ensureGameArtwork(result.titleId);
             }
             if (m_grid && m_openFolderId == 0 &&
                 gameGridSize(result.titleId, AppLayoutMode::Grid) !=
                     switchu::widgets::WidgetSize{1, 1})
                 applyDisplayModel(buildRootFolderModel(), result.titleId, false);
+            if (m_gameOptions && m_gameOptions->isActive()
+                && m_gameOptionsTitleId == result.titleId) {
+                std::error_code ec;
+                const bool hasHero = std::filesystem::exists(
+                    SteamGridDbManager::heroPath(result.titleId), ec);
+                ec.clear();
+                const bool hasLogo = std::filesystem::exists(
+                    SteamGridDbManager::logoPath(result.titleId), ec);
+                m_gameOptions->refreshArtworkPresence(
+                    hasHero, hasLogo, SteamGridDbManager::hasIcon(result.titleId),
+                    SteamGridDbManager::hasPoster(result.titleId),
+                    SteamGridDbManager::hasGridWide(result.titleId));
+                if (result.kind == SteamGridDbManager::ArtworkKind::Icon
+                    && result.titleId < kFolderTitleIdPrefix) {
+                    // Load from disk immediately - grid reloadTitle is async and
+                    // still holds the previous texture when we get here.
+                    m_gameOptions->setGameIcon(folderCoverTexture(result.titleId));
+                }
+            }
         }
-        if (m_steamGridDbPicker && m_steamGridDbPicker->isActive())
-            m_steamGridDbPicker->setMessage(result.message, false);
         if (m_progressDialog) m_progressDialog->hide();
         m_steamGridDbApplyProgress.reset();
         m_steamGridDbApplyProgressUiRevision = 0;
-        if (m_steamGridDbPicker && m_steamGridDbPicker->isActive())
+        auto toast = [&](const std::string& msg) {
+            if (m_gameOptions && m_gameOptions->isActive())
+                m_gameOptions->requestToast(msg, 2.6f);
+            else if (m_folderOptions && m_folderOptions->isActive())
+                m_folderOptions->requestToast(msg, 2.6f);
+            else if (m_settings) m_settings->requestToast(msg, 2.6f);
+        };
+        if (result.success) {
+            // Close the picker after a successful apply so the player lands
+            // back on Game / Folder Options with the new artwork visible.
+            if (m_steamGridDbPicker && m_steamGridDbPicker->isActive())
+                m_steamGridDbPicker->hide();
+            if (m_folderOptions && m_folderOptions->isActive()
+                && focusManager().current() != m_folderOptions.get())
+                focusManager().setFocus(m_folderOptions.get());
+            if (!result.message.empty()) toast(result.message);
+        } else if (result.cancelled) {
+            toast(nxui::I18n::instance().tr(
+                "settings.steamgriddb.cancelled", "Artwork download cancelled."));
+            if (m_steamGridDbPicker && m_steamGridDbPicker->isActive())
+                focusManager().setFocus(m_steamGridDbPicker.get());
+        } else if (m_steamGridDbPicker && m_steamGridDbPicker->isActive()) {
+            m_steamGridDbPicker->setMessage(result.message, false);
             focusManager().setFocus(m_steamGridDbPicker.get());
+        }
     }
 
     const auto state = m_steamGridDb.status();
@@ -930,31 +1097,112 @@ void WiiUMenuApp::syncSteamGridDb() {
                 // forceReload releases the pool texture used by the panel header;
                 // detach it first so the overlay never renders a stale pointer.
                 if (m_gameOptions) m_gameOptions->setGameIcon(nullptr);
+                // Re-mark per-tile poster frames so new posters get tall cells
+                // in single-row right away, without a view toggle (PoloNX #167).
+                const bool preferPosterTiles =
+                    m_appLayoutMode == AppLayoutMode::DynamicLine
+                    && m_config.steamGridDbEnabled
+                    && m_config.steamGridDbShowPosterInDynamicLine;
+                if (preferPosterTiles
+                    || state.selectedKind == SteamGridDbManager::ArtworkKind::Poster
+                    || state.selectedKind == SteamGridDbManager::ArtworkKind::GridWide)
+                    syncSingleRowPosterPresentation(false);
                 const StreamPump pump = gridStreamPump();
                 m_iconStreamer.forceReload(pump.page, pump.perPage,
                                            app().gpu(), app().renderer(),
                                            m_grid->allIcons());
+                // Wide 2x1 / 4x2 tiles draw the landscape grid the scan may
+                // have just fetched; the streamer reload above does not
+                // reach them, and ensureGameArtwork() skips titles it already
+                // holds. Their old textures can still be referenced by
+                // submitted frames, so drain once, then detach and re-decode.
+                std::vector<GlossyIcon*> wideTiles;
+                for (const auto& icon : m_grid->allIcons()) {
+                    if (!icon || icon->entryKind() != GridEntryKind::Application
+                        || icon->titleId() == 0)
+                        continue;
+                    if (switchu::widgets::isLandscapeWideGameTile(
+                            icon->gridSpanColumns(), icon->gridSpanRows()))
+                        wideTiles.push_back(icon.get());
+                }
+                if (!wideTiles.empty()) {
+                    app().gpu().waitIdle();
+#ifdef NXUI_BACKEND_DEKO3D
+                    app().renderer().reclaimReleasedTextureSlotsAfterIdle();
+#endif
+                    for (auto* icon : wideTiles) {
+                        icon->setWideGameTextures(nullptr, nullptr);
+                        m_gameArtwork.erase(icon->titleId());
+                        ensureGameArtwork(icon->titleId());
+                    }
+                }
             }
         }
         if (state.selectedKind != SteamGridDbManager::ArtworkKind::None
             && m_gameOptions && m_gameOptions->isActive()) {
             m_gameOptions->requestToast(state.message, 3.2f);
         }
-        if (m_settings && m_settings->isActive()) {
-            // A reason, when there is one, beats a count: "9 missing" was all
-            // the run said when the console was offline.
-            m_settings->requestToast(!state.message.empty()
+        const bool cancelled = state.message.find("cancelled") != std::string::npos;
+        // A reason, when there is one, beats a count: "9 missing" was all the
+        // run said when the console was offline.
+        const std::string summary = cancelled
+            ? nxui::I18n::instance().tr("settings.steamgriddb.scan_cancelled",
+                                        "Artwork scan cancelled.")
+            : !state.message.empty()
                 ? state.message
                 : std::to_string(state.matched) + " artwork sets found, "
-                  + std::to_string(state.failed) + " missing.", 3.2f);
+                  + std::to_string(state.failed) + " missing.";
+        if (m_themeShop && m_themeShop->isActive()) {
+            // The scan can be started from the Theme Shop's SteamGridDB tab.
+            m_themeShop->requestToast(summary);
+            focusManager().setFocus(m_themeShop.get());
+        } else if (m_settings && m_settings->isActive()) {
+            m_settings->requestToast(summary, 3.2f);
+            // The progress dialog held focus for the whole scan.
+            focusManager().setFocus(m_settings.get());
         }
     }
 }
 
 void WiiUMenuApp::showFocusedSteamGridDbArtwork(bool forceReload) {
-    if (!m_steamGridDbBackdrop || !m_config.steamGridDbEnabled) return;
+    if (!m_steamGridDbBackdrop) return;
+    // Every focus change used to re-resolve and re-prefetch; moving across a
+    // row did that per icon (OmniLaunch 502ed08).
+    static constexpr std::uint64_t kNoFocusedTitle = 0xFFFFFFFFFFFFFFFFULL;
+    static std::uint64_t s_lastFocusedTitleId = kNoFocusedTitle;
+
+    // Frame Tap lite / NeedHeadroom hold: heroes (~8 MiB) stay down so posters
+    // can keep a wider radius. Every call site (splash handoff, morph, focus)
+    // lands here, so no art is reloaded while light is active.
+    if (m_frameTapLightActive || m_ftHeadroomHoldActive) {
+        s_lastFocusedTitleId = kNoFocusedTitle;
+        m_steamGridDbBackdrop->setPreloadPaused(true);
+        m_steamGridDbBackdrop->releaseGpuArtwork();
+        m_steamGridDbBackdrop->setEnabled(false);
+        m_steamGridDbBackdrop->showTitle(0, true);
+        syncHeroBackdropPresentation();
+        return;
+    }
+    // Off, or switched off for this view (grid / single-row / folders).
+    if (!steamGridDbArtworkAllowedHere()) {
+        s_lastFocusedTitleId = kNoFocusedTitle;
+        m_steamGridDbBackdrop->setEnabled(false);
+        m_steamGridDbBackdrop->showTitle(0, forceReload);
+        syncHeroBackdropPresentation();
+        return;
+    }
+    m_steamGridDbBackdrop->setEnabled(true);
+    m_steamGridDbBackdrop->setLayoutMode(presentationLayoutMode());
+
     std::uint64_t titleId = 0;
-    if (m_grid) {
+    // While carrying a title, keep its hero: hopping focus across slots for
+    // placement would otherwise thrash hero loads and lag the folder.
+    const bool holdingTitle = m_editMode && m_editHeldTitleId != 0
+        && m_editHeldTitleId < kFolderTitleIdPrefix
+        && !switchu::widgets::isWidgetTitleId(m_editHeldTitleId);
+    if (holdingTitle) {
+        titleId = m_editHeldTitleId;
+    } else if (m_grid) {
         auto* current = m_grid->focusManager().current();
         if (current && current->tag() == "glossy_icon") {
             const int focused = m_grid->focusedGlobalIndex();
@@ -964,14 +1212,15 @@ void WiiUMenuApp::showFocusedSteamGridDbArtwork(bool forceReload) {
         }
     }
 
-    // Every focus change used to re-resolve and re-prefetch; moving across a
-    // row did that per icon (OmniLaunch 502ed08).
-    static std::uint64_t s_lastFocusedTitleId = 0xFFFFFFFFFFFFFFFFULL;
-    if (!forceReload && titleId == s_lastFocusedTitleId) return;
+    if (!forceReload && titleId == s_lastFocusedTitleId) {
+        // The logo band still follows the focused tile's shape.
+        syncSteamGridDbLogoArea();
+        return;
+    }
     s_lastFocusedTitleId = titleId;
 
     std::vector<std::uint64_t> nearbyTitleIds;
-    if (m_grid) {
+    if (m_grid && !holdingTitle) {
         const int focused = m_grid->focusedGlobalIndex();
         for (int distance = 1; focused >= 0 && nearbyTitleIds.size() < 4
                                && distance < m_model.count(); ++distance) {
@@ -988,7 +1237,13 @@ void WiiUMenuApp::showFocusedSteamGridDbArtwork(bool forceReload) {
     // Zero is meaningful: it clears artwork when focus moves to a folder,
     // an empty slot or any non-application widget.
     m_steamGridDbBackdrop->showTitle(titleId, forceReload);
+    // After a layout morph, skip neighbour hero/logo warm for a beat so HOME
+    // stays responsive; the focused title still updates above.
+    if (m_deferBackdropPreloadSec > 0.f)
+        nearbyTitleIds.clear();
     m_steamGridDbBackdrop->setPreloadTitles(std::move(nearbyTitleIds));
+    syncSteamGridDbLogoArea();
+    updateHeroAwareChrome();
 }
 
 void WiiUMenuApp::createGameOptions() {

@@ -179,7 +179,9 @@ void registerEntries(std::vector<PendingApp>& apps,
                      GridModel& model,
                      IconStreamer& streamer) {
     streamer.init((int)apps.size());
-    streamer.setIconDataLoader(AppListLoader::loadIconData);
+    streamer.setIconDataLoader([](uint64_t titleId) {
+        return AppListLoader::loadIconData(titleId, false);
+    });
     for (int i = 0; i < (int)apps.size(); ++i) {
         auto& p = apps[i];
         streamer.setTitleId(i, p.kind == GridEntryKind::Application ? p.titleId : 0);
@@ -329,7 +331,7 @@ void AppListLoader::fetchApps(std::vector<PendingApp>& output, bool prefetchIcon
 }
 
 
-std::vector<uint8_t> AppListLoader::loadIconData(uint64_t titleId) {
+std::vector<uint8_t> AppListLoader::loadIconData(uint64_t titleId, bool preferPoster) {
     std::vector<uint8_t> iconData;
     if (titleId == 0)
         return iconData;
@@ -337,25 +339,31 @@ std::vector<uint8_t> AppListLoader::loadIconData(uint64_t titleId) {
 #ifdef SWITCHU_MENU
     const uint64_t canonicalId = switchu::activity::ActivityLogManager::canonicalTitleId(titleId);
 
-    // 1. SteamGridDb custom icon (check both titleId and canonicalId)
-    {
-        std::ifstream custom(SteamGridDbManager::iconPath(titleId), std::ios::binary);
-        if (custom.is_open()) {
-            iconData.assign(std::istreambuf_iterator<char>(custom),
-                            std::istreambuf_iterator<char>());
-            if (!iconData.empty())
-                return iconData;
-        }
-        if (canonicalId != titleId) {
-            std::ifstream customCanon(SteamGridDbManager::iconPath(canonicalId), std::ios::binary);
-            if (customCanon.is_open()) {
-                iconData.assign(std::istreambuf_iterator<char>(customCanon),
-                                std::istreambuf_iterator<char>());
-                if (!iconData.empty())
-                    return iconData;
-            }
-        }
+    auto readFile = [](const std::string& path, std::vector<uint8_t>& out) -> bool {
+        std::ifstream custom(path, std::ios::binary);
+        if (!custom.is_open())
+            return false;
+        out.assign(std::istreambuf_iterator<char>(custom),
+                   std::istreambuf_iterator<char>());
+        return !out.empty();
+    };
+
+    // 0. SteamGridDB poster (the fork's 600x900 cover) when the single-row
+    //    carousel asks for tall art (PoloNX #167).
+    if (preferPoster) {
+        if (readFile(SteamGridDbManager::posterPath(titleId), iconData))
+            return iconData;
+        if (canonicalId != titleId
+            && readFile(SteamGridDbManager::posterPath(canonicalId), iconData))
+            return iconData;
     }
+
+    // 1. SteamGridDb custom icon (check both titleId and canonicalId)
+    if (readFile(SteamGridDbManager::iconPath(titleId), iconData))
+        return iconData;
+    if (canonicalId != titleId
+        && readFile(SteamGridDbManager::iconPath(canonicalId), iconData))
+        return iconData;
 
     // 2. Control cache (check both titleId and canonicalId)
     iconData = switchu::control_cache::readIcon(titleId);

@@ -4,7 +4,9 @@
 #include <nxui/core/Animation.hpp>
 #include <nxui/Theme.hpp>
 #include "core/GridModel.hpp"
+#include "widgets/FolderStyleDraw.hpp"
 #include "sidebar/SidebarAnimation.hpp"
+#include <array>
 #include <string>
 #include <memory>
 #include <vector>
@@ -28,6 +30,11 @@ public:
     nxui::Texture* texture() const      { return m_tex; }
     void setCustomArtwork(bool custom)  { m_customArtwork = custom; }
     bool customArtwork() const          { return m_customArtwork; }
+
+    // Single-row only: tall 2:3 frame (apps with poster art, or folders when
+    // posters are enabled). Grid view ignores this.
+    void setPosterFrame(bool enabled) { m_posterFrame = enabled; }
+    bool usesPosterFrame() const { return m_posterFrame; }
 
     void setGameCardTexture(nxui::Texture* tex) { m_gameCardTex = tex; }
     nxui::Texture* gameCardTexture() const      { return m_gameCardTex; }
@@ -66,7 +73,22 @@ public:
     void setFolderStyleIndex(int index) { m_folderStyleIndex = index; }
     void setFolderShowCover(bool show) { m_folderShowCover = show; }
     void setFolderCoverTexture(nxui::Texture* tex) { m_folderCover = tex; }
+    nxui::Texture* folderCoverTexture() const { return m_folderCover; }
     void setFolderCoverTitleId(std::uint64_t id) { m_folderCoverTitleId = id; }
+    void setFolderCoverIsPoster(bool isPoster) { m_folderCoverIsPoster = isPoster; }
+    bool folderCoverIsPoster() const { return m_folderCoverIsPoster; }
+    void setFolderPeekComposite(bool composite) { m_folderPeekComposite = composite; }
+    bool folderPeekComposite() const { return m_folderPeekComposite; }
+    void setFolderPeekTextures(const std::array<nxui::Texture*, switchu::folders::kFolderPeekMax>& peeks,
+                               int count) {
+        m_folderPeeks = peeks;
+        m_folderPeekCount = std::clamp(count, 0, switchu::folders::kFolderPeekMax);
+    }
+    int folderPeekCount() const { return m_folderPeekCount; }
+    void clearFolderPeeks() {
+        m_folderPeeks.fill(nullptr);
+        m_folderPeekCount = 0;
+    }
     void setThemeMode(nxui::ThemeMode mode) { m_themeMode = mode; }
     void setFolderVisualSeed(std::uint32_t seed) { m_folderVisualSeed = seed; }
     static void drawFolderContent(nxui::Renderer& ren, const nxui::Rect& bounds,
@@ -136,6 +158,9 @@ public:
     void startAppear(float delay);
     // Reverse of a tile appear: fly back into `target` while shrinking out.
     void startDisappear(const nxui::Rect& target, float delay, float dur);
+    // Move-mode swap (PoloNX): slide from 'from' to the current slot at full
+    // scale and opacity.
+    void startGlideFrom(const nxui::Rect& from, float dur);
     void forceVisible();
 
     void setAppearOrigin(const nxui::Rect& origin) {
@@ -150,6 +175,9 @@ public:
     bool isFocused() const { return m_focused; }
     void onFocusGained() override;
     void onFocusLost() override;
+    /// Live focus pop applied at draw time (SelectionCursor must match this).
+    float focusScaleValue() const { return m_focusScale.value(); }
+    float focusScaleTarget() const { return m_focusScale.target(); }
 
 protected:
     void onRender(nxui::Renderer& ren) override;
@@ -172,6 +200,7 @@ private:
     bool        m_isFavorite = false;
     bool        m_customArtwork = false;
     std::string m_playtimeBadge;
+    bool        m_posterFrame = false;
     nxui::Color m_loadingColor = nxui::Color::white();
     float       m_suspendPulse = 0.f;
     float       m_batteryRefreshTimer = 0.f;
@@ -210,6 +239,10 @@ private:
     int           m_folderStyleIndex = 0;
     bool          m_folderShowCover = false;
     nxui::Texture* m_folderCover = nullptr;
+    bool          m_folderCoverIsPoster = false;
+    bool          m_folderPeekComposite = false;
+    std::array<nxui::Texture*, switchu::folders::kFolderPeekMax> m_folderPeeks{};
+    int           m_folderPeekCount = 0;
     std::uint64_t m_folderCoverTitleId = 0;
     nxui::ThemeMode m_themeMode = nxui::ThemeMode::Dark;
     nxui::Font*   m_font = nullptr;

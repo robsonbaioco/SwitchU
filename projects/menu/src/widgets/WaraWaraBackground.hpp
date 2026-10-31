@@ -114,6 +114,10 @@ public:
     void setMotionPaused(bool paused) { m_motionPaused = paused; }
     bool motionPaused() const { return m_motionPaused; }
 
+    // Lite / Frame Tap: drop animated shapes only; theme wallpaper stays.
+    void setLiteSuppressed(bool suppressed);
+    bool liteSuppressed() const { return m_liteSuppressed; }
+
     void regenerate(int count = 50) override;
 
     // Softens the whole wallpaper layer — the image and the drifting shapes
@@ -220,5 +224,6 @@ private:
     nxui::Font* m_ambientFont = nullptr;
     nxui::Font* m_ambientSmallFont = nullptr;
     bool m_motionPaused = false;
+    bool m_liteSuppressed = false;
 };
 

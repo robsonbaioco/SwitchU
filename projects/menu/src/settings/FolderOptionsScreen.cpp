@@ -33,6 +33,7 @@ void FolderOptionsScreen::setFolder(const FolderInfo& info) {
     m_folder.sizeIndex = std::clamp(m_folder.sizeIndex, 0, 2);
     m_folder.styleIndex = std::clamp(m_folder.styleIndex, 0,
                                      switchu::folders::kFolderStyleCount - 1);
+    m_folder.defaultViewIndex = std::clamp(m_folder.defaultViewIndex, 0, 2);
     m_tabs.clear();
     m_cachedTabContentWidgets.clear();
     warmup();
@@ -44,6 +45,24 @@ void FolderOptionsScreen::buildTabs() {
 
     Tab appearance;
     appearance.name = i18n.tr("folder.appearance", "Appearance");
+
+    SettingItem defaultView;
+    defaultView.label = i18n.tr("folder.default_view", "Default folder view");
+    defaultView.description = i18n.tr(
+        "folder.default_view_desc",
+        "Layout used when any folder is opened.");
+    defaultView.type = ItemType::Selector;
+    defaultView.options = {
+        i18n.tr("folder.default_view_auto", "Auto"),
+        i18n.tr("folder.default_view_grid", "Grid"),
+        i18n.tr("folder.default_view_line", "Single-row"),
+    };
+    defaultView.intVal = m_folder.defaultViewIndex;
+    defaultView.onChange = [this](SettingItem& self) {
+        m_folder.defaultViewIndex = std::clamp(self.intVal, 0, 2);
+        if (m_defaultViewCb) m_defaultViewCb(m_folder.defaultViewIndex);
+    };
+    appearance.items.push_back(std::move(defaultView));
 
     SettingItem color;
     color.label = i18n.tr("folder.color", "Folder color");
@@ -119,6 +138,49 @@ void FolderOptionsScreen::buildTabs() {
         if (m_coverCb) m_coverCb(m_folder.showCover);
     };
     appearance.items.push_back(std::move(cover));
+
+    // PoloNX hangs a secondary "×" off these rows; the fork's rows have a
+    // single button, so clearing is its own row, shown only when art exists.
+    auto addClearRow = [&](const char* labelKey, const char* label, VoidCb* cb) {
+        SettingItem clear;
+        clear.label = i18n.tr(labelKey, label);
+        clear.buttonLabel = i18n.tr("button.clear", "Clear");
+        clear.type = ItemType::Action;
+        clear.onChange = [cb](SettingItem&) { if (*cb) (*cb)(); };
+        appearance.items.push_back(std::move(clear));
+    };
+
+    SettingItem customIcon;
+    customIcon.label = i18n.tr("folder.custom_icon", "Custom cover icon");
+    customIcon.buttonLabel = i18n.tr("button.select", "Select");
+    customIcon.description = m_folder.hasCustomIcon
+        ? i18n.tr("folder.custom_icon_set_desc",
+                  "SteamGridDB icon is active for this folder. Requires Show cover.")
+        : i18n.tr("folder.custom_icon_desc",
+                  "Search SteamGridDB and use an icon.");
+    customIcon.type = ItemType::Action;
+    customIcon.onChange = [this](SettingItem&) {
+        if (m_customIconSelectCb) m_customIconSelectCb();
+    };
+    appearance.items.push_back(std::move(customIcon));
+    if (m_folder.hasCustomIcon)
+        addClearRow("folder.custom_icon_clear", "Remove custom cover icon", &m_customIconClearCb);
+
+    SettingItem customPoster;
+    customPoster.label = i18n.tr("folder.custom_poster", "Custom poster");
+    customPoster.buttonLabel = i18n.tr("button.select", "Select");
+    customPoster.description = m_folder.hasCustomPoster
+        ? i18n.tr("folder.custom_poster_set_desc",
+                  "SteamGridDB poster is active for this folder in single-row view.")
+        : i18n.tr("folder.custom_poster_desc",
+                  "Search SteamGridDB for a tall poster (single-row view).");
+    customPoster.type = ItemType::Action;
+    customPoster.onChange = [this](SettingItem&) {
+        if (m_customPosterSelectCb) m_customPosterSelectCb();
+    };
+    appearance.items.push_back(std::move(customPoster));
+    if (m_folder.hasCustomPoster)
+        addClearRow("folder.custom_poster_clear", "Remove custom poster", &m_customPosterClearCb);
     m_tabs.push_back(std::move(appearance));
 
     Tab management;
@@ -181,7 +243,8 @@ void FolderOptionsScreen::drawOverlayHeader(nxui::Renderer& ren,
     preview.themeMode = m_theme->mode;
     preview.drawName = false;
     preview.showCover = m_folder.showCover;
-    preview.schematicPlaceholder = true;
+    preview.cover = (m_folder.cover && m_folder.cover->valid()) ? m_folder.cover : nullptr;
+    preview.schematicPlaceholder = preview.cover == nullptr;
     switchu::folders::drawFolderStyle(preview);
 
     const float textX = shell.right() + 24.f;

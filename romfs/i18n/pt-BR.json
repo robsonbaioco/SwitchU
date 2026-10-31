@@ -107,7 +107,13 @@
       "cover": "Modo capa",
       "xmb": "Modo XMB",
       "list": "Modo lista",
-      "metro": "Modo Metro de blocos dinâmicos"
+      "metro": "Modo Metro de blocos dinâmicos",
+      "flip_to_line": "Mudar para a visão em linha única.",
+      "flip_to_grid": "Mudar para a visão em grade."
+    },
+    "themeshop": {
+      "shelf_branch": "A ou direita para entrar. Para baixo para a loja. Para cima e para baixo para trocar de aba. B para fechar.",
+      "shop_branch": "A ou direita para entrar na loja. Para cima para os instalados. Para baixo para a próxima aba. B para fechar."
     }
   },
   "tutorial": {
@@ -399,7 +405,17 @@
     "steamgriddb": {
       "section": "Arte dos jogos",
       "enabled": "Exibir arte do SteamGridDB",
-      "enabled_desc": "Mostra heroes e logos atrás do menu de aplicativos.",
+      "enabled_desc": "Escolha abaixo onde a arte aparece.",
+      "show_grid": "Mostrar no menu em grade",
+      "show_grid_desc": "Hero ao fundo da grade padrão do HOME.",
+      "show_line": "Mostrar no menu em linha única",
+      "show_line_desc": "Hero e logo atrás do carrossel de linha única.",
+      "show_folders": "Mostrar dentro das pastas",
+      "show_folders_desc": "Arte ao navegar pelos jogos de uma pasta aberta.",
+      "show_poster_line": "Mostrar pôster na visão em linha única",
+      "show_poster_line_desc": "Usa as capas verticais do SteamGridDB no carrossel. A grade continua com os ícones.",
+      "show_logo_line": "Mostrar logo na visão em linha única",
+      "show_logo_line_desc": "Logo do jogo acima do carrossel. Desligue para manter só o hero e as capas.",
       "api_key": "Chave de API",
       "api_key_set": "Configurada (oculta)",
       "api_key_missing": "Não configurada",
@@ -424,7 +440,8 @@
       "new_game_detected": "Novo jogo detectado: ",
       "new_game_ask": "Deseja verificar e baixar capas e artes do SteamGridDB?",
       "new_games_detected": "novos jogos ou atalhos detectados.\n\nDeseja verificar e baixar capas e artes do SteamGridDB?",
-      "https_clock_hint": "Falha no HTTPS. Se o relógio do console estiver errado, corrija em Configurações > Sistema (sincronizar o relógio pela internet ou ajustar a data e a hora manualmente)."
+      "https_clock_hint": "Falha no HTTPS. Se o relógio do console estiver errado, corrija em Configurações > Sistema (sincronizar o relógio pela internet ou ajustar a data e a hora manualmente).",
+      "need_query": "Digite primeiro um nome para buscar."
     },
     "controllers": {
       "test": "Testar dispositivos de entrada",
@@ -642,6 +659,10 @@
       "hero_desc": "Abre a galeria de heroes e escolhe a imagem a usar.",
       "logo": "Logo",
       "logo_desc": "Abre a galeria de logos e escolhe a imagem a usar.",
+      "poster": "Pôster",
+      "poster_desc": "Capa vertical para a linha única e os blocos 2x3 da grade.",
+      "poster_wide": "Pôster largo",
+      "poster_wide_desc": "Arte horizontal da grade para este bloco 2x1.",
       "icon": "Ícone substituto",
       "icon_desc": "Abre a galeria de ícones e escolhe uma substituição para este jogo.",
       "cover": "Capa vertical",
@@ -718,7 +739,15 @@
     "style_manila": "Manila",
     "style_label": "Etiqueta",
     "show_cover": "Mostrar capa",
-    "show_cover_desc": "Mostra o primeiro jogo em todas as pastas. O Clássico mantém o mosaico."
+    "show_cover_desc": "Mostra o primeiro jogo em todas as pastas. O Clássico mantém o mosaico.",
+    "custom_poster": "Pôster personalizado",
+    "custom_poster_desc": "Busca um pôster vertical no SteamGridDB (vista em linha única).",
+    "custom_poster_set_desc": "O pôster do SteamGridDB está ativo nesta pasta na vista em linha única.",
+    "default_view": "Vista padrão das pastas",
+    "default_view_auto": "Automática",
+    "default_view_desc": "Layout usado ao abrir qualquer pasta.",
+    "default_view_grid": "Grade",
+    "default_view_line": "Linha única"
   },
   "add": {
     "title": "Adicionar"
@@ -855,7 +884,18 @@
       "options": "Opções",
       "update": "Atualização",
       "uninstall": "Desinstalar",
-      "music": "Músicas (YouTube)"
+      "music": "Músicas (YouTube)",
+      "sounds": "Sons",
+      "interface": "Interface",
+      "icons": "Ícones",
+      "themes": "Temas"
+    },
+    "badge": {
+      "icons": "Ícones",
+      "music": "Música",
+      "sounds": "Sons",
+      "tint": "Tom",
+      "auto": "Auto"
     },
     "accessibility": {
       "fullscreen_preview": "Prévia em tela cheia",
@@ -879,7 +919,8 @@
       "guide": "Buscar temas",
       "unavailable": "Teclado de busca indisponível.",
       "no_results": "Nenhum tema encontrado.",
-      "no_results_hint": "Pressione X ou use Buscar para mudar ou limpar o filtro."
+      "no_results_hint": "Pressione X ou use Buscar para mudar ou limpar o filtro.",
+      "title": "Buscar temas"
     },
     "installed": {
       "title": "Temas instalados",
@@ -893,7 +934,10 @@
       "remove_hint": "Este tema pode ser removido do console.",
       "builtin_hint": "Este tema faz parte do app.",
       "apply": "Aplicar tema",
-      "remove": "Remover tema"
+      "remove": "Remover tema",
+      "remove_confirm": "Remover este tema do console?",
+      "remove_confirm_yes": "Remover",
+      "cover_single": "Pressione A para abrir esta captura em tela cheia."
     },
     "catalog": {
       "theme_one": "tema",
@@ -925,6 +969,8 @@
       "install": "Instalar",
       "installed": "Instalado",
       "download_apply": "Baixar + aplicar",
+      "download_apply_confirm_title": "Baixar e aplicar",
+      "download_apply_confirm": "Baixar este tema e aplicá-lo ao HOME agora?",
       "transfer_busy": "Já existe uma transferência de tema em andamento.",
       "install_pending": "Instalação ainda não conectada.",
       "download_apply_pending": "Baixar + aplicar ainda não conectado.",
@@ -1022,9 +1068,77 @@
       "status_ready": "Situação: Pronto para baixar (.mp3)",
       "status_ready_play": "Situação: Pronto para tocar ou excluir"
     },
+    "icons": {
+      "title": "Ícones",
+      "subtitle": "Pacotes de ícones da barra lateral.",
+      "apply": "Aplicar pacote de ícones",
+      "remove": "Remover pacote de ícones",
+      "remove_confirm": "Excluir este pacote de ícones do console?",
+      "remove_failed": "Não foi possível remover este pacote de ícones.",
+      "removed": "Pacote de ícones removido.",
+      "installed": "Pacote de ícones instalado.",
+      "status_online": "Disponível online",
+      "download_hint": "Instale para baixar este pacote para o console.",
+      "remove_hint": "Pacote baixado: pode ser removido do console.",
+      "download_apply_confirm_title": "Baixar e aplicar",
+      "download_apply_confirm": "Baixar este pacote de ícones e aplicá-lo agora?",
+      "dialog_title": "Baixando pacote de ícones",
+      "prepare_download": "Preparando o download do pacote de ícones...",
+      "finalize_download": "Concluindo a instalação do pacote de ícones...",
+      "fallback": "Ícones que faltarem usam os do Default.",
+      "apply_hint": "Aplique para trocar os ícones da barra lateral na hora.",
+      "applied": "Pacote de ícones aplicado.",
+      "builtin_hint": "Pacote embutido: Aplique para usá-lo. Os embutidos não podem ser removidos.",
+      "cover_single": "Pressione A para ver de perto e depois Aplicar para trocar os ícones.",
+      "custom_tint": "Tom personalizado",
+      "empty": "Nenhum pacote de ícones instalado.",
+      "empty_hint": "Vá até a Loja para baixar pacotes, ou instale um tema que traga ícones.",
+      "empty_shop": "Nenhum pacote de ícones disponível para baixar.",
+      "empty_shop_hint": "Atualize o catálogo, ou vá para Instalados para ver os pacotes deste console.",
+      "flatten": "Sólido",
+      "grayscale": "Tons de cinza",
+      "match_theme": "Combinar com o tema",
+      "preview_loading": "Carregando prévia...",
+      "preview_missing": "Sem prévia",
+      "preview_unavailable": "Prévia indisponível",
+      "shop_item": "Loja de ícones",
+      "subtitle_installed": "Pacotes de ícones deste console.",
+      "subtitle_shop": "Baixe pacotes de ícones do catálogo.",
+      "tint_hue": "Matiz",
+      "tint_lightness": "Luminosidade",
+      "tint_saturation": "Saturação",
+      "title_installed": "Ícones instalados",
+      "title_shop": "Loja de ícones"
+    },
     "options": {
       "auto_theme": "Tema automático",
-      "auto_theme_desc": "Alterna sozinho entre um tema de dia e um de noite."
+      "auto_theme_desc": "Alterna sozinho entre um tema de dia e um de noite.",
+      "action_hints": "Dicas de ação",
+      "action_hints_desc": "Escolha como os controles contextuais aparecem no canto inferior direito.",
+      "sort_large_tiles": "Ordenar blocos grandes também",
+      "sort_large_tiles_desc": "A-Z e Recentes também movem os aplicativos que usam um bloco maior.",
+      "hint_panel": "Painel",
+      "hint_capsules": "Cápsulas",
+      "theme_music_override": "Deixar os temas substituírem minha playlist",
+      "theme_music_override_desc": "Ligado: aplicar um tema com música troca sua playlist pelas faixas do tema. Desligado: mantém sua biblioteca e usa as opções abaixo.",
+      "theme_music_add": "Adicionar a música do tema à minha playlist",
+      "theme_music_add_desc": "Com a substituição desligada, acrescenta as faixas do tema à playlist atual em vez de ignorá-las.",
+      "theme_music_play": "Tocar a música do tema ao aplicar",
+      "theme_music_play_desc": "Com a substituição desligada e a música do tema adicionada, toca essa faixa depois de Aplicar. (No modo de substituição, a playlist do tema sempre começa quando a música está ligada.)",
+      "battery_saver": "Economia de bateria",
+      "battery_saver_desc": "Reduz o uso de memória e GPU do HOME. Também disponível nas Configurações Rápidas.",
+      "frame_tap_engaged": "Frame Tap em uso",
+      "frame_tap_engaged_desc": "O modo leve fica preso enquanto o Frame Tap está transmitindo. Desconecte o visualizador para mudar a Economia de bateria.",
+      "icon_contrast": "Contraste adaptável dos ícones",
+      "icon_contrast_desc": "Na linha única com uma imagem de destaque, os ícones coloridos do HOME seguem o modo claro/escuro da interface. Sem destaque, mantêm as cores originais (ou o seu tom personalizado)."
+    },
+    "themes": {
+      "empty_installed_hint": "Vá até a Loja para ver e baixar temas.",
+      "shop_item": "Loja de temas",
+      "subtitle_installed": "Temas deste console.",
+      "subtitle_shop": "Baixe temas do catálogo.",
+      "title_installed": "Temas instalados",
+      "title_shop": "Loja de temas"
     }
   },
   "dialog": {
@@ -1254,7 +1368,17 @@
     "reboot": "Reiniciar",
     "power_off": "Desligar",
     "hint_adjust": "Ajustar",
-    "hint_shortcut": "Config. Rápidas"
+    "hint_shortcut": "Config. Rápidas",
+    "music_empty": "Nenhuma música carregada",
+    "music_idle": "Nada tocando",
+    "prev": "Ant.",
+    "next": "Próx.",
+    "play_pause": "Tocar/Pausar",
+    "repeat": "Repetir",
+    "shuffle": "Aleatório",
+    "playlist": "Playlist",
+    "battery_saver": "Economia de bateria",
+    "frame_tap_engaged": "Frame Tap ativo"
   },
   "activity_log": {
     "title": "Registro Diário de Atividades",
@@ -1316,5 +1440,16 @@
     "body": "O menu parou de forma inesperada várias vezes ao iniciar, então está rodando com o tema padrão, sem papel de parede em vídeo e sem música. Seu tema e suas configurações não foram alterados. Remova ou troque o tema que causou isso e depois saia do modo seguro.",
     "stay": "Continuar no modo seguro",
     "leave": "Sair do modo seguro (reiniciar)"
+  },
+  "battery": {
+    "hint": "A para abrir as Configurações Rápidas.",
+    "label": "Bateria"
+  },
+  "layout": {
+    "flip_to_grid": "Mudar para a vista em grade.",
+    "flip_to_line": "Mudar para a vista em linha única."
+  },
+  "quick_settings": {
+    "title": "Configurações Rápidas"
   }
 }

@@ -30,6 +30,27 @@ void GameOptionsScreen::setGame(const GameInfo& info) {
     warmup();
 }
 
+void GameOptionsScreen::refreshArtworkPresence(bool hasHero, bool hasLogo, bool hasIcon,
+                                               bool hasPoster, bool hasPosterWide) {
+    m_game.hasHeroArt = hasHero;
+    m_game.hasLogoArt = hasLogo;
+    m_game.hasIconArt = hasIcon;
+    m_game.hasPosterArt = hasPoster;
+    m_game.hasPosterWideArt = hasPosterWide;
+    if (!m_active && !m_animating)
+        return;
+    const int tab = m_tabIndex;
+    const int content = m_contentIdx;
+    const FocusArea area = m_focusArea;
+    buildTabs();
+    if (tab >= 0 && tab < (int)m_tabs.size())
+        m_tabIndex = tab;
+    rebuildContentItems();
+    const int focusables = focusableCount();
+    m_contentIdx = focusables > 0 ? std::clamp(content, 0, focusables - 1) : 0;
+    m_focusArea = area;
+}
+
 void GameOptionsScreen::buildTabs() {
     auto& i18n = nxui::I18n::instance();
     // buildTabs() is also called when translations are refreshed. Rebuild
@@ -56,10 +77,14 @@ void GameOptionsScreen::buildTabs() {
         size.description = i18n.tr(
             "game.tile_size_desc", "Changes the size of this game on the grid.");
         size.type = ItemType::Selector;
-        size.options = {"1×1", "2×1", "2×2"};
-        size.intVal = std::clamp(m_game.sizeIndex, 0, 2);
+        // ASCII "x" avoids mojibake if the source encoding is wrong.
+        // 1x2 dropped — cell aspect (~1:2) can't match poster (2:3); use 2x3.
+        // 3x2 dropped — SGDB "Poster wide" (460x215) crops badly in a 3x2 cell.
+        // 4x2 kept — same 2:1 aspect as 2x1 (larger twin; Hero / Poster wide).
+        size.options = {"1x1", "2x1", "4x2", "2x2", "2x3"};
+        size.intVal = std::clamp(m_game.sizeIndex, 0, 4);
         size.onChange = [this](SettingItem& self) {
-            m_game.sizeIndex = std::clamp(self.intVal, 0, 2);
+            m_game.sizeIndex = std::clamp(self.intVal, 0, 4);
             if (m_resizeCb) m_resizeCb(m_game.sizeIndex);
         };
         data.items.push_back(std::move(size));
@@ -109,7 +134,8 @@ void GameOptionsScreen::buildTabs() {
                                                     const char* label,
                                                     const char* descriptionKey,
                                                     const char* description,
-                                                    ArtworkKind kind) {
+                                                    ArtworkKind kind,
+                                                    bool hasArt) {
         SettingItem item;
         item.label = i18n.tr(labelKey, label);
         item.buttonLabel = i18n.tr("button.select", "Select");
@@ -118,24 +144,48 @@ void GameOptionsScreen::buildTabs() {
         item.onChange = [this, kind](SettingItem&) {
             if (m_selectArtworkCb) m_selectArtworkCb(kind);
         };
+        const std::string itemLabel = item.label;
         artwork.items.push_back(std::move(item));
+        // PoloNX puts a secondary "×" on the row; the fork's rows have one
+        // button, so clearing is its own row, shown only when art exists.
+        if (hasArt) {
+            SettingItem clear;
+            clear.label = i18n.tr("game.steamgriddb.clear_label", "Remove") + " " + itemLabel;
+            clear.buttonLabel = i18n.tr("button.clear", "Clear");
+            clear.description = i18n.tr("game.steamgriddb.clear_desc",
+                "Delete the downloaded SteamGridDB image for this slot.");
+            clear.type = ItemType::Action;
+            clear.onChange = [this, kind](SettingItem&) {
+                if (m_clearArtworkCb) m_clearArtworkCb(kind);
+            };
+            artwork.items.push_back(std::move(clear));
+        }
     };
     addArtworkAction("game.steamgriddb.hero", "Hero",
                      "game.steamgriddb.hero_desc",
                      "Open the hero gallery and choose an image.",
-                     ArtworkKind::Hero);
+                     ArtworkKind::Hero, m_game.hasHeroArt);
     addArtworkAction("game.steamgriddb.logo", "Logo",
                      "game.steamgriddb.logo_desc",
                      "Open the logo gallery and choose an image.",
-                     ArtworkKind::Logo);
+                     ArtworkKind::Logo, m_game.hasLogoArt);
     addArtworkAction("game.steamgriddb.icon", "Replacement icon",
                      "game.steamgriddb.icon_desc",
                      "Open the icon gallery and choose an override.",
-                     ArtworkKind::Icon);
+                     ArtworkKind::Icon, m_game.hasIconArt);
+    // One 2:3 image: the Flow/Cover views' box cover and PoloNX's poster on
+    // single-row and 2x3 grid tiles.
     addArtworkAction("game.steamgriddb.cover", "Portrait cover",
                      "game.steamgriddb.cover_desc",
                      "Open the cover gallery and choose a 2:3 vertical box cover for Flow view.",
-                     ArtworkKind::Cover);
+                     ArtworkKind::Cover, m_game.hasPosterArt);
+    // 2x1 / 4x2 tiles can use a landscape SGDB grid instead of Hero+Logo.
+    if (m_game.sizeIndex == 1 || m_game.sizeIndex == 2) {
+        addArtworkAction("game.steamgriddb.poster_wide", "Poster wide",
+                         "game.steamgriddb.poster_wide_desc",
+                         "Landscape grid art for this 2x1 / 4x2 tile.",
+                         ArtworkKind::PosterWide, m_game.hasPosterWideArt);
+    }
     m_tabs.push_back(std::move(artwork));
 
     m_cachedTabContentWidgets.clear();

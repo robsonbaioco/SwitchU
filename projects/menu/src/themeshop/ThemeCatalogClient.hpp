@@ -47,11 +47,33 @@ public:
         // catalogues are merged the resolving base can no longer be a single
         // property of the client.
         std::string catalogUrl;
+        bool hasIcons = false;
+        bool hasMusic = false;
+        bool hasSounds = false;
+    };
+
+    // Icon pack published in the same catalog (index.json -> "icons").
+    struct IconEntry {
+        std::string id;
+        std::string name;
+        std::string author;
+        std::string version;
+        std::string description;
+        std::string path;      // repo folder, e.g. icons/default
+        std::string manifest;  // pack.json inside that folder
+        std::string cover;     // pack preview image
+        bool builtin = false;  // also ships inside the console
+        bool colour = false;   // colour artwork (spectrum badge + tint UI)
+        std::string theme;     // theme folder this pack was extracted from
+        // Which index listed this pack (see Entry::catalogUrl): its path, manifest
+        // and cover are relative to that index, not to the client's first URL.
+        std::string catalogUrl;
     };
 
     struct Snapshot {
         ThemeTransferState loading;
         std::vector<Entry> entries;
+        std::vector<IconEntry> icons;
         std::uint64_t revision = 0;
     };
 
@@ -99,6 +121,7 @@ private:
     mutable std::mutex m_mutex;
     ThemeTransferState m_loading;
     std::vector<Entry> m_entries;
+    std::vector<IconEntry> m_icons;
     std::future<void> m_future;
     std::uint64_t m_revision = 0;
 };

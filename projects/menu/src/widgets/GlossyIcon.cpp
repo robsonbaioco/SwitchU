@@ -2,6 +2,7 @@
 #include "FolderPalette.hpp"
 #include "FolderStyleDraw.hpp"
 #include "core/FolderStore.hpp"
+#include "core/WidgetStore.hpp"
 #include "BatteryDrawing.hpp"
 #include "core/DebugLog.hpp"
 #include <nxui/core/Renderer.hpp>
@@ -502,6 +503,10 @@ void GlossyIcon::copyWidgetPresentationFrom(GlossyIcon& source) {
     m_folderStyleIndex = source.m_folderStyleIndex;
     m_folderShowCover = source.m_folderShowCover;
     m_folderCover = source.m_folderCover;
+    m_folderCoverIsPoster = source.m_folderCoverIsPoster;
+    m_folderPeekComposite = source.m_folderPeekComposite;
+    m_folderPeeks = source.m_folderPeeks;
+    m_folderPeekCount = source.m_folderPeekCount;
     m_folderCoverTitleId = source.m_folderCoverTitleId;
     m_themeMode = source.m_themeMode;
     m_widgetType = source.m_widgetType;
@@ -559,6 +564,21 @@ void GlossyIcon::startDisappear(const nxui::Rect& target, float delay, float dur
     m_hasAppearOrigin = true;
     m_animScale.set(0.f, dur, nxui::Easing::inCubic, delay);
     m_appearOpacity.set(0.f, dur, nxui::Easing::inCubic, delay);
+}
+
+void GlossyIcon::startGlideFrom(const nxui::Rect& from, float dur) {
+    // Reuse the appear-origin plumbing: while an origin is armed the tile keeps
+    // its full scale and simply lerps from that rect to its slot, so forcing the
+    // opacity to 1 makes it a pure translation.
+    m_appearing = false;
+    m_disappearing = false;
+    m_appearDelay = 0.f;
+    m_appearTimer = 0.f;
+    m_appearOrigin = from;
+    m_hasAppearOrigin = true;
+    m_appearOpacity.setImmediate(1.f);
+    m_animScale.setImmediate(0.f);
+    m_animScale.set(1.f, dur, nxui::Easing::outCubic);
 }
 
 void GlossyIcon::forceVisible() {
@@ -1110,19 +1130,27 @@ void GlossyIcon::onContentRender(nxui::Renderer& ren) {
             std::strftime(timeBuffer, sizeof(timeBuffer), "%H:%M", &local);
             std::strftime(dateBuffer, sizeof(dateBuffer), "%a %d %b", &local);
             primary = timeBuffer;
-            if (m_widgetColumns > 1) secondary = dateBuffer;
+            // Wide grid clocks and tall single-row posters both get the date.
+            if (m_widgetColumns > 1 || m_posterFrame) secondary = dateBuffer;
         }
 
         const nxui::Vec2 primaryMeasure = m_font->measure(primary);
-        float primaryScale = m_widgetType == switchu::widgets::WidgetType::Clock
-            ? (m_widgetColumns > 1 ? 1.55f : 1.18f) : 0.78f;
+        float primaryScale = 0.78f;
+        if (m_widgetType == switchu::widgets::WidgetType::Clock) {
+            if (m_posterFrame)
+                primaryScale = 1.92f;
+            else if (m_widgetColumns > 1)
+                primaryScale = 1.55f;
+            else
+                primaryScale = 1.18f;
+        }
         if (primaryMeasure.x > 0.f)
             primaryScale = std::min(primaryScale,
                 (inner.width - 18.f) / primaryMeasure.x);
         primaryScale = std::max(0.48f, primaryScale);
         const float primaryHeight = primaryMeasure.y * primaryScale;
         float totalHeight = primaryHeight;
-        float secondaryScale = 0.62f;
+        float secondaryScale = m_posterFrame ? 0.78f : 0.62f;
         nxui::Vec2 secondaryMeasure{};
         if (!secondary.empty()) {
             secondaryMeasure = m_font->measure(secondary);
@@ -1130,14 +1158,15 @@ void GlossyIcon::onContentRender(nxui::Renderer& ren) {
                 secondaryScale = std::min(secondaryScale,
                     (inner.width - 18.f) / secondaryMeasure.x);
             secondaryScale = std::max(0.42f, secondaryScale);
-            totalHeight += 7.f + secondaryMeasure.y * secondaryScale;
+            totalHeight += (m_posterFrame ? 12.f : 7.f)
+                + secondaryMeasure.y * secondaryScale;
         }
         float textY = inner.y + (inner.height - totalHeight) * 0.5f;
         ren.drawText(primary,
             {inner.x + (inner.width - primaryMeasure.x * primaryScale) * 0.5f, textY},
             m_font, nxui::Color::white().withAlpha(0.98f * m_opacity), primaryScale);
         if (!secondary.empty()) {
-            textY += primaryHeight + 7.f;
+            textY += primaryHeight + (m_posterFrame ? 12.f : 7.f);
             ren.drawText(secondary,
                 {inner.x + (inner.width - secondaryMeasure.x * secondaryScale) * 0.5f,
                  textY},
@@ -1150,11 +1179,13 @@ void GlossyIcon::onContentRender(nxui::Renderer& ren) {
     if (m_entryKind == GridEntryKind::Folder) {
         // PoloNX #100's folder styles. Classic stays this fork's glass folder,
         // so nobody's folders change look on update; the other six silhouettes
-        // are drawn by FolderStyleDraw.
-        if (m_folderStyleIndex != switchu::folders::kFolderStyleClassic) {
+        // are drawn by FolderStyleDraw. A single-row poster frame (PoloNX #167)
+        // always goes through FolderStyleDraw too: that is where the 2:3 folder
+        // poster, peek covers and peek composite are drawn.
+        if (m_posterFrame || m_folderStyleIndex != switchu::folders::kFolderStyleClassic) {
             const int style = m_folderStyleIndex;
             const bool mosaic = style == switchu::folders::kFolderStyleClassic;
-            const float inset = (mosaic ? 10.f : 8.f) * s;
+            const float inset = (m_posterFrame ? 6.f : (mosaic ? 10.f : 8.f)) * s;
             switchu::folders::FolderStyleDrawArgs args;
             args.renderer = &ren;
             args.bounds = r.shrunk(inset);
@@ -1167,9 +1198,21 @@ void GlossyIcon::onContentRender(nxui::Renderer& ren) {
             args.font = m_font;
             args.title = &m_title;
             args.cover = m_folderCover;
+            args.peekCovers = m_folderPeeks;
+            args.peekCoverCount = m_folderPeekCount;
             args.showCover = m_folderShowCover;
             args.focused = m_focused;
-            args.drawName = true;
+            // Grid: name inside the tile. Single-row with peeks/covers: title pill
+            // only. Empty poster folders (FT lite suppresses peeks) get the same
+            // centered in-tile name as grid so the tile is not a blank plate.
+            const bool hasFolderArt =
+                (m_folderCover && m_folderCover->valid())
+                || m_folderPeekCount > 0
+                || m_folderPeekComposite;
+            args.drawName = !m_posterFrame || !hasFolderArt;
+            args.posterAspect = m_posterFrame;
+            args.coverIsFolderPoster = m_folderCoverIsPoster;
+            args.coverIsPeekComposite = m_folderPeekComposite;
             switchu::folders::drawFolderStyle(args);
         } else {
             nxui::Color accent = switchu::folders::colorForIndex(m_folderColorIndex);
@@ -1285,7 +1328,15 @@ void GlossyIcon::onContentRender(nxui::Renderer& ren) {
         return;
     }
 
-    if (m_entryKind == GridEntryKind::Application && m_widgetRows > 1) {
+    // Landscape wide face: 2x1 / 4x2 (same 2:1 aspect). 3x2 removed — aspect misfit.
+    const bool landscapeWideTile =
+        switchu::widgets::isLandscapeWideGameTile(m_widgetColumns, m_widgetRows);
+    // Tall poster face: 2x3 (and legacy 1x2). 2x2 / 1x1 always use the icon path.
+    const bool tallPosterTile =
+        (m_widgetColumns == 2 && m_widgetRows == 3)
+        || (m_widgetColumns == 1 && m_widgetRows == 2);
+
+    if (m_entryKind == GridEntryKind::Application && tallPosterTile) {
         const nxui::Rect card = r.shrunk(std::max(8.f, 10.f * s));
         const float contentRadius = std::max(8.f, rad - 5.f);
         if (m_wideGameHero && m_wideGameHero->valid()) {
@@ -1312,8 +1363,10 @@ void GlossyIcon::onContentRender(nxui::Renderer& ren) {
                 ren.drawTexture(m_wideGameLogo, logoRect, nxui::Color::white().withAlpha(m_opacity));
             }
         } else if (m_tex && m_tex->valid()) {
-            ren.drawTextureRounded(m_tex, card, contentRadius,
-                                   nxui::Color::white().withAlpha(m_opacity));
+            // Cover-fit so poster/icon aspect is never stretched into the cell.
+            ren.drawTextureSubRounded(
+                m_tex, centeredCoverSource(*m_tex, card), card,
+                contentRadius, nxui::Color::white().withAlpha(m_opacity));
         } else {
             ren.drawRoundedRect(card,
                 m_loadingColor.withAlpha(0.18f * m_opacity), contentRadius);
@@ -1321,7 +1374,9 @@ void GlossyIcon::onContentRender(nxui::Renderer& ren) {
         return;
     }
 
-    if (m_entryKind == GridEntryKind::Application && m_widgetColumns > 1) {
+    // Single-row posters use m_tex; never draw landscape wide faces there.
+    if (m_entryKind == GridEntryKind::Application && landscapeWideTile
+        && !m_posterFrame) {
         const nxui::Rect card = r.shrunk(std::max(8.f, 10.f * s));
         const float contentRadius = std::max(8.f, rad - 5.f);
         if (m_wideGameHero && m_wideGameHero->valid()) {
@@ -1352,7 +1407,10 @@ void GlossyIcon::onContentRender(nxui::Renderer& ren) {
             }
             ren.drawTexture(m_wideGameLogo, logoRect,
                             nxui::Color::white().withAlpha(0.98f * m_opacity));
-        } else if (m_font && !m_title.empty()) {
+        } else if (m_font && !m_title.empty()
+                   && !(m_wideGameHero && m_wideGameHero->valid())
+                   && !(m_tex && m_tex->valid())) {
+            // Title fallback only on empty wide cards — never overlay hero/icon.
             const auto measured = m_font->measure(m_title);
             float textScale = 0.68f * s;
             if (measured.x > 0.f)
@@ -1394,6 +1452,22 @@ void GlossyIcon::onContentRender(nxui::Renderer& ren) {
 
     float inset = 8.f * s;
     nxui::Rect texRect = r.shrunk(inset);
+    // Contain-fit: square icons stay square inside tall Poster tiles instead
+    // of stretching to fill the 2:3 cell.
+    if (m_tex->width() > 0 && m_tex->height() > 0 && texRect.width > 0.f
+        && texRect.height > 0.f) {
+        const float texAspect = (float)m_tex->width() / (float)m_tex->height();
+        const float boxAspect = texRect.width / texRect.height;
+        if (texAspect > boxAspect) {
+            const float h = texRect.width / texAspect;
+            texRect.y += (texRect.height - h) * 0.5f;
+            texRect.height = h;
+        } else if (texAspect < boxAspect) {
+            const float w = texRect.height * texAspect;
+            texRect.x += (texRect.width - w) * 0.5f;
+            texRect.width = w;
+        }
+    }
     nxui::Color iconTint = nxui::Color::white().withAlpha(m_opacity);
     if (m_notLaunchable) {
         iconTint.r = 0.80f;

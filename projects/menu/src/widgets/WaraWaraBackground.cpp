@@ -224,6 +224,17 @@ std::uint64_t estimateVertexCount(const WaraWaraBackground::Config& config, int 
 
 WaraWaraBackground::WaraWaraBackground() { regenerate(30); }
 
+void WaraWaraBackground::setLiteSuppressed(bool suppressed) {
+    const bool changed = m_liteSuppressed != suppressed;
+    m_liteSuppressed = suppressed;
+    if (suppressed) {
+        // Always clear — theme setConfig can race and leave shapes briefly.
+        m_shapes.clear();
+    } else if (changed) {
+        regenerate(0);
+    }
+}
+
 void WaraWaraBackground::setConfig(const Config& config) {
     m_config = config;
     m_config.shapeCount = std::max(1, m_config.shapeCount);
@@ -607,6 +618,10 @@ WaraWaraBackground::ShapeType WaraWaraBackground::pickShapeType() const {
 }
 
 void WaraWaraBackground::regenerate(int count) {
+    if (m_liteSuppressed) {
+        m_shapes.clear();
+        return;
+    }
     float areaX = m_rect.x;
     float areaY = m_rect.y;
     float areaW = (m_rect.width > 1.f) ? m_rect.width : 1280.f;
@@ -669,6 +684,8 @@ void WaraWaraBackground::regenerate(int count) {
 }
 
 void WaraWaraBackground::onUpdate(float dt) {
+    // Lite (PoloNX #177) only empties m_shapes; the wallpaper, its frames and
+    // the ambient Miis keep running.
     if (m_motionPaused)
         return;
     // Scaling time rather than each speed keeps drift, wobble and spin in step
@@ -824,8 +841,11 @@ void WaraWaraBackground::renderLayer(nxui::Renderer& ren, bool intoOffscreen) {
 
     {
         const nxui::Renderer::DrawTagScope tag{ren, "bg.shapes"};
-        for (const auto& s : m_shapes)
-            drawShapeWithSymmetry(ren, s);
+        // Lite keeps wallpaper; only the floating/grid glass shapes are skipped.
+        if (!m_liteSuppressed) {
+            for (const auto& s : m_shapes)
+                drawShapeWithSymmetry(ren, s);
+        }
     }
 
     if (m_ambientMiisEnabled && !m_ambientMiis.empty()) {

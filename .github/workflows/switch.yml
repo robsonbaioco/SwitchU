@@ -57,16 +57,17 @@ jobs:
           submodules: recursive
 
       # zstd: local-repo's libsdl extracts a .pkg.tar.zst with tar --zstd.
-      # tools/Dockerfile.build installs it for the same reason.
+      # tools/Dockerfile.build installs it for the same reason. It must also
+      # come before any cache restore (actions/cache uses zstd when present).
       - name: Install system dependencies
         shell: bash
         run: |
           if command -v sudo >/dev/null 2>&1; then
             sudo apt-get update
-            sudo apt-get -y install gcc g++ zip zstd
+            sudo apt-get -y install curl gcc g++ zip zstd
           else
             apt-get update
-            apt-get -y install gcc g++ zip zstd
+            apt-get -y install curl gcc g++ zip zstd
           fi
 
       - name: Set xmake env
