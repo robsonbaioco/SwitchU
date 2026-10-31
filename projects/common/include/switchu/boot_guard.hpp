@@ -30,6 +30,11 @@ namespace switchu::boot_guard {
 inline constexpr std::uint32_t kFastExitsBeforeSafe = 3;
 inline constexpr std::uint32_t kSafeExitsBeforeStock = 2;
 inline constexpr std::uint32_t kHealthyAfterFirstFrameMs = 10000;
+// A menu that is still alive but has not submitted its first frame this long
+// after launch (or after the console woke) is hung, not slow: a cold boot with
+// 127 titles draws in ~2.5 s. 2.15.0 sat on a black screen for hours because a
+// hang never ends the process, so the guard had nothing to count.
+inline constexpr std::uint32_t kFirstFrameDeadlineMs = 60000;
 
 enum class Stage : std::uint32_t {
     Normal = 0,
@@ -221,8 +226,18 @@ struct Run {
     bool closingSeen = false;
     bool healthy = false;
     std::uint64_t firstFrameMs = 0;
+    std::uint64_t deadlineFromMs = 0;   // 0 = no first-frame deadline armed
 
     void begin() { *this = Run{}; active = true; }
+    // Starts (or, after a wake from sleep, restarts) the first-frame deadline.
+    void armFirstFrameDeadline(std::uint64_t nowMs) {
+        if (active && !firstFrameSeen) deadlineFromMs = nowMs ? nowMs : 1;
+    }
+    bool startupHangDue(std::uint64_t nowMs) const {
+        return active && !firstFrameSeen && !closingSeen && !healthy
+            && deadlineFromMs != 0 && nowMs >= deadlineFromMs
+            && nowMs - deadlineFromMs >= kFirstFrameDeadlineMs;
+    }
     void onFirstFrame(std::uint64_t nowMs) {
         if (active && !firstFrameSeen) { firstFrameSeen = true; firstFrameMs = nowMs; }
     }

@@ -307,7 +307,7 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.15.0. Each one is tracked as an issue with what is known so far and what
+As of 2.15.1. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
 
 - **2.11.0 and 2.12.0 cannot update themselves.** Their menu lost
@@ -324,7 +324,11 @@ it would take to close it.
   at the GPU, and Atmosphère's own reports are the evidence that is missing:
   from 2.14.0 Send logs includes the newest of them. If it happens to you,
   send the logs.
-- **The 2.15.0 port from PoloNX has not run on a console.** Posters in the
+- **2.15.0 hangs on a black screen on consoles without Frame Tap.** Fixed in
+  2.15.1; the boot guard now also ends a menu that never draws its first frame.
+  Hold Power for 12 seconds and copy the 2.15.1 zip to the SD card from a
+  computer.
+- **The 2.15.0 port from PoloNX has barely run on a console.** Posters in the
   single row, folder previews, icon packs, the reorganized Theme Shop, the
   new tile sizes and Battery Saver were merged by hand into the fork's own
   code (both build variants compile). If HOME misbehaves, switch the posters

@@ -1425,6 +1425,8 @@ static void handleAppletMessages() {
         case 26:
         switchu::FileLog::log("[ae] -> Wakeup");
         g_batteryRefreshPending.store(true);
+        // Time asleep is not time the menu had to draw.
+        g_guardRun.armFirstFrameDeadline(guardNowMs());
         if (daemon::app::isRunning() && !daemon::menu_la::isActive()) {
             Result rc = daemon::app::resume();
             if (R_FAILED(rc)) {
@@ -2443,6 +2445,7 @@ static void guardPoll() {
     if (serial != g_guardSeenSerial) {
         g_guardSeenSerial = serial;
         g_guardRun.begin();
+        g_guardRun.armFirstFrameDeadline(guardNowMs());
         if (onLaunch(g_guard))
             guardPersist("launch");
 #ifdef SWITCHU_BOOT_GUARD_TEST
@@ -2514,6 +2517,22 @@ static void guardHealthTick() {
         g_menuRelaunchCooldown = 0;
     }
 
+}
+
+// A menu that stays alive without ever drawing never ends, so guardOnMenuExit()
+// never ran and the console sat on a black screen (2.15.0: blocked in
+// smGetService before the first frame). End it and count it like a crash; the
+// usual thresholds then take it to safe mode, a rollback or stock qlaunch.
+static void guardHangTick() {
+    if (!g_guardRun.startupHangDue(guardNowMs()) || !daemon::menu_la::hasHolder())
+        return;
+    switchu::FileLog::log("[guard] menu has not drawn a frame %u ms after launch; ending it as a start-up failure",
+                          switchu::boot_guard::kFirstFrameDeadlineMs);
+    g_menuReadyThisSession = false;
+    daemon::menu_la::terminate(3'000'000'000ULL);
+    switchu::FileLog::log("[main] menu exited (start-up hang)");
+    if (guardOnMenuExit())
+        ++g_menuFastExitCount;
 }
 
 #ifdef SWITCHU_BOOT_GUARD_TEST
@@ -2641,6 +2660,7 @@ static void mainLoop() {
 
     guardPoll();
     guardTestTick();
+    guardHangTick();
 
     if (daemon::menu_la::checkFinished()) {
         // Diagnostics from PoloNX #177: did this process reach MenuReady, and

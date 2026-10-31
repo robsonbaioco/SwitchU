@@ -102,6 +102,29 @@ int main() {
         Run noFrame;
         noFrame.begin();
         assert(!noFrame.healthyDue(1u << 30));                 // no first frame, never healthy
+        assert(!noFrame.startupHangDue(1u << 30));             // deadline never armed
+        // First-frame deadline: a live menu that never draws is a start-up hang.
+        Run hung;
+        hung.begin();
+        hung.armFirstFrameDeadline(5000);
+        assert(!hung.startupHangDue(5000 + kFirstFrameDeadlineMs - 1));
+        assert(hung.startupHangDue(5000 + kFirstFrameDeadlineMs));
+        hung.armFirstFrameDeadline(90000);                     // woke from sleep: restart
+        assert(!hung.startupHangDue(5000 + kFirstFrameDeadlineMs));
+        assert(hung.startupHangDue(90000 + kFirstFrameDeadlineMs));
+        assert(hung.endIsStartupFailure());
+        Run drew;
+        drew.begin();
+        drew.armFirstFrameDeadline(0);                         // 0 still arms
+        drew.onFirstFrame(2500);
+        assert(!drew.startupHangDue(1u << 30));                // drew a frame: not hung
+        drew.armFirstFrameDeadline(9000);                      // no-op after first frame
+        assert(!drew.startupHangDue(1u << 30));
+        Run closing;
+        closing.begin();
+        closing.armFirstFrameDeadline(1000);
+        closing.onClosing();
+        assert(!closing.startupHangDue(1u << 30));             // leaving on purpose
     }    // Leaving safe mode resets everything.
     {
         State s;
