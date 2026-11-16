@@ -100,7 +100,7 @@ static void setupNpad() {
     };
     hidInitializeNpad();
     hidSetSupportedNpadIdType(npadIds, sizeof(npadIds) / sizeof(npadIds[0]));
-    hidSetSupportedNpadStyleSet(HidNpadStyleSet_NpadStandard | HidNpadStyleTag_NpadSystemExt);
+    hidSetSupportedNpadStyleSet(HidNpadStyleSet_NpadStandard | HidNpadStyleTag_NpadSystemExt | HidNpadStyleTag_NpadGc);
     hidSetNpadJoyHoldType(HidNpadJoyHoldType_Horizontal);
 }
 
@@ -762,21 +762,26 @@ static void restoreNormalPerformance(const char* source) {
 
     u32 before = 0;
     const Result beforeRc = readPerformanceConfiguration(apmSys.value, before);
-    // apm:sys SetCpuBoostMode, then (PoloNX #177) RequestPerformanceMode(0)
-    // and LoadAndApplySettings (cmd 5) so apm re-applies the normal configuration.
+    // apm:sys SetCpuBoostMode, then LoadAndApplySettings (cmd 5) so apm
+    // re-applies the configuration of the current performance mode.
+    //
+    // No RequestPerformanceMode (cmd 0) here (omnilaunch a20102b). PoloNX #177
+    // asked for mode 0 (Normal) on every title exit and menu ready, but the
+    // performance mode belongs to the dock state -- Normal in handheld, Boost
+    // on the dock -- and the system only requests it again on dock or undock.
+    // Forcing Normal left a docked console on the handheld configuration
+    // (GPU 307.2 MHz instead of 768) until the next undock, games included.
     const u32 mode = static_cast<u32>(ApmCpuBoostMode_Normal);
     const Result setRc = serviceDispatchIn(&apmSys.value, 6, mode);
-    const u32 perfMode = 0;
-    const Result reqRc = serviceDispatchIn(&apmSys.value, 0, perfMode);
     const Result loadRc = serviceDispatch(&apmSys.value, 5);
     u32 after = 0;
     const Result afterRc = readPerformanceConfiguration(apmSys.value, after);
 
     switchu::FileLog::log(
-        "[perf-config] %s boost reset before=0x%08X(boost=%d rc=0x%X) set=0x%X req=0x%X load=0x%X "
+        "[perf-config] %s boost reset before=0x%08X(boost=%d rc=0x%X) set=0x%X load=0x%X "
         "after=0x%08X(boost=%d rc=0x%X)",
         source, before, isBoostPerformanceConfiguration(before) ? 1 : 0, beforeRc,
-        setRc, reqRc, loadRc, after, isBoostPerformanceConfiguration(after) ? 1 : 0, afterRc);
+        setRc, loadRc, after, isBoostPerformanceConfiguration(after) ? 1 : 0, afterRc);
 }
 
 static Result openTimeAdminService(ScopedService& out) {
@@ -987,6 +992,10 @@ static SleepTrace g_sleepTrace;
 static uint64_t g_mainLoopCount = 0;
 static constexpr std::time_t kSleepTraceFirstHeartbeatS = 30;
 static constexpr std::time_t kSleepTraceHeartbeatS = 300;
+// Long enough for the menu to read the notification, draw the lock screen's
+// black frame and stop presenting (two frames at 60 Hz, more at the 30 Hz idle
+// rate, plus the notification poll), short enough not to delay the sleep.
+static constexpr uint64_t kSleepMenuHandoffNs = 150'000'000ULL;
 
 static void sleepTraceBegin(const char* source, bool batteryValid,
                             uint8_t battery, PsmChargerType charger) {
@@ -1228,9 +1237,16 @@ static void startSleepSequence(const char* source) {
         (unsigned)chargerType, daemon::app::isRunning() ? 1 : 0,
         daemon::app::hasForeground() ? 1 : 0,
         daemon::menu_la::isActive() ? 1 : 0);
-    if (daemon::menu_la::isActive())
+    const bool menuActive = daemon::menu_la::isActive();
+    if (menuActive)
         pushNotification(smi::MenuMessage::SleepSequence);
     sleepTraceBegin(source, batteryValid, batteryPercent, chargerType);
+    // The handoff is cooperative (PoloNX): give the menu a few frames to lock,
+    // stop presenting and pause its music before Horizon freezes it. Asked for
+    // sleep at once, the menu could be frozen mid-frame with music still
+    // queued, and a menu that keeps presenting keeps the console from settling.
+    if (menuActive)
+        svcSleepThread(kSleepMenuHandoffNs);
 
     // Preserve the final reason and state even if sleep ends in a forced power
     // loss. fflush must precede the device commit or the newest log data remains
@@ -1490,6 +1506,16 @@ static void handleAppletMessages() {
         return;
 
     switchu::FileLog::log("[ae] msg=%u", msg);
+
+    // appletGetMessage only dequeues: libnx refreshes its operation and
+    // performance mode caches in appletProcessMessage (PoloNX 6900c31).
+    // Without this, appletGetOperationMode() below kept answering the mode
+    // the daemon booted in.
+    if (msg == AppletMessage_OperationModeChanged
+        || msg == AppletMessage_PerformanceModeChanged) {
+        appletProcessMessage(msg);
+    }
+
     switch (msg) {
         case 1:
         switchu::FileLog::log("[ae] -> ChangeIntoForeground");
@@ -1521,6 +1547,12 @@ static void handleAppletMessages() {
                                   (unsigned)opMode, (unsigned)perfMode,
                                   daemon::menu_la::isActive() ? 1 : 0,
                                   daemon::app::isRunning() ? 1 : 0);
+            // Live dock/undock: tell the menu so it can resize its VI layer
+            // (PoloNX 6900c31). The menu's own libnx cache does not follow.
+            // No menu up: the next one reads the mode fresh when it starts.
+            if (msg == 30)
+                pushNotification(smi::MenuMessage::OperationModeChanged, 0,
+                                 static_cast<uint32_t>(opMode));
             // Flush immediately: if the console wedges right after this, the
             // buffered tail would never reach the SD card.
             switchu::FileLog::flush();
@@ -1560,6 +1592,10 @@ static void handleAppletMessages() {
         }
         if (daemon::menu_la::isActive()) {
             pushNotification(smi::MenuMessage::WakeUp);
+            // The console may have changed dock state while asleep; re-send
+            // the mode so the menu's layer matches TV or LCD (PoloNX 6900c31).
+            pushNotification(smi::MenuMessage::OperationModeChanged, 0,
+                             static_cast<uint32_t>(appletGetOperationMode()));
         } else if (!daemon::app::isRunning()) {
             daemon::menu_la::launch(
                 smi::MenuStartMode::MainMenu,
@@ -1633,7 +1669,7 @@ static Result setupControllerPrivateArg(HidLaControllerSupportArgPrivate& privat
         if (R_FAILED(hidGetSupportedNpadStyleSet(&privateArg.npad_style_set))
             || privateArg.npad_style_set == 0) {
             privateArg.npad_style_set =
-                HidNpadStyleSet_NpadStandard | HidNpadStyleTag_NpadSystemExt;
+                HidNpadStyleSet_NpadStandard | HidNpadStyleTag_NpadSystemExt | HidNpadStyleTag_NpadGc;
         }
         HidNpadJoyHoldType holdType = HidNpadJoyHoldType_Horizontal;
         hidGetNpadJoyHoldType(&holdType);

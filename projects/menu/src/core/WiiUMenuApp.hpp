@@ -7,6 +7,7 @@
 #include <nxui/core/I18n.hpp>
 #include <nxui/Theme.hpp>
 #include "widgets/IconGrid.hpp"
+#include "widgets/GlossyIcon.hpp"
 #include "core/GridModel.hpp"
 #include "core/LogUpload.hpp"
 #include "widgets/SelectionCursor.hpp"
@@ -582,7 +583,8 @@ private:
     void openQuickSettings();
     // Frame Tap lite path / Battery Saver (PoloNX #177). This fork keeps its
     // own sleep/wake handling in the daemon notifications, so PoloNX's
-    // enter/leaveSystemSleep and onUpdateAwake split are not ported.
+    // enter/leaveSystemSleep and onUpdateAwake split are not ported as such;
+    // their music pause and daemon handoff live in the SleepSequence case.
     void tickFrameTapLightPath(float dt);
     // Soft-land back to lite browse radius after NeedHeadroom focus-only.
     void restoreFrameTapLightBrowse(const char* reason);
@@ -592,6 +594,11 @@ private:
     void applyFrameTapLiteBackground(bool lite);
     // Persist + sync QS/Theme Shop; enter/leave lite when FT viewer is not holding it.
     void applyBatterySaver(bool enabled);
+    // PoloNX 3a48f74: one sink for console charge (daemon push or QS sample)
+    // that also reaches the Batteries widget tiles.
+    void applyConsoleBatteryStatus(int percent, bool charging);
+    // Slow HID sweep (Home only) feeding controller rows + Joy-Con rail colors.
+    void tickControllerBatteries(float dt);
     void logFrameTapLightSoak(const char* tag);
     // Free GPU icon/poster memory before resume/launch so FT can remount.
     void reclaimForFrameTapLaunch(const char* reason);
@@ -811,6 +818,11 @@ private:
     // One rendered black frame must precede disabled rendering; otherwise the
     // prior menu image remains scanned out while the GPU is idle.
     bool         m_lockScreenLowPowerPrimed = false;
+    // Music the sleep handoff paused, so wake restores exactly what was audible.
+    bool         m_musicPausedForSleep = false;
+    // Operation mode as last sent by the daemon (-1 = none yet). The menu's
+    // own libnx cache goes stale across a live dock/undock.
+    int          m_daemonOperationMode = -1;
     // Counts up to the next re-read of the console's own sleep plan.
     float        m_sleepPlanTimer = 0.f;
 
@@ -875,6 +887,8 @@ private:
     nxui::Texture m_batteryJoyconLeftTex;
     nxui::Texture m_batteryJoyconRightTex;
     nxui::Texture m_batteryControllerTex;
+    nxui::Color m_batteryRailLeft{0.043f, 0.725f, 0.902f, 1.f};
+    nxui::Color m_batteryRailRight{0.902f, 0.f, 0.071f, 1.f};
     // XMB needs artwork the sidebar does not carry: the bar shows a Media, a
     // Network and a Homebrew category that have no sidebar button to borrow an
     // icon from. Without these every one of those rows fell back to the
@@ -1098,6 +1112,8 @@ private:
     std::vector<std::uint8_t> m_widgetAssetKeepScratch;
     int m_consoleBatteryPercent = 0;
     bool m_consoleBatteryCharging = false;
+    std::vector<GlossyIcon::ControllerBattery> m_controllerBatteries;
+    float m_controllerBatteryAge = 8.f;
     std::vector<AppEntry> m_allApps;
     std::uint32_t m_openFolderId = 0;
     std::uint32_t m_requestedFolderId = 0;

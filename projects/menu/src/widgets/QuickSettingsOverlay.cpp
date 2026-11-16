@@ -1,6 +1,7 @@
 #include "QuickSettingsOverlay.hpp"
 #include "settings/SettingsGlassTuning.hpp"
 #include "core/DebugLog.hpp"
+#include <switchu/hardware_status.hpp>
 
 #include <nxui/core/Renderer.hpp>
 #include <nxui/core/I18n.hpp>
@@ -519,44 +520,27 @@ void QuickSettingsOverlay::refreshHardwareStatus() {
         m_vibrationEnabled = vib;
     }
 
-    // Query battery if needed
-    if (m_batteryPercent < 0) {
-        u32 pct = 0;
-        if (R_SUCCEEDED(psmGetBatteryChargePercentage(&pct))) {
-            m_batteryPercent = static_cast<int>(pct);
-            PsmChargerType ct = PsmChargerType_Unconnected;
-            if (R_SUCCEEDED(psmGetChargerType(&ct))) {
-                m_batteryCharging = (ct != PsmChargerType_Unconnected);
-            }
-        }
+    // Query battery on every refresh (PoloNX 3a48f74): PSM only signals the
+    // daemon on plug events, so a reading cached since boot drifted from the
+    // real charge. The sample is handed back to HOME and the widget tiles.
+    u32 pct = 0;
+    if (R_SUCCEEDED(psmGetBatteryChargePercentage(&pct))) {
+        m_batteryPercent = static_cast<int>(std::min(pct, 100u));
+        PsmChargerType ct = PsmChargerType_Unconnected;
+        if (R_SUCCEEDED(psmGetChargerType(&ct)))
+            m_batteryCharging = (ct != PsmChargerType_Unconnected);
+        if (m_batterySampledCb)
+            m_batterySampledCb(m_batteryPercent, m_batteryCharging);
     }
 
-    // Query thermals
-    s32 soc = 0;
-    s32 pcb = 0;
-    m_hasSocTemp = false;
-    m_hasPcbTemp = false;
-
-    if (R_SUCCEEDED(tsInitialize())) {
-        if (R_SUCCEEDED(tsGetTemperature(TsLocation_External, &soc))) {
-            m_socTemp = static_cast<float>(soc);
-            m_hasSocTemp = true;
-        }
-        if (R_SUCCEEDED(tsGetTemperature(TsLocation_Internal, &pcb))) {
-            m_pcbTemp = static_cast<float>(pcb);
-            m_hasPcbTemp = true;
-        }
-        tsExit();
-    }
-
-    if (!m_hasPcbTemp && R_SUCCEEDED(tcInitialize())) {
-        s32 skin = 0;
-        if (R_SUCCEEDED(tcGetSkinTemperatureMilliC(&skin))) {
-            m_pcbTemp = static_cast<float>(skin) / 1000.f;
-            m_hasPcbTemp = true;
-        }
-        tcExit();
-    }
+    // Query thermals. tsGetTemperature is gone on HOS 14+, where the SoC
+    // reading came back empty; the shared helper uses ts sessions there
+    // (omnilaunch 916197d).
+    const auto thermals = switchu::getThermalReading();
+    m_socTemp = thermals.soc;
+    m_pcbTemp = thermals.pcb;
+    m_hasSocTemp = thermals.hasSoc;
+    m_hasPcbTemp = thermals.hasPcb;
 #else
     // Mock values for test environments
     if (m_batteryPercent < 0) {

@@ -108,6 +108,12 @@ public:
     // freezing the menu on its last frame (PoloNX f39afda).
     void recreateSwapchain();
 
+    // Present every `interval` vblanks (1 = 60 Hz, 2 = a steady 30 Hz for an
+    // idle UI). Free when unchanged; a rebuilt swapchain starts back at 1 and
+    // the next call re-applies it (PoloNX 229a7e9).
+    void setSwapInterval(uint32_t interval);
+    uint32_t swapInterval() const { return m_swapInterval; }
+
     // Arms a lossless diagnostic capture of the next fully-rendered frame.
     // The GPU copies RGBA8 pixels into a CPU-visible block before present;
     // takeFrameDump() returns them after queue completion on the following
@@ -462,6 +468,7 @@ private:
     SDL_Renderer* m_sdlRenderer = nullptr;
 #endif
     int m_slot = -1;
+    uint32_t m_swapInterval = 1;
     bool m_frameDumpArmed = false;
     bool m_frameDumpPending = false;
 

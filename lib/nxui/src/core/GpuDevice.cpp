@@ -567,6 +567,13 @@ void GpuDevice::waitIdle() {
     retireSubmittedUploads();
 }
 
+void GpuDevice::setSwapInterval(uint32_t interval) {
+    if (interval == 0 || interval == m_swapInterval || !m_swapchain)
+        return;
+    m_swapchain.setSwapInterval(interval);
+    m_swapInterval = interval;
+}
+
 void GpuDevice::recreateSwapchain() {
     if (!m_dev || !m_queue)
         return;
@@ -588,6 +595,8 @@ void GpuDevice::recreateSwapchain() {
             m_queue.presentImage(m_swapchain, slot);
     }
     m_slot = -1;
+    // A new swapchain presents every vblank; the next setSwapInterval re-applies.
+    m_swapInterval = 1;
     std::printf("[GpuDevice] swapchain re-created after sleep (valid=%d)\n",
                 m_swapchain ? 1 : 0);
 }

@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <sys/time.h>
+#include <switch/arm/counter.h>
 #include <system_error>
 #include <vector>
 
@@ -67,7 +68,11 @@ inline void format_line_timestamp(char* buffer, size_t size) {
     long milliseconds = 0;
     long tenths = 0;
     if (!read_local_time(local_time, milliseconds, tenths)) {
-        std::snprintf(buffer, size, "0000-00-00 00:00:00.0");
+        // No wall clock yet (HOME return starts before time services): uptime
+        // from the CPU tick counter keeps the lines comparable instead of all
+        // reading zero.
+        const unsigned long long ms = armTicksToNs(armGetSystemTick()) / 1'000'000ULL;
+        std::snprintf(buffer, size, "up %llu.%03llu", ms / 1000ULL, ms % 1000ULL);
         return;
     }
 
@@ -152,7 +157,7 @@ public:
         if (!m_file.is_open())
             return;
         if (m_pending.empty())
-            m_pending_since = std::time(nullptr);
+            m_pending_since = uptime_seconds();
         m_pending.append(line);
         m_pending.push_back('\n');
         if (m_pending.size() >= flush_threshold_bytes)
@@ -164,7 +169,7 @@ public:
     void flush_if_stale(std::time_t max_age_seconds) {
         if (m_pending.empty())
             return;
-        if (std::time(nullptr) - m_pending_since >= max_age_seconds)
+        if (uptime_seconds() - m_pending_since >= max_age_seconds)
             flush();
     }
 
@@ -184,6 +189,12 @@ public:
     }
 
 private:
+    // The wall clock can be unavailable for a whole process (HOME return), so
+    // age is measured on the CPU counter.
+    static std::time_t uptime_seconds() {
+        return static_cast<std::time_t>(armTicksToNs(armGetSystemTick()) / 1'000'000'000ULL);
+    }
+
     std::ofstream m_file;
     std::string m_pending;
     std::time_t m_pending_since = 0;

@@ -905,6 +905,9 @@ void WiiUMenuApp::createQuickSettings() {
     });
 
     m_quickSettings->setCallbacks(cbs);
+    m_quickSettings->onBatterySampled([this](int percent, bool charging) {
+        applyConsoleBatteryStatus(percent, charging);
+    });
 }
 
 void WiiUMenuApp::openQuickSettings() {

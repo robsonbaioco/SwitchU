@@ -100,19 +100,17 @@ void ensureArtworkDirectories(SteamGridDbManager::ArtworkKind kind, std::uint64_
     }
 }
 
+// Only TLS/certificate failures can come from a wrong console clock. An empty
+// message (or a generic "HTTPS failed") says nothing about the clock, and
+// blaming it there sent players after the clock for timeouts and DNS failures.
 bool looksLikeHttpsClockFailure(const std::string& error) {
-    if (error.empty())
-        return true;
     std::string lower = error;
     for (char& c : lower)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return lower.find("ssl") != std::string::npos
         || lower.find("tls") != std::string::npos
         || lower.find("certificate") != std::string::npos
-        || lower.find("cert verify") != std::string::npos
-        || lower.find("peer certificate") != std::string::npos
-        || lower.find("certificate has expired") != std::string::npos
-        || lower.find("https failed") != std::string::npos;
+        || lower.find("cert verify") != std::string::npos;
 }
 
 // Wrong console clocks break TLS to SteamGridDB (PoloNX #131) and used to surface as a blank

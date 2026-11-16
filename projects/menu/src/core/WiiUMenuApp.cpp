@@ -4,6 +4,7 @@
 #include "icons/IconPackManager.hpp"
 #include <switchu/sd_commit.hpp>
 #include <switchu/control_cache.hpp>
+#include <switchu/hardware_status.hpp>
 #include "core/PlayTime.hpp"
 #include "widgets/GlossyIcon.hpp"
 #include "widgets/FolderPalette.hpp"
@@ -15,6 +16,11 @@
 // Definido em main.cpp: quanto heap a escada conseguiu no arranque.
 #ifndef SWITCHU_HOMEBREW
 extern "C" size_t g_switchuHeapSize;
+// Defined in main.cpp: resizes the managed VI layer for an AppletOperationMode
+// (<0 asks libnx, whose cache is stale in this library applet).
+namespace switchu::menu {
+bool fitManagedLayerToMode(int operationMode);
+}
 #endif
 #include "bluetooth/BluetoothManager.hpp"
 #include "LeaveFrameCache.hpp"
@@ -1076,6 +1082,21 @@ bool WiiUMenuApp::onCreate() {
 
     DebugLog::log("[init] DONE total=%lums fastReturn=%d",
                   initElapsedMs(), fastReturn ? 1 : 0);
+
+    // Frame timing in the log: what a stutter cost and which phase it was in
+    // (PoloNX 229a7e9). The per-second [perf] line in onUpdate stays; this
+    // adds a 10 s summary with missed vblanks and single slow frames.
+    app().setFrameStatsSink([](const nxui::FrameStats& s) {
+        if (s.slowFrame) {
+            DebugLog::log("[perf] slow frame: update=%.1fms render=%.1fms interval=%.1fms",
+                          s.maxUpdateMs, s.maxRenderMs, s.maxMs);
+            return;
+        }
+        DebugLog::log("[perf] %u frames in %.1fs (%u idle 30 Hz): avg=%.1fms max=%.1fms "
+                      "missed=%u maxUpdate=%.1fms maxRender=%.1fms",
+                      (unsigned)s.frames, s.seconds, (unsigned)s.idleFrames, s.avgMs, s.maxMs,
+                      (unsigned)s.missed, s.maxUpdateMs, s.maxRenderMs);
+    });
     return true;
 }
 
@@ -2193,14 +2214,16 @@ void WiiUMenuApp::loadStaticTextures() {
                                 std::string(SD_ASSETS) + "/icons/default/page_arrow_left.png");
     m_arrowTexRight.loadFromFile(app().gpu(), app().renderer(),
                                  std::string(SD_ASSETS) + "/icons/default/page_arrow_right.png");
+    // PoloNX 3a48f74: white monotone glyphs, tinted per device at draw time
+    // (real Joy-Con shell colors), loaded at 256 so the rings stay crisp.
     m_batteryConsoleTex.loadFromFile(app().gpu(), app().renderer(),
-                                     std::string(SD_ASSETS) + "/icons/default/widget_battery_switch.png");
+                                     std::string(SD_ASSETS) + "/icons/default/widget_battery_switch.png", 256);
     m_batteryJoyconLeftTex.loadFromFile(app().gpu(), app().renderer(),
-                                        std::string(SD_ASSETS) + "/icons/default/widget_battery_joycon_left.png");
+                                        std::string(SD_ASSETS) + "/icons/default/widget_battery_joycon_left.png", 256);
     m_batteryJoyconRightTex.loadFromFile(app().gpu(), app().renderer(),
-                                          std::string(SD_ASSETS) + "/icons/default/widget_battery_joycon_right.png");
+                                          std::string(SD_ASSETS) + "/icons/default/widget_battery_joycon_right.png", 256);
     m_batteryControllerTex.loadFromFile(app().gpu(), app().renderer(),
-                                         std::string(SD_ASSETS) + "/icons/widget_battery_controller.png");
+                                         std::string(SD_ASSETS) + "/icons/default/widget_battery_pro.png", 256);
 
     if (m_appLayoutMode == AppLayoutMode::Xmb) {
         ensureXmbTextures();
@@ -8277,6 +8300,13 @@ std::shared_ptr<GlossyIcon> WiiUMenuApp::makeIcon(const AppEntry& entry) {
                                       &m_batteryJoyconRightTex,
                                       &m_batteryControllerTex);
         icon->setConsoleBattery(m_consoleBatteryPercent, m_consoleBatteryCharging);
+        if (entry.widgetType == switchu::widgets::WidgetType::Batteries) {
+            icon->setConsoleRailColors(m_batteryRailLeft, m_batteryRailRight);
+            icon->setControllerBatteries(m_controllerBatteries);
+            // Sweep HID on the next Home tick so a fresh tile does not sit
+            // without controller rings for the full poll interval.
+            m_controllerBatteryAge = 8.f;
+        }
         icon->setWidgetHeader(widgetTypeLabel(entry.widgetType));
 
         std::string primary;
@@ -10570,6 +10600,212 @@ void WiiUMenuApp::leaveFrameTapLightPath(const char* reason) {
     logFrameTapLightSoak("leave");
 }
 
+void WiiUMenuApp::applyConsoleBatteryStatus(int percent, bool charging) {
+    percent = std::clamp(percent, 0, 100);
+    const bool changed = percent != m_consoleBatteryPercent
+        || charging != m_consoleBatteryCharging;
+    m_consoleBatteryPercent = percent;
+    m_consoleBatteryCharging = charging;
+    if (m_battery)
+        m_battery->setBatteryStatus(static_cast<uint32_t>(percent), charging);
+    if (m_quickSettings)
+        m_quickSettings->setBatteryStatus(percent, charging);
+    if (!changed || !m_grid)
+        return;
+    for (const auto& icon : m_grid->allIcons()) {
+        if (icon && icon->widgetType() == switchu::widgets::WidgetType::Batteries)
+            icon->setConsoleBattery(percent, charging);
+    }
+}
+
+void WiiUMenuApp::tickControllerBatteries(float dt) {
+#ifdef SWITCHU_MENU
+    if (!m_grid || m_lockScreen.isLocked() || leaveSplashActive())
+        return;
+    if (m_navigator.route() != switchu::navigation::Route::Home)
+        return;
+    if ((m_quickSettings && m_quickSettings->isActive())
+        || (m_settings && m_settings->isActive())
+        || (m_themeShop && m_themeShop->isActive()))
+        return;
+
+    m_controllerBatteryAge += dt;
+    if (m_controllerBatteryAge < 8.f)
+        return;
+    m_controllerBatteryAge = 0.f;
+
+    bool haveWidget = false;
+    for (const auto& icon : m_grid->allIcons()) {
+        if (icon && icon->widgetType() == switchu::widgets::WidgetType::Batteries) {
+            haveWidget = true;
+            break;
+        }
+    }
+    if (!haveWidget) {
+        m_controllerBatteries.clear();
+        return;
+    }
+
+    std::vector<GlossyIcon::ControllerBattery> next;
+    next.reserve(3);
+    const auto hidTint = [](u32 rgba, nxui::Color fallback) {
+        if (rgba == 0)
+            return fallback;
+        return nxui::Color((rgba & 0xFFu) / 255.f,
+                           ((rgba >> 8) & 0xFFu) / 255.f,
+                           ((rgba >> 16) & 0xFFu) / 255.f,
+                           1.f);
+    };
+    const nxui::Color neonBlue{0.043f, 0.725f, 0.902f, 1.f};
+    const nxui::Color neonRed{0.902f, 0.f, 0.071f, 1.f};
+    const nxui::Color proGray{0.72f, 0.74f, 0.78f, 1.f};
+    // PoloNX bb5521a: keep the last known shell colors while docked. Handheld
+    // often drops there, and a neon fallback made the console glyph wrong.
+    nxui::Color railLeft = m_batteryRailLeft;
+    nxui::Color railRight = m_batteryRailRight;
+    bool railsFromHardware = false;
+
+    const auto takeRails = [&](u32 leftMain, u32 rightMain) {
+        if (leftMain == 0 && rightMain == 0)
+            return;
+        railLeft = hidTint(leftMain, railLeft.a > 0.f ? railLeft : neonBlue);
+        railRight = hidTint(rightMain, railRight.a > 0.f ? railRight : neonRed);
+        railsFromHardware = true;
+    };
+    const auto takeRailLeft = [&](u32 main) {
+        if (main == 0)
+            return;
+        railLeft = hidTint(main, railLeft.a > 0.f ? railLeft : neonBlue);
+        railsFromHardware = true;
+    };
+    const auto takeRailRight = [&](u32 main) {
+        if (main == 0)
+            return;
+        railRight = hidTint(main, railRight.a > 0.f ? railRight : neonRed);
+        railsFromHardware = true;
+    };
+
+    const auto add = [&next](const HidPowerInfo& info, std::string label,
+                             GlossyIcon::BatteryDeviceKind kind,
+                             nxui::Color tint) {
+        if (next.size() >= 3)
+            return;
+        GlossyIcon::ControllerBattery row;
+        row.percent = std::clamp(static_cast<int>(info.battery_level) * 25, 0, 100);
+        row.charging = info.is_charging != 0;
+        row.label = std::move(label);
+        row.kind = kind;
+        row.tint = tint;
+        row.hasColor = true;
+        next.push_back(std::move(row));
+    };
+
+    // Colors: Handheld when present, otherwise any wireless Joy-Con pair/side;
+    // docked sessions often lose Handheld but still expose JoyDual on No1+.
+    const u32 handheldStyle = hidGetNpadStyleSet(HidNpadIdType_Handheld);
+    if (handheldStyle != 0) {
+        HidNpadControllerColor leftColor{}, rightColor{};
+        hidGetNpadControllerColorSplit(HidNpadIdType_Handheld, &leftColor, &rightColor);
+        takeRails(leftColor.main, rightColor.main);
+    }
+    if (!railsFromHardware) {
+        for (int player = 0; player < 8; ++player) {
+            const auto id = static_cast<HidNpadIdType>(HidNpadIdType_No1 + player);
+            const u32 style = hidGetNpadStyleSet(id);
+            if (style == 0 || (style & HidNpadStyleTag_NpadHandheld))
+                continue;
+            if (style & HidNpadStyleTag_NpadJoyDual) {
+                HidNpadControllerColor leftColor{}, rightColor{};
+                hidGetNpadControllerColorSplit(id, &leftColor, &rightColor);
+                takeRails(leftColor.main, rightColor.main);
+                if (railsFromHardware)
+                    break;
+            } else if (style & HidNpadStyleTag_NpadJoyLeft) {
+                HidNpadControllerColor color{};
+                hidGetNpadControllerColorSingle(id, &color);
+                takeRailLeft(color.main);
+            } else if (style & HidNpadStyleTag_NpadJoyRight) {
+                HidNpadControllerColor color{};
+                hidGetNpadControllerColorSingle(id, &color);
+                takeRailRight(color.main);
+            }
+        }
+    }
+
+    // Batteries: Joy-Cons before Pro so a docked Pro does not crowd out L/R.
+    // Attached Joy-Cons report on the Handheld npad, not a numbered slot.
+    if (handheldStyle != 0) {
+        HidPowerInfo left{}, right{};
+        hidGetNpadPowerInfoSplit(HidNpadIdType_Handheld, &left, &right);
+        add(left, "L", GlossyIcon::BatteryDeviceKind::JoyLeft, railLeft);
+        add(right, "R", GlossyIcon::BatteryDeviceKind::JoyRight, railRight);
+    }
+    for (int player = 0; player < 8 && next.size() < 3; ++player) {
+        const auto id = static_cast<HidNpadIdType>(HidNpadIdType_No1 + player);
+        const u32 style = hidGetNpadStyleSet(id);
+        if (style == 0 || (style & HidNpadStyleTag_NpadHandheld))
+            continue;
+        if (style & HidNpadStyleTag_NpadJoyDual) {
+            HidPowerInfo left{}, right{};
+            hidGetNpadPowerInfoSplit(id, &left, &right);
+            add(left, "L", GlossyIcon::BatteryDeviceKind::JoyLeft, railLeft);
+            add(right, "R", GlossyIcon::BatteryDeviceKind::JoyRight, railRight);
+        } else if (style & HidNpadStyleTag_NpadJoyLeft) {
+            HidPowerInfo info{};
+            hidGetNpadPowerInfoSingle(id, &info);
+            add(info, "L", GlossyIcon::BatteryDeviceKind::JoyLeft, railLeft);
+        } else if (style & HidNpadStyleTag_NpadJoyRight) {
+            HidPowerInfo info{};
+            hidGetNpadPowerInfoSingle(id, &info);
+            add(info, "R", GlossyIcon::BatteryDeviceKind::JoyRight, railRight);
+        }
+    }
+    for (int player = 0; player < 8 && next.size() < 3; ++player) {
+        const auto id = static_cast<HidNpadIdType>(HidNpadIdType_No1 + player);
+        const u32 style = hidGetNpadStyleSet(id);
+        if (style == 0 || (style & HidNpadStyleTag_NpadHandheld))
+            continue;
+        if (style & (HidNpadStyleTag_NpadJoyDual | HidNpadStyleTag_NpadJoyLeft
+                     | HidNpadStyleTag_NpadJoyRight))
+            continue;
+        HidPowerInfo info{};
+        hidGetNpadPowerInfoSingle(id, &info);
+        HidNpadControllerColor color{};
+        hidGetNpadControllerColorSingle(id, &color);
+        add(info, std::to_string(player + 1), GlossyIcon::BatteryDeviceKind::Pro,
+            hidTint(color.main, proGray));
+    }
+
+    const auto colorsMatch = [](const nxui::Color& a, const nxui::Color& b) {
+        return a.r == b.r && a.g == b.g && a.b == b.b;
+    };
+    const bool same = next.size() == m_controllerBatteries.size()
+        && colorsMatch(railLeft, m_batteryRailLeft)
+        && colorsMatch(railRight, m_batteryRailRight)
+        && std::equal(next.begin(), next.end(), m_controllerBatteries.begin(),
+                      [&colorsMatch](const GlossyIcon::ControllerBattery& a,
+                                     const GlossyIcon::ControllerBattery& b) {
+                          return a.percent == b.percent && a.charging == b.charging
+                              && a.label == b.label && a.kind == b.kind
+                              && a.hasColor == b.hasColor
+                              && colorsMatch(a.tint, b.tint);
+                      });
+    if (same)
+        return;
+    m_controllerBatteries = std::move(next);
+    m_batteryRailLeft = railLeft;
+    m_batteryRailRight = railRight;
+    for (const auto& icon : m_grid->allIcons()) {
+        if (icon && icon->widgetType() == switchu::widgets::WidgetType::Batteries) {
+            icon->setConsoleRailColors(m_batteryRailLeft, m_batteryRailRight);
+            icon->setControllerBatteries(m_controllerBatteries);
+        }
+    }
+#else
+    (void)dt;
+#endif
+}
+
 void WiiUMenuApp::applyBatterySaver(bool enabled) {
     if (m_config.batterySaver != enabled) {
         m_config.batterySaver = enabled;
@@ -10777,6 +11013,7 @@ void WiiUMenuApp::onUpdate(float dt) {
     // (PoloNX #177). This fork has no separate onUpdateAwake(): its wake
     // handling stays inline in the WakeUp notification.
     tickFrameTapLightPath(dt);
+    tickControllerBatteries(dt);
     tickMemInventory(dt);
 
     updateLeaveSplashHandoff(dt);
@@ -11401,7 +11638,16 @@ void WiiUMenuApp::onUpdate(float dt) {
         // console was left in rather than leaving it to inference.
         const unsigned opMode = (unsigned)appletGetOperationMode();
         const unsigned perfMode = (unsigned)appletGetPerformanceMode();
-        DebugLog::log("[perf] %.1f fps  avg=%.1fms worst=%.1fms  vsync=%.1fms gpu=%.1fms  opmode=%u perf=%u  draws=%u binds=%u verts=%u blur=%u caps=%u uploads=%u batches=%u uploadwait=%.3fms  settings=%d(1=fullScene,2=sceneHidden) themeshop=%d",
+        // Thermal-clock context (omnilaunch 916197d): a GPU held at a low
+        // clock or a hot SoC explains a slow gpu= figure the draw counts do
+        // not. Only queried while the menu renders; in the background the
+        // numbers would describe someone else's workload and cost two service
+        // sessions a second. swap=2 marks the idle 30 Hz present rate.
+        const bool rendering = app().renderEnabled();
+        const auto thermals = rendering ? switchu::getThermalReading()
+                                        : switchu::ThermalReading{};
+        const uint32_t gpuClockMhz = rendering ? switchu::getGpuClockMhz() : 0;
+        DebugLog::log("[perf] %.1f fps  avg=%.1fms worst=%.1fms  vsync=%.1fms gpu=%.1fms  opmode=%u perf=%u gpuMhz=%u soc=%.1fC swap=%u  draws=%u binds=%u verts=%u blur=%u caps=%u uploads=%u batches=%u uploadwait=%.3fms  settings=%d(1=fullScene,2=sceneHidden) themeshop=%d",
                       m_perfFrames / m_perfAccumDt,
                       avgMs,
                       m_perfWorstDt * 1000.f,
@@ -11409,6 +11655,9 @@ void WiiUMenuApp::onUpdate(float dt) {
                       gpu.lastFenceWaitNs() / 1000000.0,
                       opMode,
                       perfMode,
+                      (unsigned)gpuClockMhz,
+                      thermals.soc,
+                      (unsigned)gpu.swapInterval(),
                       ren.lastFrameDrawCalls(),
                       ren.lastFramePipelineBinds(),
                       ren.lastFrameVertices(),
@@ -11668,8 +11917,26 @@ void WiiUMenuApp::onUpdate(float dt) {
                 // an overnight wake hung with hundreds of primes in flight.
                 if (m_themeShop)
                     m_themeShop->pausePreviewWorkForSleep();
+                // PoloNX enterSystemSleep: a menu left playing music keeps the
+                // mixer feeding the audio path for the whole sleep, and one that
+                // keeps presenting never lets the console settle into its
+                // low-power state -- the screen goes dark but the battery drains.
+                // The lock above already stops presents after its black frame;
+                // pause the music here. The daemon waits for this handoff.
+                if (m_audio.isPlaying() && !m_audio.isPaused()) {
+                    m_audio.pause();
+                    m_musicPausedForSleep = true;
+                }
+                DebugLog::log("[power] sleep handoff: lock=%d music_paused=%d render=%d",
+                              m_lockScreen.hidesScene() ? 1 : 0,
+                              m_musicPausedForSleep ? 1 : 0,
+                              app().renderEnabled() ? 1 : 0);
                 break;
             case switchu::smi::MenuMessage::WakeUp:
+                if (m_musicPausedForSleep) {
+                    m_musicPausedForSleep = false;
+                    m_audio.resume();
+                }
                 // The lock screen exists for this moment. Waking is the one
                 // thing that raises it, and it is not optional, the same way
                 // the stock home menu does not offer to skip it.
@@ -11709,6 +11976,18 @@ void WiiUMenuApp::onUpdate(float dt) {
                 }
                 break;
             }
+            case switchu::smi::MenuMessage::OperationModeChanged: {
+                // Live dock/undock, or a wake (PoloNX 6900c31). The daemon
+                // processed the applet message and sent the fresh mode; the
+                // menu's own libnx cache would still report the old one.
+                const int mode = static_cast<int>(notif.payload);
+                DebugLog::log("[display] daemon operation mode -> %d", mode);
+                m_daemonOperationMode = mode;
+                // The sleep plan differs docked vs handheld; re-read it now.
+                m_sleepPlanTimer = kSleepPlanPollSeconds;
+                switchu::menu::fitManagedLayerToMode(mode);
+                break;
+            }
             case switchu::smi::MenuMessage::TimeSettingApplied: {
                 const auto kind = static_cast<switchu::smi::TimeSettingKind>(notif.app_id);
                 const Result rc = static_cast<Result>(notif.payload);
@@ -11741,20 +12020,12 @@ void WiiUMenuApp::onUpdate(float dt) {
             case switchu::smi::MenuMessage::BatteryStatusChanged: {
                 const uint32_t percent = switchu::smi::batteryPayloadPercentage(notif.payload);
                 const bool charging = switchu::smi::batteryPayloadCharging(notif.payload);
-                // The battery widget reads these two members and nothing ever
-                // wrote them, so its console ring sat at 0% while the HUD above
-                // it showed the real charge from the same notification.
-                m_consoleBatteryPercent = static_cast<int>(percent);
-                m_consoleBatteryCharging = charging;
-                if (m_battery) {
-                    m_battery->setBatteryStatus(percent, charging);
-                    DebugLog::log("[battery] daemon status percent=%u charging=%d",
-                                  (unsigned)percent,
-                                  charging ? 1 : 0);
-                }
-                if (m_quickSettings) {
-                    m_quickSettings->setBatteryStatus(static_cast<int>(percent), charging);
-                }
+                // Also reaches the Batteries tiles already on the grid; before,
+                // only tiles created after the push saw the new charge.
+                applyConsoleBatteryStatus(static_cast<int>(percent), charging);
+                DebugLog::log("[battery] daemon status percent=%u charging=%d",
+                              (unsigned)percent,
+                              charging ? 1 : 0);
                 break;
             }
             default:
@@ -12233,7 +12504,10 @@ void WiiUMenuApp::onUpdate(float dt) {
         m_sleepPlanTimer = 0.f;
         SetSysSleepSettings plan{};
         if (R_SUCCEEDED(setsysGetSleepSettings(&plan))) {
-            const bool docked = appletGetOperationMode() != AppletOperationMode_Handheld;
+            const int opMode = m_daemonOperationMode >= 0
+                ? m_daemonOperationMode
+                : static_cast<int>(appletGetOperationMode());
+            const bool docked = opMode != AppletOperationMode_Handheld;
             m_lockScreen.setSleepDelaySeconds(
                 sleepPlanSeconds(docked, docked ? plan.console_sleep_plan
                                                 : plan.handheld_sleep_plan));

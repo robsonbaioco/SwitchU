@@ -83,6 +83,11 @@ public:
 
     // External real-time status update from daemon or system messages
     void setBatteryStatus(int percent, bool charging);
+    // PoloNX 3a48f74: every QS hardware refresh re-reads PSM and reports it
+    // back, so HOME and the Batteries widget follow drain between daemon pushes.
+    void onBatterySampled(std::function<void(int, bool)> cb) {
+        m_batterySampledCb = std::move(cb);
+    }
     // PoloNX #177 Battery Saver. When Frame Tap's viewer holds lite, the row is
     // locked ON and relabelled; the preference underneath is unchanged.
     void setBatterySaver(bool enabled);
@@ -153,6 +158,7 @@ private:
     // Real-time battery & thermal status
     int   m_batteryPercent = -1;
     bool  m_batteryCharging = false;
+    std::function<void(int, bool)> m_batterySampledCb;
     float m_socTemp = -1.f;
     float m_pcbTemp = -1.f;
     bool  m_hasSocTemp = false;

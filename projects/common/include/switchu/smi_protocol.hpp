@@ -26,6 +26,13 @@ enum class MenuMessage : uint32_t {
     // command was queued, before the daemon had run it or knew whether it had
     // worked. app_id carries a TimeSettingKind, payload the Result.
     TimeSettingApplied    = 11,
+    // The daemon saw AppletMessage_OperationModeChanged (dock <-> handheld), or
+    // the console woke up. payload = AppletOperationMode (0 handheld,
+    // 1 console). The menu is a library applet and its own libnx mode cache
+    // does not follow a live dock, so this is how it learns to resize its
+    // layer. (PoloNX numbers it 13: their 11 and 12 are messages the fork
+    // does not carry. Daemon and menu ship together, so only ours matters.)
+    OperationModeChanged  = 12,
 };
 
 enum class TimeSettingKind : uint64_t {

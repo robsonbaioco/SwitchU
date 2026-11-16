@@ -5,6 +5,7 @@
 #include "core/NsService.hpp"
 #include "tutorial/TutorialActivity.hpp"
 #include "services/NtpClient.hpp"
+#include "services/SystemTime.hpp"
 #include "usb/Mtp.hpp"
 #include <nxui/Application.hpp>
 #include <fmt/format.h>
@@ -133,6 +134,45 @@ extern "C" void userAppExit(void) {
     romfsExit();
 }
 #else
+namespace switchu::menu {
+namespace {
+u64 g_managedLayerId = 0;
+}
+
+// Sizes the menu's managed VI layer for an operation mode (PoloNX d4385bd /
+// 6900c31). Docked the layer covers the 1920x1080 output and the 1280x720
+// framebuffer is scaled to it (FitToLayer); in handheld it goes back to
+// 1280x720 at (0,0), the size libnx leaves it at, so a dock earlier in the
+// session cannot leave the LCD on a TV-sized layer. Underscan is not applied
+// here: the console applies its own TV setting to every layer.
+//
+// operationMode < 0 asks libnx. The menu is a library applet and never
+// processes AppletMessage_OperationModeChanged itself, so after boot its libnx
+// cache goes stale; live changes pass the mode the daemon forwarded instead.
+bool fitManagedLayerToMode(int operationMode) {
+    if (g_managedLayerId == 0)
+        return false;
+
+    const int mode = operationMode >= 0
+        ? operationMode
+        : static_cast<int>(appletGetOperationMode());
+    const bool docked = mode == AppletOperationMode_Console;
+    const s32 w = docked ? 1920 : 1280;
+    const s32 h = docked ? 1080 : 720;
+
+    ViLayer layer{};
+    layer.initialized = true;
+    layer.layer_id = g_managedLayerId;
+    const Result rc = viSetLayerSize(&layer, w, h);
+    if (R_SUCCEEDED(rc))
+        viSetLayerPosition(&layer, 0.f, 0.f);
+    DebugLog::log("[display] mode=%d (%s) layer %llu %dx%d rc=0x%X",
+                  mode, docked ? "docked" : "handheld",
+                  (unsigned long long)g_managedLayerId, w, h, rc);
+    return R_SUCCEEDED(rc);
+}
+} // namespace switchu::menu
+
 extern "C" void __appInit(void) {
     Result rc;
 
@@ -154,7 +194,9 @@ extern "C" void __appInit(void) {
     rc = hidInitialize();
     if (R_FAILED(rc)) svcOutputDebugString("[SwitchU-menu] hidInitialize FAIL", 33);
 
-    timeInitialize();
+    // On a HOME return this can fail or answer before the clocks are set;
+    // services/SystemTime recovers both later (logged once the SD log is open).
+    const Result timeRc = timeInitialize();
     __libnx_init_time();
     setsysInitialize();
     setInitialize();
@@ -182,6 +224,8 @@ extern "C" void __appInit(void) {
     switchu::FileLog::open("menu", switchu::FileLog::MENU_ROTATE_BYTES);
     DebugLog::openFileLog();
     DebugLog::log("[menu] __appInit complete (sd mount: 0x%X)", rc);
+    DebugLog::log("[time] timeInitialize rc=0x%X", timeRc);
+    switchu::services::system_time::logBootState();
 
     // ns is opened lazily by core/NsService (this fork), not here.
 
@@ -240,8 +284,10 @@ extern "C" void __appInit(void) {
 
     // A library applet's managed layer is left at 1280x720 by libnx, so docked
     // the UI sat unscaled in the middle of the 1080p output. Open the layer
-    // ourselves (its id is needed) and size it to the full output: the
-    // 1280x720 framebuffer is then scaled to it (FitToLayer).
+    // ourselves (its id is needed) and size it to the output of the current
+    // mode: docked the 1280x720 framebuffer is then scaled to 1920x1080
+    // (FitToLayer). Live dock/undock resizes it again from the daemon's
+    // MenuMessage::OperationModeChanged.
     u64 managedLayerId = 0;
     if (R_SUCCEEDED(appletCreateManagedDisplayLayer(&managedLayerId)))
         __nx_vi_layer_id = managedLayerId;
@@ -249,13 +295,9 @@ extern "C" void __appInit(void) {
     __nx_win_init();
     DebugLog::log("[menu] __nx_win_init done");
 
-    if (managedLayerId) {
-        ViLayer layer{};
-        layer.initialized = true;
-        layer.layer_id = managedLayerId;
-        const Result layerRc = viSetLayerSize(&layer, 1920, 1080);
-        DebugLog::log("[menu] layer %llu size 1920x1080 rc=0x%X", (unsigned long long)managedLayerId, layerRc);
-    }
+    switchu::menu::g_managedLayerId = managedLayerId;
+    // The libnx mode cache is fresh here: appletInitialize just read it.
+    switchu::menu::fitManagedLayerToMode(-1);
 
     svcOutputDebugString("[SwitchU-menu] __appInit done", 29);
 }

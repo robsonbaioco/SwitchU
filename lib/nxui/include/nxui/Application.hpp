@@ -26,6 +26,20 @@ struct ApplicationShutdownTrace {
     std::uint64_t activityDestroyStartTick = 0;
 };
 
+/// Main-loop timing, reported every frame-stats window and for single slow
+/// frames (PoloNX 229a7e9).
+struct FrameStats {
+    bool          slowFrame   = false; // one frame over budget, not a window summary
+    std::uint32_t frames      = 0;     // presented frames in the window
+    float         seconds     = 0.f;   // window length
+    float         avgMs       = 0.f;   // average frame interval
+    float         maxMs       = 0.f;   // worst frame interval
+    std::uint32_t missed      = 0;     // intervals that missed their vblank
+    float         maxUpdateMs = 0.f;   // input + activity/widget update
+    float         maxRenderMs = 0.f;   // record + submit + present (vblank wait excluded)
+    std::uint32_t idleFrames  = 0;     // frames presented at the idle half rate
+};
+
 /// Top-level application object.
 /// Owns the GPU device, Renderer, and Input, runs the main loop,
 /// and delegates lifecycle events to the attached Activity.
@@ -97,7 +111,13 @@ public:
     // was being logged as 84.8 ms. Measure with this; animate with the delta.
     float lastFrameSeconds() const { return m_lastFrameSeconds; }
 
+    /// Receives frame timing (called on the main thread).
+    void setFrameStatsSink(std::function<void(const FrameStats&)> sink) {
+        m_frameStatsSink = std::move(sink);
+    }
+
 private:
+    std::function<void(const FrameStats&)> m_frameStatsSink;
     void dispatchInput();
     bool applyPendingActivity();
 
