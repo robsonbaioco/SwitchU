@@ -964,6 +964,119 @@ static bool queryBatteryStatus(uint8_t& percent, PsmChargerType& chargerType) {
     return true;
 }
 
+// Sleep trace. The complaint is that the console only turns the screen off
+// instead of really sleeping. A real sleep freezes every process, this loop
+// included, so the daemon's own loop counter is the witness: if it keeps
+// counting between the sleep request and the wake, the CPU never went down.
+// Awake time is the sum of the gaps between consecutive passes; a real sleep
+// shows up as one gap far longer than any pass, which is left out.
+struct SleepTrace {
+    bool        active = false;
+    const char* source = "";
+    std::time_t requestWall = 0;
+    uint64_t    requestTick = 0;
+    uint64_t    requestLoops = 0;
+    uint64_t    lastPassTick = 0;
+    uint64_t    awakeNs = 0;
+    uint64_t    longestGapNs = 0;
+    uint8_t     battery = 0xFF;
+    unsigned    charger = 0xFF;
+    std::time_t nextHeartbeat = 0;
+};
+static SleepTrace g_sleepTrace;
+static uint64_t g_mainLoopCount = 0;
+static constexpr std::time_t kSleepTraceFirstHeartbeatS = 30;
+static constexpr std::time_t kSleepTraceHeartbeatS = 300;
+
+static void sleepTraceBegin(const char* source, bool batteryValid,
+                            uint8_t battery, PsmChargerType charger) {
+    g_sleepTrace.active = true;
+    g_sleepTrace.source = source;
+    g_sleepTrace.requestWall = std::time(nullptr);
+    g_sleepTrace.requestTick = armGetSystemTick();
+    g_sleepTrace.requestLoops = g_mainLoopCount;
+    g_sleepTrace.lastPassTick = g_sleepTrace.requestTick;
+    g_sleepTrace.awakeNs = 0;
+    g_sleepTrace.longestGapNs = 0;
+    g_sleepTrace.battery = batteryValid ? battery : 0xFF;
+    g_sleepTrace.charger = batteryValid ? (unsigned)charger : 0xFF;
+    g_sleepTrace.nextHeartbeat = g_sleepTrace.requestWall + kSleepTraceFirstHeartbeatS;
+}
+
+// Called every main-loop pass. While a sleep is pending, a line here means the
+// daemon is still running long after it asked to sleep: the screen may be off,
+// but the console is not asleep. Nothing is written in a real sleep.
+static void sleepTraceAccount() {
+    const uint64_t tick = armGetSystemTick();
+    const uint64_t gapNs = armTicksToNs(tick - g_sleepTrace.lastPassTick);
+    g_sleepTrace.lastPassTick = tick;
+    g_sleepTrace.longestGapNs = std::max(g_sleepTrace.longestGapNs, gapNs);
+    if (gapNs < 2'000'000'000ULL)
+        g_sleepTrace.awakeNs += gapNs;
+}
+
+static void sleepTraceHeartbeat() {
+    if (!g_sleepTrace.active)
+        return;
+    sleepTraceAccount();
+    const std::time_t now = std::time(nullptr);
+    if (now < g_sleepTrace.nextHeartbeat)
+        return;
+    g_sleepTrace.nextHeartbeat = now + kSleepTraceHeartbeatS;
+    uint8_t percent = 0xFF;
+    PsmChargerType charger = (PsmChargerType)0xFF;
+    queryBatteryStatus(percent, charger);
+    switchu::FileLog::log(
+        "[sleep-trace] STILL AWAKE %llds after sleep request source=%s loops=%llu "
+        "battery=%u charger=%u menuActive=%d appRunning=%d appFg=%d",
+        (long long)(now - g_sleepTrace.requestWall), g_sleepTrace.source,
+        (unsigned long long)(g_mainLoopCount - g_sleepTrace.requestLoops),
+        (unsigned)percent, (unsigned)charger,
+        daemon::menu_la::isActive() ? 1 : 0,
+        daemon::app::isRunning() ? 1 : 0,
+        daemon::app::hasForeground() ? 1 : 0);
+    switchu::FileLog::flush();
+}
+
+static void sleepTraceWake() {
+    uint8_t percent = 0xFF;
+    PsmChargerType charger = (PsmChargerType)0xFF;
+    const bool batteryValid = queryBatteryStatus(percent, charger);
+    if (!g_sleepTrace.active) {
+        switchu::FileLog::log("[sleep-trace] wake without a traced sleep request battery=%u charger=%u",
+                              batteryValid ? (unsigned)percent : 0xFFu,
+                              batteryValid ? (unsigned)charger : 0xFFu);
+        return;
+    }
+    sleepTraceAccount();
+    g_sleepTrace.active = false;
+    const long long wallS = (long long)(std::time(nullptr) - g_sleepTrace.requestWall);
+    // If the tick also stops in sleep, tick < away; if it keeps running, the
+    // sleep shows as the longest gap instead. Either way both are logged.
+    const long long tickS = (long long)(armTicksToNs(armGetSystemTick() -
+                                                      g_sleepTrace.requestTick) / 1'000'000'000ULL);
+    const unsigned long long loops = g_mainLoopCount - g_sleepTrace.requestLoops;
+    const long long awakeS = (long long)(g_sleepTrace.awakeNs / 1'000'000'000ULL);
+    const long long gapS = (long long)(g_sleepTrace.longestGapNs / 1'000'000'000ULL);
+    // A few seconds of loop activity is the time it takes Horizon to actually
+    // suspend after the request. Anything beyond that, or most of the time
+    // away, means the daemon kept running.
+    const char* verdict =
+        wallS < 60 ? "too-short-to-tell" :
+        (awakeS > 60 || awakeS * 2 > wallS) ? "SCREEN-OFF-ONLY" : "deep-sleep";
+    const int drop = (g_sleepTrace.battery != 0xFF && batteryValid)
+                         ? (int)g_sleepTrace.battery - (int)percent : 0;
+    const double dropPerHour = wallS > 0 ? drop * 3600.0 / (double)wallS : 0.0;
+    switchu::FileLog::log(
+        "[sleep-trace] wake source=%s verdict=%s away=%llds tick=%llds awake=%llds "
+        "longest_gap=%llds loops=%llu battery %u -> %u (%.2f%%/h) charger %u -> %u",
+        g_sleepTrace.source, verdict, wallS, tickS, awakeS, gapS, loops,
+        (unsigned)g_sleepTrace.battery, batteryValid ? (unsigned)percent : 0xFFu,
+        dropPerHour, g_sleepTrace.charger,
+        batteryValid ? (unsigned)charger : 0xFFu);
+    switchu::FileLog::flush();
+}
+
 static void pushBatteryStatusNotification(bool force) {
     if (!daemon::menu_la::isActive())
         return;
@@ -1117,13 +1230,21 @@ static void startSleepSequence(const char* source) {
         daemon::menu_la::isActive() ? 1 : 0);
     if (daemon::menu_la::isActive())
         pushNotification(smi::MenuMessage::SleepSequence);
+    sleepTraceBegin(source, batteryValid, batteryPercent, chargerType);
 
     // Preserve the final reason and state even if sleep ends in a forced power
     // loss. fflush must precede the device commit or the newest log data remains
     // only in the process buffer.
     switchu::FileLog::flush();
     switchu::commitSdCard("sleep");
-    appletStartSleepSequence(true);
+    const Result sleepRc = appletStartSleepSequence(true);
+    // Buffered only: a failed request leaves the console awake, and a
+    // successful one is confirmed (or not) by the [sleep-trace] lines.
+    if (R_FAILED(sleepRc)) {
+        switchu::FileLog::log("[power] appletStartSleepSequence FAIL source=%s rc=0x%X",
+                              source, sleepRc);
+        switchu::FileLog::flush();
+    }
 }
 
 static void startPowerSequence(const char* source, smi::SystemMessage action) {
@@ -1424,6 +1545,7 @@ static void handleAppletMessages() {
 
         case 26:
         switchu::FileLog::log("[ae] -> Wakeup");
+        sleepTraceWake();
         g_batteryRefreshPending.store(true);
         // Time asleep is not time the menu had to draw.
         g_guardRun.armFirstFrameDeadline(guardNowMs());
@@ -3162,6 +3284,8 @@ int main(int argc, char* argv[]) {
             continue;
         }
         ensureWallClock();
+        ++g_mainLoopCount;
+        sleepTraceHeartbeat();
         mainLoop();
         // The daemon never closes its log, so drain the write buffer on a timer.
         switchu::FileLog::flushIfStale();
