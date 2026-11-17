@@ -28,6 +28,11 @@ public:
     void onUiLanguageChange(StringCb cb) { m_uiLanguageCb = std::move(cb); }
     void onDefaultProfileChange(StringCb cb) { m_defaultProfileCb = std::move(cb); }
     void onClockUse12HourChange(BoolCb cb) { m_clockUse12HourCb = std::move(cb); }
+    // Lock screen transition, its zoom direction and its wipe direction
+    // (see AppConfig::lockScreenTransition for the numbering).
+    void onLockScreenTransitionChange(std::function<void(int, int, int)> cb) {
+        m_lockScreenTransitionCb = std::move(cb);
+    }
     // Glass sharpness, background speed and background blur were here; they are
     // controlled from the Themes screen now and nothing on this one reads them.
     void onAccessibilityEnabledChange(BoolCb cb) { m_accessibilityEnabledCb = std::move(cb); }
@@ -97,6 +102,11 @@ public:
     void setClockUse12HourState(bool enabled) {
         m_clockUse12Hour = enabled;
     }
+    void setLockScreenTransitionState(int mode, int zoomDir, int wipeDir) {
+        m_lockScreenTransition = std::clamp(mode, 0, 4);
+        m_lockScreenZoomDir = std::clamp(zoomDir, 0, 1);
+        m_lockScreenWipeDir = std::clamp(wipeDir, 0, 3);
+    }
     void setAccessibilityEnabledState(bool enabled) {
         m_accessibilityEnabled = enabled;
         setAccessibilityVoiceEnabled(enabled);
@@ -158,6 +168,7 @@ private:
     StringCb m_uiLanguageCb;
     StringCb m_defaultProfileCb;
     BoolCb m_clockUse12HourCb;
+    std::function<void(int, int, int)> m_lockScreenTransitionCb;
     BoolCb m_accessibilityEnabledCb;
     BoolCb m_accessibilitySpeakHintsCb;
     BoolCb m_accessibilitySpeakContextEveryFocusCb;
@@ -190,6 +201,9 @@ private:
     std::string m_uiLanguageOverride = "auto";
     std::string m_defaultProfileUid;
     bool m_clockUse12Hour = false;
+    int m_lockScreenTransition = 2;
+    int m_lockScreenZoomDir = 0;
+    int m_lockScreenWipeDir = 1;
     bool m_accessibilityEnabled = true;
     bool m_accessibilitySpeakHints = true;
     bool m_accessibilitySpeakContextEveryFocus = false;

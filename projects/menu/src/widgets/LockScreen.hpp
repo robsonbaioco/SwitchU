@@ -32,6 +32,19 @@ public:
     /// Presses of the same button needed to get back in.
     static constexpr int kUnlockPresses = 3;
 
+    /// How the lock enters and leaves (PoloNX 4b0c337). Numbered the way the
+    /// fork's config stores it. Dissolve is the fade this screen always had.
+    enum class Transition : int {
+        None = 0,
+        Curtain = 1,
+        Dissolve = 2,
+        Zoom = 3,
+        Wipe = 4,
+    };
+    /// zoomDir: 0 = Out (grows away), 1 = In (shrinks in).
+    /// wipeDir: the way the lock leaves, 0 = Up, 1 = Right, 2 = Down, 3 = Left.
+    void setTransition(Transition mode, int zoomDir, int wipeDir);
+
     /// Idle delay before the console is asked to genuinely suspend, in
     /// seconds; negative means never. The value comes from the console's own
     /// handheld or docked sleep plan and is pushed in by the app, because
@@ -63,7 +76,10 @@ public:
         return m_state == State::Locked && m_fade >= 0.995f && m_wakeDisplaySeconds <= 0.f;
     }
 
-    void lockNow();
+    /// `instant` skips the enter transition. The sleep handoff uses it: the
+    /// daemon only waits a moment, and the black low-power frame (and with it
+    /// the end of presentation) must not wait for an animation.
+    void lockNow(bool instant = false);
     /// Unlock immediately for a system-owned gesture such as HOME. Unlike the
     /// ordinary button sequence, the gesture has already been authenticated by
     /// the console's system layer.
@@ -89,9 +105,21 @@ private:
     std::uint64_t pressedUnlockButton(nxui::Input& input) const;
     void  updateClock(float dt);
     void  beginRelease();
+    float enterDuration() const;
+    float exitDuration() const;
+    void  drawAtmosphere(nxui::Renderer& ren, float w, float h, float dy, float alpha) const;
 
     State m_state = State::Open;
+    // Progress of the lock plane: 0 = gone, 1 = fully up. Every transition
+    // reads it, and hidesScene() still waits for it to reach 1, so the black
+    // low-power frame only comes once an enter transition has finished.
     float m_fade = 0.f;
+
+    Transition m_transition = Transition::Dissolve;
+    int   m_zoomDir = 0;
+    int   m_wipeDir = 1;
+    // Seconds of clock wave, vignette breath and colon pulse.
+    float m_atmosPhase = 0.f;
 
     // Suspend countdown. It keeps running while the lock screen is already up:
     // being locked is not being busy.

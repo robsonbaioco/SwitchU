@@ -9,11 +9,13 @@ namespace switchu::icons {
 inline constexpr const char* kDefaultPackId = "default";
 
 // Theme-bundled icon sets appear as theme:<themeFolder> (e.g. theme:iisu).
-// Glyphs stay under sdmc:/config/SwitchU/themes/<folder>/assets/icons/.
+// Glyphs live under <themeRoot>/<folder>/assets/icons/ for both the Theme Shop
+// root (config) and the manual drop root (switch).
 // Use a string literal array (not const char*) so sizeof gives the text length.
 inline constexpr char kThemePackPrefix[] = "theme:";
 inline constexpr std::size_t kThemePackPrefixLen = sizeof(kThemePackPrefix) - 1; // 6
 inline constexpr const char* kInstalledThemesDir = "sdmc:/config/SwitchU/themes";
+inline constexpr const char* kManualThemesDir = "sdmc:/switch/SwitchU/themes";
 
 // Writable pack directory on the SD card. Downloaded packs land here even in
 // the homebrew build, where the built-in packs are read from romfs.

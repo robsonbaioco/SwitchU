@@ -22,6 +22,12 @@ public:
                         nxui::ThreadPool* threadPool);
 
     void setEnabled(bool enabled);
+    // Fullscreen hero GPU canvas. 0×0 skips hero decode (Off). Otherwise
+    // Low 320×180, Medium 640×360, High 1280×720. Changing size drops GPU
+    // textures so MemBlocks are not reused at the wrong dimensions.
+    void setHeroCanvas(int width, int height);
+    // Decode-time blur on the hero canvas only. 0 = off, 1–10 = stepped frost.
+    void setHeroBlur(int amount);
     void setLayoutMode(AppLayoutMode mode) { m_layoutMode = mode; }
     void setArtworkOpacityScale(float opacityScale) { m_artworkOpacityScale = std::clamp(opacityScale, 0.f, 1.f); }
     float artworkOpacityScale() const { return m_artworkOpacityScale; }
@@ -88,6 +94,7 @@ private:
 
     static DecodedImage decodeImage(const std::string& path, int outputWidth,
                                     int outputHeight, bool fill);
+    static void blurHero(DecodedImage& image, int amount);
     static float sampleLuminance(const DecodedImage& image);
     static nxui::Rect fillRect(const nxui::Texture& texture, const nxui::Rect& area);
     static nxui::Rect containRect(const nxui::Texture& texture, const nxui::Rect& area);
@@ -125,6 +132,9 @@ private:
     nxui::Rect m_logoArea{370.f, 149.f, 540.f, 150.f};
     bool m_showLogo = true;
     bool m_showPreviousDuringCrossfade = false;
+    int m_heroW = 640;
+    int m_heroH = 360;
+    int m_heroBlur = 0;
     nxui::AnimatedFloat m_fade{1.f};
     nxui::AnimatedFloat m_artworkOpacity{1.f};
     float m_artworkOpacityScale = 0.50f;

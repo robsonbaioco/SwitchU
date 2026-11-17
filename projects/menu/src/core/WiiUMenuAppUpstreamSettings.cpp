@@ -626,7 +626,8 @@ void WiiUMenuApp::startSteamGridDbScrape() {
         entry.widgetColumns = size.columns;
         entry.widgetRows = size.rows;
     }
-    if (!m_steamGridDb.start(m_config.steamGridDbApiKey, scrapeApps)) {
+    if (!m_steamGridDb.start(m_config.steamGridDbApiKey, scrapeApps,
+                             m_config.steamGridDbHeroQuality != 0)) {
         const auto msg = nxui::I18n::instance().tr(
             "settings.steamgriddb.start_failed", "The artwork scan could not be started.");
         if (m_themeShop && m_themeShop->isActive())
@@ -899,6 +900,16 @@ void WiiUMenuApp::syncSteamGridDb() {
 #ifdef NXUI_BACKEND_DEKO3D
             app().renderer().reclaimReleasedTextureSlotsAfterIdle();
 #endif
+            // Tiles keep raw pointers into m_gameArtwork (wide hero/logo, tall
+            // 2x3 poster): clear them before the textures go away.
+            if (m_grid) {
+                for (const auto& icon : m_grid->allIcons()) {
+                    if (icon && icon->titleId() == result.titleId) {
+                        icon->setWideGameTextures(nullptr, nullptr);
+                        icon->setTallGamePoster(nullptr);
+                    }
+                }
+            }
             m_gameArtwork.erase(result.titleId);
             if (m_recentWidgetAssetTitleId == result.titleId) {
                 m_recentWidgetAssetTitleId = 0;
@@ -985,13 +996,16 @@ void WiiUMenuApp::syncSteamGridDb() {
             } else {
                 showFocusedSteamGridDbArtwork(true);
             }
-            // Wide (2x1 / 4x2) tiles draw the landscape grid or hero + logo.
+            // Wide (2x1 / 4x2) tiles draw the landscape grid or hero + logo;
+            // tall 2x3 tiles draw the dedicated poster (PoloNX #205).
             if (result.kind == SteamGridDbManager::ArtworkKind::GridWide
                 || result.kind == SteamGridDbManager::ArtworkKind::Hero
-                || result.kind == SteamGridDbManager::ArtworkKind::Logo) {
+                || result.kind == SteamGridDbManager::ArtworkKind::Logo
+                || result.kind == SteamGridDbManager::ArtworkKind::Poster) {
                 m_gameArtwork.erase(result.titleId);
                 const auto size = gameGridSize(result.titleId, AppLayoutMode::Grid);
-                if (switchu::widgets::isLandscapeWideGameTile(size))
+                if (switchu::widgets::isLandscapeWideGameTile(size)
+                    || switchu::widgets::isTallPosterGameTile(size))
                     ensureGameArtwork(result.titleId);
             }
             if (m_grid && m_openFolderId == 0 &&
@@ -1121,7 +1135,10 @@ void WiiUMenuApp::syncSteamGridDb() {
                     if (!icon || icon->entryKind() != GridEntryKind::Application
                         || icon->titleId() == 0)
                         continue;
+                    // Tall 2x3 tiles hold a dedicated poster too (PoloNX #205).
                     if (switchu::widgets::isLandscapeWideGameTile(
+                            icon->gridSpanColumns(), icon->gridSpanRows())
+                        || switchu::widgets::isTallPosterGameTile(
                             icon->gridSpanColumns(), icon->gridSpanRows()))
                         wideTiles.push_back(icon.get());
                 }
@@ -1132,6 +1149,7 @@ void WiiUMenuApp::syncSteamGridDb() {
 #endif
                     for (auto* icon : wideTiles) {
                         icon->setWideGameTextures(nullptr, nullptr);
+                        icon->setTallGamePoster(nullptr);
                         m_gameArtwork.erase(icon->titleId());
                         ensureGameArtwork(icon->titleId());
                     }

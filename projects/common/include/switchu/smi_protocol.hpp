@@ -76,6 +76,11 @@ enum class SystemMessage : uint32_t {
     SetManualDateTime     = 33,
     SetInternetTimeSync   = 34,
     SetPosixTime          = 35,
+    // Bluetooth audio device search run by the daemon (the system applet):
+    // btm:sys refuses it from the menu's library applet with 0x4028F.
+    // Fire-and-forget; the menu polls btm:sys for the search state.
+    StartAudioDiscovery   = 36,
+    StopAudioDiscovery    = 37,
 
     MenuReady             = 40,
     MenuClosing           = 41,

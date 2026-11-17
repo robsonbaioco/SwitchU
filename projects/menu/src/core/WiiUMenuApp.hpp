@@ -398,6 +398,8 @@ private:
     void syncSteamGridDb();
     void showFocusedSteamGridDbArtwork(bool forceReload = false);
     bool steamGridDbArtworkAllowedHere() const;
+    // Pushes the hero quality canvas and blur from m_config to the backdrop.
+    void applySteamGridDbHeroPresentation();
     // Layout the user still sees (grid stays up during poster prefetch).
     AppLayoutMode presentationLayoutMode() const;
     // Single-row logo band: left gutter beside a tall poster, else centred.
@@ -526,7 +528,7 @@ private:
     std::uint64_t resolveFolderCoverTitleId(const switchu::folders::Folder& folder,
                                             bool preferPoster) const;
     bool preferSingleRowPosters() const;
-    /// Single-row posters, or 2x3 grid tiles that already have poster art.
+    /// Single-row streamer posters. Grid 2x3 uses dedicated game-artwork instead.
     bool preferPosterIconData(std::uint64_t titleId) const;
     // centerIndex < 0 or radius < 0 → all folders; otherwise only nearby slots
     // (used by slim layout morph so commit stays cheap).
@@ -1035,6 +1037,8 @@ private:
     bool m_editGhostRectInit = false;
     float m_editGhostPulse = 0.f;
     std::vector<uint64_t> m_layoutSlots;
+    // The sorted home grid as shown (empty when the personal layout is shown).
+    std::vector<uint64_t> m_lastProjectedSlots;
     std::unordered_map<std::uint64_t, switchu::widgets::WidgetSize> m_gameSizes;
     bool m_layoutDirty = false;
     struct FolderCoverCacheEntry {
@@ -1084,13 +1088,18 @@ private:
     struct GameArtworkTextures {
         std::unique_ptr<nxui::Texture> hero;
         std::unique_ptr<nxui::Texture> logo;
+        // 2x3 grid tiles: dedicated 400x600 poster (the fork's cover art).
+        std::unique_ptr<nxui::Texture> poster;
     };
     std::unordered_map<std::uint64_t, GameArtworkTextures> m_gameArtwork;
     std::unordered_map<std::uint64_t, nxui::Texture> m_plazaCommunityTextures;
     struct GameArtworkDecodeState {
         std::uint64_t titleId = 0;
+        bool wantWide = false;
+        bool wantTall = false;
         steamgriddb::artwork::DecodedImage hero;
         steamgriddb::artwork::DecodedImage logo;
+        steamgriddb::artwork::DecodedImage poster;
         std::atomic<bool> cancelled{false};
         std::int64_t elapsedMs = 0;
     };

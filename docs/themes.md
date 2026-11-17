@@ -27,7 +27,14 @@ applies as it is, without any asset files.
 
 ```
 sdmc:/config/SwitchU/themes/<your-folder>/theme.json
+sdmc:/switch/SwitchU/themes/<your-folder>/theme.json
 ```
+
+The first is where the Theme Shop installs; the second is for themes you copy
+by hand (the menu creates both). If the same theme id is in both, the Theme
+Shop copy wins. `Default Dark` and `Default Light` are the built-in themes and
+are never read as installed ones. Cleaning up theme files in Settings > Storage
+only ever looks in the first folder.
 
 Every directory there with a readable `theme.json` is listed under **Themes →
 Installed**. A directory without one is skipped silently -- a name alone is not
@@ -197,7 +204,7 @@ without a picture. If you name the file `preview/cover.png`,
 
 ## Testing it on the console
 
-1. Copy the folder to `sdmc:/config/SwitchU/themes/`.
+1. Copy the folder to `sdmc:/switch/SwitchU/themes/` (or `sdmc:/config/SwitchU/themes/`).
 2. Restart the menu. Closing and reopening a game does it; so does rebooting.
 3. **Themes → Installed**, pick it, apply.
 4. Read `sdmc:/config/SwitchU/menu.log`. Applying a theme narrates itself:

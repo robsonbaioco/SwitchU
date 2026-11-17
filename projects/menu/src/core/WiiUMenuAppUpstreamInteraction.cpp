@@ -221,10 +221,36 @@ nxui::Texture* WiiUMenuApp::adoptEditGhostTexture(GlossyIcon* sourceIcon) {
         if (sourceIcon->customArtwork()) {
             data = gallery::GameArtworkStore::loadCover(sourceIcon->titleId());
         }
+        // Match on-tile art (PoloNX #205): grid 2x3 / 2x1 / 4x2 show dedicated
+        // game-artwork faces that the streamer does not carry, so decode the
+        // same art for the ghost.
+        if (data.empty() && sourceIcon->entryKind() == GridEntryKind::Application
+            && m_appLayoutMode == AppLayoutMode::Grid) {
+            const std::uint64_t tid = sourceIcon->titleId();
+            const int cols = sourceIcon->gridSpanColumns();
+            const int rows = sourceIcon->gridSpanRows();
+            steamgriddb::artwork::DecodedImage decoded;
+            if (switchu::widgets::isTallPosterGameTile(cols, rows)
+                && SteamGridDbManager::hasPoster(tid)) {
+                decoded = steamgriddb::artwork::decode(
+                    SteamGridDbManager::posterPath(tid), 400, 600, true);
+            } else if (switchu::widgets::isLandscapeWideGameTile(cols, rows)) {
+                if (SteamGridDbManager::hasGridWide(tid))
+                    decoded = steamgriddb::artwork::decode(
+                        SteamGridDbManager::gridWidePath(tid), 460, 215, true);
+                else if (SteamGridDbManager::hasArtwork(tid))
+                    decoded = steamgriddb::artwork::decode(
+                        SteamGridDbManager::heroPath(tid), 640, 360, true);
+            }
+            if (!decoded.rgba.empty()
+                && m_editGhostTexture->loadFromPixels(app().gpu(), app().renderer(),
+                                                      decoded.rgba.data(),
+                                                      decoded.width, decoded.height))
+                return m_editGhostTexture.get();
+        }
         if (data.empty()) {
-            // Match on-tile art (PoloNX): single-row posters and grid 2x3
-            // posters both carry tall artwork — never fall back to a square
-            // icon while a poster exists.
+            // Single-row posters carry tall artwork — never fall back to a
+            // square icon while a poster exists (PoloNX).
             const bool preferPoster =
                 sourceIcon->entryKind() == GridEntryKind::Application
                 && preferPosterIconData(sourceIcon->titleId());
@@ -462,6 +488,22 @@ void WiiUMenuApp::enterEditMode() {
         return;
 
     auto* icon = static_cast<GlossyIcon*>(cur);
+    // A sorted home view (A-Z, Recent, ...) only shows a projection of the
+    // personal layout: drops were resolved against the wrong slots and then
+    // re-sorted away. Adopt the order on screen as "My order" first; nothing
+    // visibly moves (PoloNX b967753).
+    // Grid only, as upstream: the other views never fill m_lastProjectedSlots,
+    // and flipping to My order there would rewrite the hand-made layout.
+    if (m_openFolderId == 0 && m_config.sortMode != 0 &&
+        m_appLayoutMode == AppLayoutMode::Grid &&
+        !m_lastProjectedSlots.empty()) {
+        m_layoutSlots = m_lastProjectedSlots;
+        DebugLog::log("[edit] sort %d -> My order (adopted the on-screen order, %zu slots)",
+                      m_config.sortMode, m_layoutSlots.size());
+        m_config.sortMode = 0;
+        m_config.save();
+        m_layoutDirty = true;
+    }
     m_editMode = true;
     m_editSourceIndex = m_grid ? m_grid->focusedGlobalIndex() : -1;
     m_editTargetIndex = m_editSourceIndex;
@@ -519,10 +561,15 @@ bool WiiUMenuApp::commitEditModePlacement() {
 
     int from = m_editSourceIndex;
     int target = m_editTargetIndex;
-    if (from < 0 || target < 0 || from >= m_model.count() || target >= m_model.count())
+    if (from < 0 || target < 0 || from >= m_model.count() || target >= m_model.count()) {
+        DebugLog::log("[edit] commit failed: from=%d target=%d count=%d",
+                      from, target, m_model.count());
         return false;
-    if (m_model.at(from).titleId == 0)
+    }
+    if (m_model.at(from).titleId == 0) {
+        DebugLog::log("[edit] commit failed: source slot %d is empty", from);
         return false;
+    }
 
     int oldPage = m_grid->currentPage();
     bool changed = (from != target);
@@ -543,33 +590,51 @@ bool WiiUMenuApp::commitEditModePlacement() {
         }
         auto sourceIt = std::find(visibleOrder.begin(), visibleOrder.end(),
                                   m_editHeldTitleId);
-        if (sourceIt == visibleOrder.end())
+        if (sourceIt == visibleOrder.end()) {
+            DebugLog::log("[edit] commit failed: held title %016lX not in the row",
+                          static_cast<unsigned long>(m_editHeldTitleId));
             return false;
+        }
         const std::size_t sourceOrder = static_cast<std::size_t>(
             std::distance(visibleOrder.begin(), sourceIt));
         const std::uint64_t targetTitleId = m_model.at(target).titleId;
-        std::size_t destinationOrder = visibleOrder.empty() ? 0 : visibleOrder.size() - 1;
+        // A single row moves the held title to the drop position and shifts the
+        // titles in between (PoloNX b967753). A swap sent the displaced title
+        // back to where the held one came from, and an empty slot sent the held
+        // title to the end.
+        std::size_t destinationOrder = 0;
         if (targetTitleId != 0) {
             const auto destinationIt = std::find(visibleOrder.begin(), visibleOrder.end(),
                                                  targetTitleId);
-            if (destinationIt == visibleOrder.end())
+            if (destinationIt == visibleOrder.end()) {
+                DebugLog::log("[edit] commit failed: target title %016lX not in the row",
+                              static_cast<unsigned long>(targetTitleId));
                 return false;
+            }
             destinationOrder = static_cast<std::size_t>(
                 std::distance(visibleOrder.begin(), destinationIt));
-            std::swap(visibleOrder[sourceOrder], visibleOrder[destinationOrder]);
         } else {
-            const auto held = visibleOrder[sourceOrder];
-            visibleOrder.erase(visibleOrder.begin() +
-                               static_cast<std::ptrdiff_t>(sourceOrder));
-            visibleOrder.push_back(held);
-            destinationOrder = visibleOrder.size() - 1;
+            // Empty slot: land after the titles that come before it.
+            for (int i = 0; i < target; ++i) {
+                const auto& entry = m_model.at(i);
+                if (entry.titleId != 0 && entry.kind != GridEntryKind::WidgetContinuation
+                    && entry.titleId != m_editHeldTitleId)
+                    ++destinationOrder;
+            }
         }
+        const auto held = visibleOrder[sourceOrder];
+        visibleOrder.erase(visibleOrder.begin() + static_cast<std::ptrdiff_t>(sourceOrder));
+        destinationOrder = std::min(destinationOrder, visibleOrder.size());
+        visibleOrder.insert(visibleOrder.begin() + static_cast<std::ptrdiff_t>(destinationOrder),
+                            held);
 
         std::vector<std::size_t> visibleSlots;
         if (m_openFolderId != 0) {
             auto* folder = m_folderStore.find(m_openFolderId);
-            if (!folder)
+            if (!folder) {
+                DebugLog::log("[edit] commit failed: folder %u not found", m_openFolderId);
                 return false;
+            }
             folder->titleIds = visibleOrder;
             if (!saveFoldersOrReport("move_single_row"))
                 return false;
@@ -582,8 +647,11 @@ bool WiiUMenuApp::commitEditModePlacement() {
                 if (visibleIds.count(m_layoutSlots[index]))
                     visibleSlots.push_back(index);
             }
-            if (visibleSlots.size() != visibleOrder.size())
+            if (visibleSlots.size() != visibleOrder.size()) {
+                DebugLog::log("[edit] commit failed: layout has %zu of the row's %zu titles",
+                              visibleSlots.size(), visibleOrder.size());
                 return false;
+            }
         }
 
         detachEditSourceIcon();
@@ -1906,21 +1974,23 @@ void WiiUMenuApp::showGameContextMenu(GlossyIcon* icon) {
         m_navigator.resetToHome();
         if (m_openFolderId == 0)
             applyDisplayModel(buildRootFolderModel(), titleId, false);
-        // Hero / poster-wide faces only exist for the landscape 2x1 / 4x2
-        // tiles: request them for those (PoloNX), drop them for the others
-        // (1x1, 2x2, 2x3) once the GPU is idle, as the fork did for 1x1.
-        if (switchu::widgets::isLandscapeWideGameTile(requested)) {
-            ensureGameArtwork(titleId);
-        } else {
-            if (m_grid) {
-                for (const auto& tile : m_grid->allIcons()) {
-                    if (tile && tile->titleId() == titleId)
-                        tile->setWideGameTextures(nullptr, nullptr);
+        // Dedicated faces exist for the landscape 2x1 / 4x2 (hero / poster-wide)
+        // and tall 2x3 (poster, PoloNX #205) tiles. Drop the old set once the
+        // GPU is idle — its kind follows the previous size — and request a
+        // fresh one for those sizes; 1x1 / 2x2 keep none.
+        if (m_grid) {
+            for (const auto& tile : m_grid->allIcons()) {
+                if (tile && tile->titleId() == titleId) {
+                    tile->setWideGameTextures(nullptr, nullptr);
+                    tile->setTallGamePoster(nullptr);
                 }
             }
-            app().gpu().waitIdle();
-            m_gameArtwork.erase(titleId);
         }
+        app().gpu().waitIdle();
+        m_gameArtwork.erase(titleId);
+        if (switchu::widgets::isLandscapeWideGameTile(requested)
+            || switchu::widgets::isTallPosterGameTile(requested))
+            ensureGameArtwork(titleId);
         // Always re-decode after resize: 2x3 <-> icon sizes must not keep the
         // previous art kind (poster stuck on 1x1/2x2, or icon stuck on 2x3).
         if (m_grid) {

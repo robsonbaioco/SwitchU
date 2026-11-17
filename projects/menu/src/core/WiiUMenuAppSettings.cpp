@@ -370,6 +370,9 @@ void WiiUMenuApp::createSettings() {
     m_settings->setDefaultProfileState(m_config.defaultProfileEnabled,
                                        m_config.defaultProfileUid);
     m_settings->setClockUse12HourState(m_config.clockUse12Hour);
+    m_settings->setLockScreenTransitionState(m_config.lockScreenTransition,
+                                             m_config.lockScreenZoomDir,
+                                             m_config.lockScreenWipeDir);
     m_settings->setAccessibilityEnabledState(m_config.accessibilityEnabled);
     m_settings->setAccessibilitySpeechState(m_config.accessibilitySpeakHints,
                                             m_config.accessibilitySpeakContextEveryFocus,
@@ -471,6 +474,19 @@ void WiiUMenuApp::createSettings() {
         if (m_clock)
             m_clock->setUse12HourClock(enabled);
         m_lockScreen.setUse12HourClock(enabled);
+    });
+    m_settings->onLockScreenTransitionChange([this](int mode, int zoomDir, int wipeDir) {
+        mode = std::clamp(mode, 0, 4);
+        zoomDir = std::clamp(zoomDir, 0, 1);
+        wipeDir = std::clamp(wipeDir, 0, 3);
+        if (m_config.lockScreenTransition == mode && m_config.lockScreenZoomDir == zoomDir
+            && m_config.lockScreenWipeDir == wipeDir)
+            return;
+        m_config.lockScreenTransition = mode;
+        m_config.lockScreenZoomDir = zoomDir;
+        m_config.lockScreenWipeDir = wipeDir;
+        m_config.save();
+        m_lockScreen.setTransition(static_cast<LockScreen::Transition>(mode), zoomDir, wipeDir);
     });
     m_settings->onAccessibilityEnabledChange([this](bool enabled) {
         if (m_config.accessibilityEnabled == enabled)
@@ -1254,6 +1270,22 @@ bool WiiUMenuApp::steamGridDbArtworkAllowedHere() const {
     return m_config.steamGridDbShowInGrid;
 }
 
+// PoloNX 7485239: hero quality ladder (Off/Low/Medium/High) and frost blur.
+void WiiUMenuApp::applySteamGridDbHeroPresentation() {
+    if (!m_steamGridDbBackdrop)
+        return;
+    int w = 640;
+    int h = 360;
+    switch (m_config.steamGridDbHeroQuality) {
+        case 0: w = 0; h = 0; break;
+        case 1: w = 320; h = 180; break;
+        case 3: w = 1280; h = 720; break;
+        default: break;
+    }
+    m_steamGridDbBackdrop->setHeroCanvas(w, h);
+    m_steamGridDbBackdrop->setHeroBlur(m_config.steamGridDbHeroBlur);
+}
+
 void WiiUMenuApp::closeWaraWaraPlaza() {
     if (!m_plazaScreen) return;
     if (!m_plazaScreen->isActive() && m_navigator.route() != switchu::navigation::Route::WaraWaraPlaza) {
@@ -1539,6 +1571,7 @@ void WiiUMenuApp::createThemeShop() {
     m_themeShop->setThemeMusicOverrideState(m_config.themeMusicOverride);
     m_themeShop->setThemeMusicAddToPlaylistState(m_config.themeMusicAddToPlaylist);
     m_themeShop->setThemeMusicPlayOnApplyState(m_config.themeMusicPlayOnApply);
+    m_themeShop->setMusicResumePositionState(m_config.musicResumePosition);
     m_themeShop->setThemeMatchAccent(m_activeColors.accentH,
                                      m_activeColors.accentS,
                                      m_activeColors.accentL);
@@ -1560,6 +1593,8 @@ void WiiUMenuApp::createThemeShop() {
     m_themeShop->setInputSource(&app().input());
     refreshAutoThemeSummary();
     m_themeShop->setSteamGridDbOpacity(m_config.steamGridDbOpacity);
+    m_themeShop->setSteamGridDbHeroPresentation(m_config.steamGridDbHeroQuality,
+                                                m_config.steamGridDbHeroBlur);
     m_themeShop->setSteamGridDbState(m_config.steamGridDbEnabled,
                                     !m_config.steamGridDbApiKey.empty());
     m_themeShop->setMetadataKeyState(!m_config.rawgApiKey.empty(),
@@ -1601,6 +1636,28 @@ void WiiUMenuApp::createThemeShop() {
     m_themeShop->onSteamGridDbOpacityChange([this](float v) {
         m_config.steamGridDbOpacity = v;
         if (m_steamGridDbBackdrop) m_steamGridDbBackdrop->setArtworkOpacityScale(v);
+    });
+    m_themeShop->onSteamGridDbHeroQualityChange([this](int quality) {
+        m_config.steamGridDbHeroQuality = std::clamp(quality, 0, 3);
+        m_config.save();
+        applySteamGridDbHeroPresentation();
+        if (m_steamGridDbBackdrop) {
+            m_steamGridDbBackdrop->releaseGpuArtwork();
+            m_steamGridDbBackdrop->setEnabled(m_config.steamGridDbEnabled
+                                              && steamGridDbArtworkAllowedHere());
+        }
+        showFocusedSteamGridDbArtwork(true);
+    });
+    m_themeShop->onSteamGridDbHeroBlurChange([this](int amount) {
+        m_config.steamGridDbHeroBlur = std::clamp(amount, 0, 10);
+        m_config.save();
+        applySteamGridDbHeroPresentation();
+        if (m_steamGridDbBackdrop) {
+            m_steamGridDbBackdrop->invalidateArtworkCaches();
+            m_steamGridDbBackdrop->setEnabled(m_config.steamGridDbEnabled
+                                              && steamGridDbArtworkAllowedHere());
+        }
+        showFocusedSteamGridDbArtwork(true);
     });
     m_themeShop->onSteamGridDbEnabledChange([this](bool enabled) {
         m_config.steamGridDbEnabled = enabled;
@@ -1851,6 +1908,13 @@ void WiiUMenuApp::createThemeShop() {
         if (m_config.themeMusicPlayOnApply == enabled)
             return;
         m_config.themeMusicPlayOnApply = enabled;
+        m_config.save();
+    });
+    m_themeShop->onMusicResumePositionChange([this](bool enabled) {
+        if (m_config.musicResumePosition == enabled)
+            return;
+        m_config.musicResumePosition = enabled;
+        m_audio.setResumePositionEnabled(enabled);
         m_config.save();
     });
     m_themeShop->onIconPackTintChange([this](const std::string& packId,
@@ -3116,6 +3180,7 @@ void WiiUMenuApp::refreshThemeShopState(bool rebuildTab) {
     m_themeShop->setThemeMusicOverrideState(m_config.themeMusicOverride);
     m_themeShop->setThemeMusicAddToPlaylistState(m_config.themeMusicAddToPlaylist);
     m_themeShop->setThemeMusicPlayOnApplyState(m_config.themeMusicPlayOnApply);
+    m_themeShop->setMusicResumePositionState(m_config.musicResumePosition);
     m_themeShop->setThemeMatchAccent(m_activeColors.accentH,
                                      m_activeColors.accentS,
                                      m_activeColors.accentL);
@@ -4052,6 +4117,15 @@ void WiiUMenuApp::rebuildThemeFromColors() {
 ThemePreset* WiiUMenuApp::findPresetPtr(const std::string& name) {
     for (auto& p : m_allPresets)
         if (p.id == name || p.name == name) return &p;
+    // Before 2.16 the qlaunch build listed themes dropped in /switch/SwitchU/themes
+    // as built-ins; they now load as installed packages. Keep a saved
+    // "builtin:<x>" (theme, day/night slot) pointing at the same theme.
+    static constexpr char kBuiltInPrefix[] = "builtin:";
+    if (name.rfind(kBuiltInPrefix, 0) == 0) {
+        const std::string packageId = "package:" + name.substr(sizeof(kBuiltInPrefix) - 1);
+        for (auto& p : m_allPresets)
+            if (p.id == packageId && p.source == ThemePresetSource::InstalledPackage) return &p;
+    }
     return nullptr;
 }
 
@@ -4437,12 +4511,28 @@ void WiiUMenuApp::clearSteamGridDbArtwork(std::uint64_t titleId,
         else if (m_gameOptions)
             m_gameOptions->setGameIcon(nullptr);
     }
+    // Wide tiles draw hero/grid-wide + logo; tall 2x3 tiles draw the dedicated
+    // poster (PoloNX #205). Tiles hold raw pointers into m_gameArtwork, so
+    // detach them and drain the GPU before the textures go away.
     if (managerKind == SteamGridDbManager::ArtworkKind::GridWide
         || managerKind == SteamGridDbManager::ArtworkKind::Hero
-        || managerKind == SteamGridDbManager::ArtworkKind::Logo) {
-        m_gameArtwork.erase(titleId);
+        || managerKind == SteamGridDbManager::ArtworkKind::Logo
+        || managerKind == SteamGridDbManager::ArtworkKind::Poster) {
+        if (m_gameArtwork.count(titleId)) {
+            if (m_grid) {
+                for (const auto& icon : m_grid->allIcons()) {
+                    if (icon && icon->titleId() == titleId) {
+                        icon->setWideGameTextures(nullptr, nullptr);
+                        icon->setTallGamePoster(nullptr);
+                    }
+                }
+            }
+            app().gpu().waitIdle();
+            m_gameArtwork.erase(titleId);
+        }
         const auto size = gameGridSize(titleId, AppLayoutMode::Grid);
-        if (switchu::widgets::isLandscapeWideGameTile(size))
+        if (switchu::widgets::isLandscapeWideGameTile(size)
+            || switchu::widgets::isTallPosterGameTile(size))
             ensureGameArtwork(titleId);
     }
     showFocusedSteamGridDbArtwork(true);

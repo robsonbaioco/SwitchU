@@ -64,6 +64,11 @@ bool AppConfig::load() {
     readJsonOpt(j, "audioSourcePreference", audioSourcePreference);
     readJsonOpt(j, "musicVolume", musicVolume);
     readJsonOpt(j, "sfxVolume", sfxVolume);
+    readJsonOpt(j, "musicResumePosition", musicResumePosition);
+    readJsonOpt(j, "musicTrackKey", musicTrackKey);
+    readJsonOpt(j, "musicPositionSeconds", musicPositionSeconds);
+    if (!(musicPositionSeconds >= 0.f) || musicPositionSeconds > 24.f * 3600.f)
+        musicPositionSeconds = 0.f;
     readJsonOpt(j, "gridColumns", gridColumns);
     readJsonOpt(j, "gridRows", gridRows);
     readJsonOpt(j, "dynamicPages", dynamicPages);
@@ -107,6 +112,12 @@ bool AppConfig::load() {
     readJsonOpt(j, "tutorialCompleted", tutorialCompleted);
     readJsonOpt(j, "lastUpdateCheckDay", lastUpdateCheckDay);
     readJsonOpt(j, "clockUse12Hour", clockUse12Hour);
+    readJsonOpt(j, "lockScreenTransition", lockScreenTransition);
+    lockScreenTransition = std::clamp(lockScreenTransition, 0, 4);
+    readJsonOpt(j, "lockScreenZoomDir", lockScreenZoomDir);
+    lockScreenZoomDir = std::clamp(lockScreenZoomDir, 0, 1);
+    readJsonOpt(j, "lockScreenWipeDir", lockScreenWipeDir);
+    lockScreenWipeDir = std::clamp(lockScreenWipeDir, 0, 3);
     readJsonOpt(j, "backgroundBlur", backgroundBlur);
     readJsonOpt(j, "glassSharpness", glassSharpness);
     readJsonOpt(j, "backgroundSpeed", backgroundSpeed);
@@ -123,6 +134,13 @@ bool AppConfig::load() {
     readJsonOpt(j, "steamGridDbShowInFolders", steamGridDbShowInFolders);
     readJsonOpt(j, "steamGridDbShowPosterInDynamicLine", steamGridDbShowPosterInDynamicLine);
     readJsonOpt(j, "steamGridDbShowLogoInDynamicLine", steamGridDbShowLogoInDynamicLine);
+    // PoloNX's v1 Standard/Sharp scale never shipped in this fork, so its
+    // steamGridDbHeroQualityScale / steamGridDbHeroBlurSteps migration is not
+    // needed here: the values are read as the 0–3 ladder and 0–10 blur.
+    readJsonOpt(j, "steamGridDbHeroQuality", steamGridDbHeroQuality);
+    steamGridDbHeroQuality = std::clamp(steamGridDbHeroQuality, 0, 3);
+    readJsonOpt(j, "steamGridDbHeroBlur", steamGridDbHeroBlur);
+    steamGridDbHeroBlur = std::clamp(steamGridDbHeroBlur, 0, 10);
     readJsonOpt(j, "steamGridDbApiKey", steamGridDbApiKey);
     readJsonOpt(j, "rawgApiKey", rawgApiKey);
     readJsonOpt(j, "igdbClientId", igdbClientId);
@@ -336,6 +354,9 @@ bool AppConfig::save() const {
     j["audioSourcePreference"] = audioSourcePreference;
     j["musicVolume"] = musicVolume;
     j["sfxVolume"] = sfxVolume;
+    j["musicResumePosition"] = musicResumePosition;
+    j["musicTrackKey"] = musicTrackKey;
+    j["musicPositionSeconds"] = musicPositionSeconds;
     j["gridColumns"] = std::clamp(gridColumns, 3, 8);
     j["gridRows"] = std::clamp(gridRows, 2, 5);
     j["dynamicPages"] = dynamicPages;
@@ -367,6 +388,9 @@ bool AppConfig::save() const {
     j["tutorialCompleted"] = tutorialCompleted;
     j["lastUpdateCheckDay"] = lastUpdateCheckDay;
     j["clockUse12Hour"] = clockUse12Hour;
+    j["lockScreenTransition"] = std::clamp(lockScreenTransition, 0, 4);
+    j["lockScreenZoomDir"] = std::clamp(lockScreenZoomDir, 0, 1);
+    j["lockScreenWipeDir"] = std::clamp(lockScreenWipeDir, 0, 3);
     j["backgroundBlur"] = backgroundBlur;
     j["glassSharpness"] = glassSharpness;
     j["backgroundSpeed"] = backgroundSpeed;
@@ -383,6 +407,8 @@ bool AppConfig::save() const {
     j["steamGridDbShowInFolders"] = steamGridDbShowInFolders;
     j["steamGridDbShowPosterInDynamicLine"] = steamGridDbShowPosterInDynamicLine;
     j["steamGridDbShowLogoInDynamicLine"] = steamGridDbShowLogoInDynamicLine;
+    j["steamGridDbHeroQuality"] = std::clamp(steamGridDbHeroQuality, 0, 3);
+    j["steamGridDbHeroBlur"] = std::clamp(steamGridDbHeroBlur, 0, 10);
     j["steamGridDbApiKey"] = steamGridDbApiKey;
     j["rawgApiKey"] = rawgApiKey;
     j["igdbClientId"] = igdbClientId;

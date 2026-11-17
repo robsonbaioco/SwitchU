@@ -604,6 +604,7 @@ void GlossyIcon::copyWidgetPresentationFrom(GlossyIcon& source) {
     m_widgetGameIcon = source.m_widgetGameIcon;
     m_wideGameHero = source.m_wideGameHero;
     m_wideGameLogo = source.m_wideGameLogo;
+    m_tallGamePoster = source.m_tallGamePoster;
     m_widgetExternalTexture = source.m_widgetAnimation.hasFrames()
         ? source.m_widgetAnimation.currentFrame()
         : source.m_widgetTexture.get();
@@ -1405,13 +1406,19 @@ void GlossyIcon::onContentRender(nxui::Renderer& ren) {
         switchu::widgets::isLandscapeWideGameTile(m_widgetColumns, m_widgetRows);
     // Tall poster face: 2x3 (and legacy 1x2). 2x2 / 1x1 always use the icon path.
     const bool tallPosterTile =
-        (m_widgetColumns == 2 && m_widgetRows == 3)
-        || (m_widgetColumns == 1 && m_widgetRows == 2);
+        switchu::widgets::isTallPosterGameTile(m_widgetColumns, m_widgetRows);
 
     if (m_entryKind == GridEntryKind::Application && tallPosterTile) {
         const nxui::Rect card = r.shrunk(std::max(8.f, 10.f * s));
         const float contentRadius = std::max(8.f, rad - 5.f);
-        if (m_wideGameHero && m_wideGameHero->valid()) {
+        if (m_tallGamePoster && m_tallGamePoster->valid()) {
+            // Dedicated high-res game-artwork poster (PoloNX #205), same
+            // treatment as the 4x2 hero; the streamer icon/poster below is
+            // the fallback while it loads.
+            ren.drawTextureSubRounded(
+                m_tallGamePoster, centeredCoverSource(*m_tallGamePoster, card), card,
+                contentRadius, nxui::Color::white().withAlpha(m_opacity));
+        } else if (m_wideGameHero && m_wideGameHero->valid()) {
             ren.drawTextureSubRounded(
                 m_wideGameHero, centeredCoverSource(*m_wideGameHero, card), card,
                 contentRadius, nxui::Color::white().withAlpha(m_opacity));

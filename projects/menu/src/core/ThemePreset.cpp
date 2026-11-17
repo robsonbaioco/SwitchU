@@ -704,6 +704,12 @@ static std::vector<ThemePreset> makeBuiltInPresets() {
     // config falls back to; but a list of exactly two meant that dropping a
     // theme into this directory did nothing at all, with no error to explain
     // why -- which is precisely what happened with a test theme.
+    //
+    // Only for romfs: in the qlaunch build this directory is kManualThemesDir,
+    // whose extra folders are manual drops and load as installed packages
+    // (removable, bundled sounds) from loadInstalledPackages(). Listing them
+    // here too would show every manual theme twice.
+#ifdef SWITCHU_HOMEBREW
     std::error_code ec;
     for (const auto& entry : std::filesystem::directory_iterator(kBuiltInThemesDir, ec)) {
         if (ec)
@@ -731,6 +737,7 @@ static std::vector<ThemePreset> makeBuiltInPresets() {
             v.push_back(std::move(preset));
         }
     }
+#endif
 
     return v;
 }
@@ -741,7 +748,26 @@ const std::vector<ThemePreset>& ThemePreset::builtInPresets() {
 }
 
 static constexpr const char* kUserPresetsPath = "sdmc:/config/SwitchU/theme_presets.ini";
-static constexpr const char* kInstalledThemesDir = "sdmc:/config/SwitchU/themes";
+// The Theme Shop root. Cleanup (leftover sweep, orphan scan) only ever walks
+// this one; manual drops under kManualThemesDir are listed but never swept.
+static constexpr const char* kInstalledThemesDir = kShopThemesDir;
+
+static bool isReservedBuiltInThemeFolder(const std::string& dirName) {
+    return dirName == "Default Dark" || dirName == "Default Light";
+}
+
+static void ensureThemeInstallRoots() {
+    // Once per run: the menu rebuilds the preset list on every HOME.
+    static bool s_done = false;
+    if (s_done)
+        return;
+    s_done = true;
+    std::error_code ec;
+    std::filesystem::create_directories(kShopThemesDir, ec);
+    ec.clear();
+    // Keep the manual drop folder visible even before the first theme lands.
+    std::filesystem::create_directories(kManualThemesDir, ec);
+}
 
 // The three names ThemePackageInstaller works under: the staging folder, the
 // archive it downloads into it, and the copy of the previous version it keeps
@@ -821,55 +847,84 @@ std::vector<ThemePreset> ThemePreset::loadUserPresets() {
 }
 
 std::vector<ThemePreset> ThemePreset::loadInstalledPackages() {
+    ensureThemeInstallRoots();
+
     std::vector<ThemePreset> result;
+    std::vector<std::string> seenIds;
     int scanValid = 0;
     int scanOrphans = 0;
+    int scanManual = 0;
     std::string scanLine;
 
-    std::error_code ec;
-    for (const auto& entry : std::filesystem::directory_iterator(kInstalledThemesDir, ec)) {
-        if (ec)
-            break;
-        if (!entry.is_directory(ec)) {
-            ec.clear();
-            continue;
-        }
+    // Two roots: the Theme Shop's (config) first, so it wins when a manual
+    // drop under /switch carries the same id. Default Dark/Light are skipped
+    // in both so they stay built-in only.
+    auto scanRoot = [&](const char* rootDir, bool manual) {
+        std::error_code ec;
+        for (const auto& entry : std::filesystem::directory_iterator(rootDir, ec)) {
+            if (ec)
+                break;
+            if (!entry.is_directory(ec)) {
+                ec.clear();
+                continue;
+            }
 
-        std::string dirName = entry.path().filename().string();
-        // Work the installer leaves behind while it runs, and would clean up if
-        // it finished. One that survives a crash or a power cut still holds a
-        // theme.json, so it was listed as a second copy of the same theme --
-        // with the same package id, which made deleting either of them remove
-        // both from the list and only one from the card.
-        if (isThemeInstallLeftover(dirName))
-            continue;
-        std::string installDir = entry.path().string();
+            std::string dirName = entry.path().filename().string();
+            if (dirName.empty() || dirName == "." || dirName == "..")
+                continue;
+            if (isReservedBuiltInThemeFolder(dirName))
+                continue;
+            // Work the installer leaves behind while it runs, and would clean up if
+            // it finished. One that survives a crash or a power cut still holds a
+            // theme.json, so it was listed as a second copy of the same theme --
+            // with the same package id, which made deleting either of them remove
+            // both from the list and only one from the card.
+            if (isThemeInstallLeftover(dirName))
+                continue;
+            std::string installDir = entry.path().string();
 
-        std::string manifestPath = installDir + "/theme.json";
-        ThemePreset preset;
-        if (!loadThemePresetFromManifest(manifestPath,
-                                         ThemePresetSource::InstalledPackage,
-                                         dirName,
-                                         nxui::ThemeMode::Dark,
-                                         installDir,
-                                         preset)) {
-            std::error_code manifestEc;
-            const bool manifestExists = std::filesystem::exists(manifestPath, manifestEc);
-            scanLine += " !" + dirName + (manifestExists ? "(bad-json)" : "(no-json)");
-            ++scanOrphans;
-            continue;
+            std::string manifestPath = installDir + "/theme.json";
+            ThemePreset preset;
+            if (!loadThemePresetFromManifest(manifestPath,
+                                             ThemePresetSource::InstalledPackage,
+                                             dirName,
+                                             nxui::ThemeMode::Dark,
+                                             installDir,
+                                             preset)) {
+                std::error_code manifestEc;
+                const bool manifestExists = std::filesystem::exists(manifestPath, manifestEc);
+                // Manual folders without a theme are reported but not counted as
+                // orphans: the cleanup action never offers them (config only).
+                scanLine += std::string(manual ? " ~" : " !") + dirName
+                          + (manifestExists ? "(bad-json)" : "(no-json)");
+                if (!manual)
+                    ++scanOrphans;
+                continue;
+            }
+            if (std::find(seenIds.begin(), seenIds.end(), preset.id) != seenIds.end()) {
+                scanLine += std::string(manual ? " ~" : " !") + dirName + "(dup-id)";
+                continue;
+            }
+            seenIds.push_back(preset.id);
+            if (manual)
+                ++scanManual;
+            else
+                ++scanValid;
+            result.push_back(std::move(preset));
         }
-        ++scanValid;
-        result.push_back(std::move(preset));
-    }
+    };
+    scanRoot(kShopThemesDir, false);
+    scanRoot(kManualThemesDir, true);
 
     // Issue #3 item 1: a theme "deleted" before fork.11 kept its whole folder,
     // theme.json included, so it must come back here as a VALID entry — this
     // line is the proof. One line per change, not per scan: the menu rebuilds
-    // on every HOME and the usual scan result never moves.
+    // on every HOME and the usual scan result never moves. valid/orphans count
+    // the Theme Shop root; manual counts themes dropped under /switch.
     {
         char summary[96];
-        std::snprintf(summary, sizeof(summary), " valid=%d orphans=%d", scanValid, scanOrphans);
+        std::snprintf(summary, sizeof(summary), " valid=%d orphans=%d manual=%d",
+                      scanValid, scanOrphans, scanManual);
         std::string line = std::string("[themes] installed scan:") + summary + scanLine;
         static std::string s_lastScanLine;
         if (line != s_lastScanLine) {
@@ -885,6 +940,26 @@ std::vector<ThemePreset> ThemePreset::loadInstalledPackages() {
         return lhs.name < rhs.name;
     });
     return result;
+}
+
+std::string ThemePreset::resolveInstalledThemePath(const std::string& packageOrSlug) {
+    std::string slug = packageOrSlug;
+    constexpr const char* kPrefix = "package:";
+    if (slug.rfind(kPrefix, 0) == 0)
+        slug = slug.substr(std::strlen(kPrefix));
+    if (slug.empty())
+        return {};
+
+    const std::string shopPath = std::string(kShopThemesDir) + "/" + slug;
+    std::error_code ec;
+    if (std::filesystem::is_directory(shopPath, ec))
+        return shopPath;
+    ec.clear();
+
+    const std::string manualPath = std::string(kManualThemesDir) + "/" + slug;
+    if (std::filesystem::is_directory(manualPath, ec))
+        return manualPath;
+    return {};
 }
 
 bool ThemePreset::saveUserPresets(const std::vector<ThemePreset>& presets) {

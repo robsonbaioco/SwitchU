@@ -181,5 +181,60 @@ SettingsScreen::Tab settings::tabs::SleepTab::build(SettingsScreen& screen) {
         t.items.push_back(std::move(it));
     }
 
+    {
+        SettingItem it; it.label = i18n.tr("settings.sleep.lock_screen", "Lock Screen");
+        it.type = ItemType::Section;
+        t.items.push_back(std::move(it));
+    }
+
+    {
+        // PoloNX keeps Zoom's and Wipe's direction on a companion row that
+        // hides itself. This screen has no hidden rows, so the directions are
+        // folded into the one selector: 0 None, 1 Curtain, 2 Dissolve,
+        // 3-4 Zoom Out/In, 5-8 Wipe Up/Right/Down/Left.
+        SettingItem it;
+        it.label = i18n.tr("settings.sleep.lock_transition", "Lock Screen Transition");
+        it.type = ItemType::Selector;
+        it.description = i18n.tr(
+            "settings.sleep.lock_transition_desc",
+            "How the lock screen appears and leaves while the console is awake. "
+            "Going to sleep always locks at once.");
+        it.options = {
+            i18n.tr("settings.sleep.lock_transition_none", "None"),
+            i18n.tr("settings.sleep.lock_transition_curtain", "Curtain"),
+            i18n.tr("settings.sleep.lock_transition_dissolve", "Dissolve"),
+            i18n.tr("settings.sleep.lock_transition_zoom_out", "Zoom Out"),
+            i18n.tr("settings.sleep.lock_transition_zoom_in", "Zoom In"),
+            i18n.tr("settings.sleep.lock_transition_wipe_up", "Wipe Up"),
+            i18n.tr("settings.sleep.lock_transition_wipe_right", "Wipe Right"),
+            i18n.tr("settings.sleep.lock_transition_wipe_down", "Wipe Down"),
+            i18n.tr("settings.sleep.lock_transition_wipe_left", "Wipe Left"),
+        };
+        const int mode = std::clamp(screen.m_lockScreenTransition, 0, 4);
+        if (mode == 3)
+            it.intVal = 3 + std::clamp(screen.m_lockScreenZoomDir, 0, 1);
+        else if (mode == 4)
+            it.intVal = 5 + std::clamp(screen.m_lockScreenWipeDir, 0, 3);
+        else
+            it.intVal = mode;
+        it.onChange = [&screen](SettingItem& self) {
+            const int v = std::clamp(self.intVal, 0, 8);
+            if (v >= 5) {
+                screen.m_lockScreenTransition = 4;
+                screen.m_lockScreenWipeDir = v - 5;
+            } else if (v >= 3) {
+                screen.m_lockScreenTransition = 3;
+                screen.m_lockScreenZoomDir = v - 3;
+            } else {
+                screen.m_lockScreenTransition = v;
+            }
+            if (screen.m_lockScreenTransitionCb)
+                screen.m_lockScreenTransitionCb(screen.m_lockScreenTransition,
+                                                screen.m_lockScreenZoomDir,
+                                                screen.m_lockScreenWipeDir);
+        };
+        t.items.push_back(std::move(it));
+    }
+
     return t;
 }

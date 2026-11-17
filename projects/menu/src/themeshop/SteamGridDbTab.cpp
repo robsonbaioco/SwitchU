@@ -55,6 +55,59 @@ ThemeShopScreen::Tab themeshop::tabs::SteamGridDbTab::build(ThemeShopScreen& scr
         t.items.push_back(std::move(it));
     }
 
+    // PoloNX 7485239: GPU canvas for the fullscreen hero, next to the opacity.
+    {
+        SettingItem it;
+        it.type = ItemType::Selector;
+        it.label = i18n.tr("settings.steamgriddb.hero_quality", "Hero backdrop quality");
+        it.description = i18n.tr("settings.steamgriddb.hero_quality_desc",
+            "Fullscreen hero only. Off skips new hero downloads.");
+        it.options = {
+            i18n.tr("settings.steamgriddb.hero_quality_off", "Off (don't store files)"),
+            i18n.tr("settings.steamgriddb.hero_quality_low", "Low (320, 4×)"),
+            i18n.tr("settings.steamgriddb.hero_quality_medium", "Medium (640, 2×)"),
+            i18n.tr("settings.steamgriddb.hero_quality_high", "High (full 1280)"),
+        };
+        it.intVal = std::clamp(screen.m_steamGridDbHeroQuality, 0, 3);
+        it.onChange = [&screen](SettingItem& self) {
+            const int quality = std::clamp(self.intVal, 0, 3);
+            if (quality == screen.m_steamGridDbHeroQuality)
+                return;
+            screen.m_steamGridDbHeroQuality = quality;
+            if (screen.m_steamGridDbHeroQualityCb)
+                screen.m_steamGridDbHeroQualityCb(quality);
+        };
+        t.items.push_back(std::move(it));
+    }
+
+    // Decode-time frost on the hero, 0–10 shown as 0–100.
+    {
+        SettingItem it;
+        it.type = ItemType::Slider;
+        it.label = i18n.tr("settings.steamgriddb.hero_blur", "Hero backdrop blur");
+        it.description = i18n.tr("settings.steamgriddb.hero_blur_desc",
+            "0 is off. 100 matches the music-player frost.");
+        it.sliderSteps = 10;
+        const int blur = std::clamp(screen.m_steamGridDbHeroBlur, 0, 10);
+        it.floatVal = blur / 10.f;
+        it.anim01 = it.floatVal;
+        it.infoText = std::to_string(blur * 10);
+        it.onChange = [&screen](SettingItem& self) {
+            const int amount = std::clamp(
+                static_cast<int>(std::lround(std::clamp(self.floatVal, 0.f, 1.f) * 10.f)), 0, 10);
+            self.floatVal = amount / 10.f;
+            self.anim01 = self.floatVal;
+            self.infoText = std::to_string(amount * 10);
+            // Each change re-decodes the hero, so only real steps go through.
+            if (amount == screen.m_steamGridDbHeroBlur)
+                return;
+            screen.m_steamGridDbHeroBlur = amount;
+            if (screen.m_steamGridDbHeroBlurCb)
+                screen.m_steamGridDbHeroBlurCb(amount);
+        };
+        t.items.push_back(std::move(it));
+    }
+
     {
         SettingItem it;
         it.type = ItemType::Action;
@@ -123,16 +176,18 @@ ThemeShopScreen::Tab themeshop::tabs::SteamGridDbTab::build(ThemeShopScreen& scr
 
     t.onUpdate = [keyDescription](ThemeShopScreen::Tab& current, TabbedOverlayScreen& base) {
         auto& owner = static_cast<ThemeShopScreen&>(base);
-        if (current.items.size() < 5) return;
+        // Section, master, opacity, hero quality, hero blur, API key, scan,
+        // details section, three metadata keys.
+        if (current.items.size() < 7) return;
 
-        auto& key = current.items[3];
+        auto& key = current.items[5];
         key.description = owner.m_steamGridDbHasApiKey
             ? nxui::I18n::instance().tr("settings.steamgriddb.api_key_set", "Configured (hidden)")
             : nxui::I18n::instance().tr("settings.steamgriddb.api_key_optional",
                   "Optional. Heroes and icons work without it; logos need one.");
-        if (current.items.size() < 9) return;
+        if (current.items.size() < 11) return;
         for (int index = 0; index < 3; ++index)
-            current.items[static_cast<std::size_t>(6 + index)].description =
+            current.items[static_cast<std::size_t>(8 + index)].description =
                 keyDescription(owner, index);
     };
 

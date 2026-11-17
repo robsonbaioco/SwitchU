@@ -111,6 +111,8 @@ public:
         refreshState();
     }
     void onSteamGridDbOpacityChange(FloatCb cb) { m_steamGridDbOpacityCb = std::move(cb); }
+    void onSteamGridDbHeroQualityChange(IntCb cb) { m_steamGridDbHeroQualityCb = std::move(cb); }
+    void onSteamGridDbHeroBlurChange(IntCb cb) { m_steamGridDbHeroBlurCb = std::move(cb); }
     // The dossier's RAWG and IGDB keys. They moved here with the SteamGridDB
     // tab, which is where Settings used to keep them.
     void onMetadataKeyRequest(IntCb cb) { m_metadataKeyCb = std::move(cb); }
@@ -152,6 +154,7 @@ public:
     void onThemeMusicOverrideChange(BoolCb cb) { m_themeMusicOverrideCb = std::move(cb); }
     void onThemeMusicAddToPlaylistChange(BoolCb cb) { m_themeMusicAddToPlaylistCb = std::move(cb); }
     void onThemeMusicPlayOnApplyChange(BoolCb cb) { m_themeMusicPlayOnApplyCb = std::move(cb); }
+    void onMusicResumePositionChange(BoolCb cb) { m_musicResumePositionCb = std::move(cb); }
     struct IconPackTintState {
         bool enabled = false;
         bool flatten = false;
@@ -206,6 +209,11 @@ public:
     void setSteamGridDbOpacity(float v) {
         m_steamGridDbOpacity = std::clamp(v, 0.f, 1.f);
     }
+    // Hero quality 0–3 (Off/Low/Medium/High) and hero blur 0–10.
+    void setSteamGridDbHeroPresentation(int quality, int blur) {
+        m_steamGridDbHeroQuality = std::clamp(quality, 0, 3);
+        m_steamGridDbHeroBlur = std::clamp(blur, 0, 10);
+    }
     void setSortLargeTilesState(bool enabled) { m_sortLargeTiles = enabled; }
     void setBatterySaverState(bool enabled) { m_batterySaver = enabled; }
     void setFrameTapLiteEngaged(bool engaged) { m_frameTapLiteEngaged = engaged; }
@@ -213,6 +221,7 @@ public:
     void setThemeMusicOverrideState(bool enabled) { m_themeMusicOverride = enabled; }
     void setThemeMusicAddToPlaylistState(bool enabled) { m_themeMusicAddToPlaylist = enabled; }
     void setThemeMusicPlayOnApplyState(bool enabled) { m_themeMusicPlayOnApply = enabled; }
+    void setMusicResumePositionState(bool enabled) { m_musicResumePosition = enabled; }
     void setIconPackTintState(const std::unordered_map<std::string, IconPackTintState>& tints) {
         m_iconPackTints = tints;
     }
@@ -557,6 +566,8 @@ private:
     FloatCb m_backgroundSpeedCb;
     FloatCb m_backgroundBlurCb;
     FloatCb m_steamGridDbOpacityCb;
+    IntCb m_steamGridDbHeroQualityCb;
+    IntCb m_steamGridDbHeroBlurCb;
     BoolCb m_steamGridDbEnabledCb;
     VoidCb m_steamGridDbApiKeyCb;
     VoidCb m_steamGridDbScrapeCb;
@@ -574,6 +585,7 @@ private:
     BoolCb m_themeMusicOverrideCb;
     BoolCb m_themeMusicAddToPlaylistCb;
     BoolCb m_themeMusicPlayOnApplyCb;
+    BoolCb m_musicResumePositionCb;
     IconPackTintCb m_iconPackTintCb;
     VoidCb m_autoThemeOpenCb;
     VoidCb m_nextTrackCb;
@@ -614,6 +626,8 @@ private:
     float m_backgroundSpeed = 0.5f;
     float m_backgroundBlur = 0.f;
     float m_steamGridDbOpacity = 0.50f;
+    int m_steamGridDbHeroQuality = 2;
+    int m_steamGridDbHeroBlur = 0;
     bool m_steamGridDbEnabled = true;
     bool m_steamGridDbHasApiKey = false;
     int m_gridColumns = 5;
@@ -627,6 +641,7 @@ private:
     bool m_themeMusicOverride = true;
     bool m_themeMusicAddToPlaylist = true;
     bool m_themeMusicPlayOnApply = true;
+    bool m_musicResumePosition = true;
     bool m_themeMatchAccentValid = false;
     float m_themeMatchAccentH = 0.f;
     float m_themeMatchAccentS = 0.55f;

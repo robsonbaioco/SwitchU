@@ -351,9 +351,11 @@ void removeCachedArtwork(std::uint64_t titleId) {
     ec.clear();
     std::filesystem::remove(gridWide, ec);
     ec.clear();
+    std::filesystem::remove(hero + ".320x180.rgba-cache", ec);
+    ec.clear();
     std::filesystem::remove(hero + ".640x360.rgba-cache", ec);
     ec.clear();
-    std::filesystem::remove(hero + ".1280x720.rgba-cache", ec); // legacy prep size
+    std::filesystem::remove(hero + ".1280x720.rgba-cache", ec);
     ec.clear();
     std::filesystem::remove(logo + ".384x192.rgba-cache", ec);
     ec.clear();
@@ -884,8 +886,9 @@ bool SteamGridDbManager::clearArtwork(std::uint64_t titleId, ArtworkKind kind) {
 
     if (clearHero) {
         removeFile(heroPath(titleId));
+        removeFile(heroPath(titleId) + ".320x180.rgba-cache");
         removeFile(heroPath(titleId) + ".640x360.rgba-cache");
-        removeFile(heroPath(titleId) + ".1280x720.rgba-cache"); // legacy
+        removeFile(heroPath(titleId) + ".1280x720.rgba-cache");
     }
     if (clearLogo) {
         removeFile(logoPath(titleId));
@@ -954,7 +957,8 @@ bool SteamGridDbManager::clearArtwork(std::uint64_t titleId, ArtworkKind kind) {
 }
 
 bool SteamGridDbManager::start(const std::string& apiKey,
-                               const std::vector<AppEntry>& apps) {
+                               const std::vector<AppEntry>& apps,
+                               bool fetchHeroes) {
     if (apps.empty() || m_running.exchange(true)) return false;
     if (m_task.valid()) m_task.get();
     m_cancelRequested.store(false);
@@ -969,7 +973,9 @@ bool SteamGridDbManager::start(const std::string& apiKey,
         m_status.revision = nextRevision;
     }
     m_task = std::async(std::launch::async,
-                        [this, apiKey, apps]() mutable { scrape(std::move(apiKey), std::move(apps)); });
+                        [this, apiKey, apps, fetchHeroes]() mutable {
+                            scrape(std::move(apiKey), std::move(apps), fetchHeroes);
+                        });
     return true;
 }
 
@@ -1102,7 +1108,8 @@ void SteamGridDbManager::updateStatus(const std::function<void(Status&)>& change
     ++m_status.revision;
 }
 
-void SteamGridDbManager::scrape(std::string apiKey, std::vector<AppEntry> apps) {
+void SteamGridDbManager::scrape(std::string apiKey, std::vector<AppEntry> apps,
+                                bool fetchHeroes) {
     const Backend backend = makeBackend(apiKey);
 
     std::error_code ec;
@@ -1290,8 +1297,13 @@ void SteamGridDbManager::scrape(std::string apiKey, std::vector<AppEntry> apps) 
                     return true;
                 return fetchArtwork(kind, portrait, destination, phaseStart, phaseSpan);
             };
-            const bool heroOk = keepOrFetch(ArtworkKind::Hero, false,
-                                            heroPath(app.titleId), 0.08f, 0.20f);
+            // Hero quality Off: no new hero downloads, but a hero already on
+            // the card still counts for this title.
+            std::error_code heroEc;
+            const bool heroOk = fetchHeroes
+                ? keepOrFetch(ArtworkKind::Hero, false,
+                              heroPath(app.titleId), 0.08f, 0.20f)
+                : std::filesystem::exists(heroPath(app.titleId), heroEc);
             if (m_cancelRequested.load()) break;
             const bool logoOk = keepOrFetch(ArtworkKind::Logo, false,
                                             logoPath(app.titleId), 0.30f, 0.20f);

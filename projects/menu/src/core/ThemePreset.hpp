@@ -10,6 +10,12 @@ enum class ThemePresetSource {
     InstalledPackage,
 };
 
+// Theme Shop + managed installs. The only root cleanup ever touches.
+inline constexpr const char* kShopThemesDir = "sdmc:/config/SwitchU/themes";
+// Manual drop folder (zip/folder copied by hand), sibling of /switch/SwitchU/icons.
+// In the qlaunch build Default Dark/Light ship here too and stay built-ins.
+inline constexpr const char* kManualThemesDir = "sdmc:/switch/SwitchU/themes";
+
 struct ThemeColorSet {
     float cursorH = -1.f, cursorS = -1.f, cursorL = -1.f;
     float accentH = 0.f, accentS = 0.f, accentL = 0.f;
@@ -111,13 +117,18 @@ struct ThemePreset {
 
     static std::vector<ThemePreset> loadInstalledPackages();
 
+    // Resolve package:<slug> to an on-disk folder (config first, then switch).
+    static std::string resolveInstalledThemePath(const std::string& packageOrSlug);
+
     static bool saveUserPresets(const std::vector<ThemePreset>& presets);
 
     // Removes the folders a theme install leaves behind when it is interrupted.
-    // Returns how many went. Never touches an installed theme.
+    // Returns how many went. Never touches an installed theme, and only looks
+    // in kShopThemesDir: the installer never works under the manual root.
     static int sweepInstallLeftovers();
 
-    // Folders under the installed-themes dir that hold NO loadable theme.json
+    // Folders under kShopThemesDir (never the manual root, where a half-copied
+    // theme is the player's own work) that hold NO loadable theme.json
     // (missing or unparsable) and are not installer leftovers. These are what
     // the confirmed "Clean up theme files" action offers to delete -- never a
     // folder a theme still lives in (issue #3). Each entry is a full path with

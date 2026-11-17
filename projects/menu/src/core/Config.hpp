@@ -21,6 +21,13 @@ struct AppConfig {
     // nearly everyone who was asked.
     float musicVolume  = 0.15f;
     float sfxVolume    = 0.25f;
+    // Mid-track music resume across a game launch (PoloNX #130 / 2e5a6d6).
+    // The menu process exits when a title starts and is relaunched on HOME;
+    // the track (full path) and position are written with the launch-time
+    // config save, never per frame. Theme Shop -> Sounds turns it off.
+    bool  musicResumePosition = true;
+    std::string musicTrackKey;
+    float musicPositionSeconds = 0.f;
     int   gridColumns  = 5;
     int   gridRows     = 3;
     bool  dynamicPages = true;
@@ -35,6 +42,14 @@ struct AppConfig {
     // day rather than on every return from a game.
     int   lastUpdateCheckDay = 0;
     bool  clockUse12Hour = false;
+    // Lock screen enter/exit motion (PoloNX 4b0c337, fork numbering):
+    // 0 = None, 1 = Curtain, 2 = Dissolve, 3 = Zoom, 4 = Wipe. Dissolve is
+    // the fade the fork's lock screen always had.
+    int   lockScreenTransition = 2;
+    // Zoom companion: 0 = Out (grows away), 1 = In (shrinks in).
+    int   lockScreenZoomDir = 0;
+    // Wipe companion, the way the lock leaves: 0 = Up, 1 = Right, 2 = Down, 3 = Left.
+    int   lockScreenWipeDir = 1;
     bool  accessibilityEnabled = true;
     bool  accessibilitySpeakHints = true;
     bool  accessibilitySpeakContextEveryFocus = false;
@@ -52,6 +67,13 @@ struct AppConfig {
     bool  steamGridDbShowPosterInDynamicLine = true;
     // Logo overlay above / beside the single-row carousel.
     bool  steamGridDbShowLogoInDynamicLine = true;
+    // Fullscreen hero GPU canvas. Tiles/posters are unchanged.
+    // 0 = Off (no backdrop; skip new hero downloads), 1 = Low 320×180,
+    // 2 = Medium 640×360, 3 = High 1280×720. Default Medium.
+    int   steamGridDbHeroQuality = 2;
+    // Decode-time blur on the fullscreen hero, 0–10. 0 = off; 10 matches
+    // the music-player / leave-splash frost. Default off.
+    int   steamGridDbHeroBlur = 0;
     std::string steamGridDbApiKey;
     // Game details in the dossier. Each player brings their own keys: RAWG
     // for the metascore, a Twitch application for IGDB time-to-beat.

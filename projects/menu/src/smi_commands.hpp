@@ -85,6 +85,13 @@ inline Result setPosixTime(uint64_t timestamp, bool isInternetSync) {
     return pushOutStorage(buf, sizeof(buf));
 }
 
+// Start or stop the Bluetooth audio device search from the daemon. Only the
+// push is confirmed; the search state itself is read back through btm:sys.
+inline Result setAudioDeviceDiscovery(bool start) {
+    return sendSimple(start ? smi::SystemMessage::StartAudioDiscovery
+                            : smi::SystemMessage::StopAudioDiscovery);
+}
+
 inline Result prepareApplication(uint64_t titleId, AccountUid uid,
                                  smi::LaunchTransitionTrace& trace) {
     uint8_t buf[sizeof(smi::CommandHeader) + sizeof(smi::PrepareAppArgs)]{};

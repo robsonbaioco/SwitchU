@@ -232,12 +232,8 @@ std::string installedThemePathFromPackagePreset(const std::string& preset) {
     if (!isPackageSoundPreset(preset))
         return {};
 
-    const std::string slug = preset.substr(std::strlen("package:"));
-    if (slug.empty())
-        return {};
-
-    const std::string installPath = std::string("sdmc:/config/SwitchU/themes/") + slug;
-    return directoryExists(installPath) ? installPath : std::string();
+    // Theme Shop root first, then the manual drop root under /switch.
+    return ThemePreset::resolveInstalledThemePath(preset);
 }
 
 // Keep enough side/top clearance so large grids do not overlap HUD/side buttons.
@@ -874,8 +870,8 @@ bool WiiUMenuApp::onCreate() {
         enterFrameTapLightPath("viewer-prefill");
     }
     m_iconStreamer.setThreadPool(&m_threadPool);
-    // Per-title poster (2x3 grid tiles) even when the global single-row flag
-    // is off — including Battery Saver / Frame Tap lite (PoloNX).
+    // Per-title poster query (single-row / legacy). Grid 2x3 uses dedicated
+    // game-artwork posters instead of the streamer fit budget (PoloNX #205).
     m_iconStreamer.setPreferPosterQuery([this](uint64_t titleId) {
         return preferPosterIconData(titleId);
     });
@@ -3439,6 +3435,7 @@ GridModel WiiUMenuApp::buildRootFolderModel() {
         DebugLog::log("[grid] sort=%d projected=%zu apps=%zu", mode,
                       projected.size(), apps.size());
     }
+    m_lastProjectedSlots = projected;
     const std::vector<std::uint64_t>& slots =
         m_config.sortMode == 0 ? m_layoutSlots : projected;
 
@@ -4271,15 +4268,8 @@ void WiiUMenuApp::completeDisplayModelApply(
         m_grid->rebindLayoutMorphAnchor();
     if (artKindChanged)
         m_iconStreamer.startBurst(0.85f);
-    // 2x3 tiles always want poster when available — drop prefetch icon bytes
-    // so the loader can supply poster even with single-row posters disabled.
-    if (m_appLayoutMode == AppLayoutMode::Grid) {
-        for (int i = 0; i < m_model.count(); ++i) {
-            const auto& entry = m_model.at(i);
-            if (entry.isApplication() && preferPosterIconData(entry.titleId))
-                m_iconStreamer.invalidateTitleArt(entry.titleId);
-        }
-    }
+    // Grid 2x3 tiles no longer take poster bytes from the streamer: they get a
+    // dedicated game-artwork poster (PoloNX #205), so no invalidation here.
     pumpIconStreamer();
     m_widgetAssetPage = -1;
     if (animate) m_grid->startAppearAnimation(appear);
@@ -4761,39 +4751,61 @@ void WiiUMenuApp::startNextGameArtworkDecode() {
     m_gameArtworkDecodeQueue.erase(m_gameArtworkDecodeQueue.begin());
     auto state = std::make_shared<GameArtworkDecodeState>();
     state->titleId = titleId;
+    // Grid 2x3 tiles take a dedicated poster (PoloNX #205). Everything else
+    // keeps the hero/logo faces: the fork also shows them on 3x1-style wide
+    // rows and expanded Metro tiles, not just PoloNX's 2x1 / 4x2.
+    // Outside Grid (Metro) a 2x3 title may still need the hero, and the entry
+    // can outlive a switch back to Grid, so both are decoded there.
+    state->wantTall = switchu::widgets::isTallPosterGameTile(
+        gameGridSize(titleId, AppLayoutMode::Grid));
+    state->wantWide = !state->wantTall || m_appLayoutMode != AppLayoutMode::Grid;
     m_gameArtworkDecode = state;
     const std::string heroPath = SteamGridDbManager::heroPath(titleId);
     const std::string logoPath = SteamGridDbManager::logoPath(titleId);
     const std::string gridWidePath = SteamGridDbManager::gridWidePath(titleId);
+    // The fork's Poster is its Cover (posterPath() == coverPath()).
+    const std::string posterPath = SteamGridDbManager::posterPath(titleId);
+    const bool wantWide = state->wantWide;
+    const bool wantTall = state->wantTall;
     m_gameArtworkFuture = m_threadPool.submit(
-        [state, heroPath, logoPath, gridWidePath]() {
+        [state, heroPath, logoPath, gridWidePath, posterPath, wantWide, wantTall]() {
         const auto started = std::chrono::steady_clock::now();
         std::error_code error;
-        bool usedGridWide = false;
-        // Prefer landscape SGDB grid for 2x1 / 4x2 tiles when present.
-        if (std::filesystem::is_regular_file(gridWidePath, error) &&
-            !state->cancelled.load()) {
-            state->hero = steamgriddb::artwork::decode(gridWidePath, 460, 215, true);
-            usedGridWide = !state->hero.rgba.empty();
+        if (wantWide) {
+            bool usedGridWide = false;
+            // Prefer landscape SGDB grid for 2x1 / 4x2 tiles when present.
+            if (std::filesystem::is_regular_file(gridWidePath, error) &&
+                !state->cancelled.load()) {
+                state->hero = steamgriddb::artwork::decode(gridWidePath, 460, 215, true);
+                usedGridWide = !state->hero.rgba.empty();
+            }
+            error.clear();
+            if (!usedGridWide &&
+                std::filesystem::is_regular_file(heroPath, error) &&
+                !state->cancelled.load()) {
+                state->hero = steamgriddb::artwork::decode(heroPath, 640, 360, true);
+            }
+            error.clear();
+            // Grid-wide art is a complete card face — skip logo overlay.
+            if (!usedGridWide &&
+                std::filesystem::is_regular_file(logoPath, error) &&
+                !state->cancelled.load()) {
+                state->logo = steamgriddb::artwork::decode(logoPath, 384, 192, false);
+            }
         }
         error.clear();
-        if (!usedGridWide &&
-            std::filesystem::is_regular_file(heroPath, error) &&
+        // 2x3 tall face: dedicated 400x600 poster (not the 320x480 streamer fit).
+        if (wantTall &&
+            std::filesystem::is_regular_file(posterPath, error) &&
             !state->cancelled.load()) {
-            state->hero = steamgriddb::artwork::decode(heroPath, 640, 360, true);
-        }
-        error.clear();
-        // Grid-wide art is a complete card face — skip logo overlay.
-        if (!usedGridWide &&
-            std::filesystem::is_regular_file(logoPath, error) &&
-            !state->cancelled.load()) {
-            state->logo = steamgriddb::artwork::decode(logoPath, 384, 192, false);
+            state->poster = steamgriddb::artwork::decode(posterPath, 400, 600, true);
         }
         state->elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - started).count();
     });
-    DebugLog::log("[game-artwork] queued title=0x%016lX remaining=%zu",
+    DebugLog::log("[game-artwork] queued title=0x%016lX wide=%d tall=%d remaining=%zu",
                   static_cast<unsigned long>(titleId),
+                  wantWide ? 1 : 0, wantTall ? 1 : 0,
                   m_gameArtworkDecodeQueue.size());
 }
 
@@ -4822,6 +4834,10 @@ void WiiUMenuApp::syncGameArtworkTextures(std::uint64_t titleId) {
             icon->setWideGameTextures(artwork->second.hero.get(),
                                       artwork->second.logo.get());
         }
+        // Grid 2x3: dedicated high-res poster face (PoloNX #205).
+        if (m_appLayoutMode == AppLayoutMode::Grid
+            && switchu::widgets::isTallPosterGameTile(cols, rows))
+            icon->setTallGamePoster(artwork->second.poster.get());
     }
 }
 
@@ -4834,9 +4850,10 @@ void WiiUMenuApp::pollGameArtworkAssets() {
             auto decoded = std::move(m_gameArtworkDecode);
             if (decoded && !decoded->cancelled.load()) {
                 DebugLog::log(
-                    "[game-artwork] decoded title=0x%016lX hero=%zu logo=%zu in %ldms",
+                    "[game-artwork] decoded title=0x%016lX hero=%zu logo=%zu poster=%zu in %ldms",
                     static_cast<unsigned long>(decoded->titleId),
                     decoded->hero.rgba.size(), decoded->logo.rgba.size(),
+                    decoded->poster.rgba.size(),
                     static_cast<long>(decoded->elapsedMs));
                 m_gameArtworkReady = std::move(decoded);
                 m_gameArtworkUploadTextures = {};
@@ -4872,7 +4889,7 @@ void WiiUMenuApp::pollGameArtworkAssets() {
                 decoded.hero.width, decoded.hero.height))
             m_gameArtworkUploadTextures.hero = std::move(texture);
         decoded.hero.rgba.clear();
-    } else {
+    } else if (m_gameArtworkUploadStage == 1) {
         auto texture = std::make_unique<nxui::Texture>();
         if (!decoded.logo.rgba.empty() &&
             app().gpu().imageMemoryAvailable() >
@@ -4882,9 +4899,19 @@ void WiiUMenuApp::pollGameArtworkAssets() {
                 decoded.logo.width, decoded.logo.height))
             m_gameArtworkUploadTextures.logo = std::move(texture);
         decoded.logo.rgba.clear();
+    } else {
+        auto texture = std::make_unique<nxui::Texture>();
+        if (!decoded.poster.rgba.empty() &&
+            app().gpu().imageMemoryAvailable() >
+                kTextImageReserve + decoded.poster.rgba.size() &&
+            texture->loadFromPixels(
+                app().gpu(), app().renderer(), decoded.poster.rgba.data(),
+                decoded.poster.width, decoded.poster.height))
+            m_gameArtworkUploadTextures.poster = std::move(texture);
+        decoded.poster.rgba.clear();
     }
     ++m_gameArtworkUploadStage;
-    if (m_gameArtworkUploadStage >= 2) {
+    if (m_gameArtworkUploadStage >= 3) {
         const std::uint64_t titleId = decoded.titleId;
         m_gameArtwork[titleId] = std::move(m_gameArtworkUploadTextures);
         m_gameArtworkReady.reset();
@@ -5506,10 +5533,10 @@ void WiiUMenuApp::syncWidgetPageAssets() {
         markPage(page + 1, false);
     }
 
-    // Each wide game card owns a 640x360 hero and a 384x192 logo. Loading
-    // those textures while constructing the complete grid made their lifetime
-    // global and exhausted the 32 MiB Deko image budget. Keep only the page
-    // being rendered (plus the outgoing page during a slide) resident.
+    // Each wide card owns a 640x360 hero (+ logo); each tall 2x3 owns a
+    // 400x600 poster. Loading those for the whole grid exhausted the 32 MiB
+    // Deko image budget — keep only the page being rendered (plus the
+    // outgoing page during a slide) resident.
     std::unordered_set<std::uint64_t> currentGameArtwork;
     std::unordered_set<std::uint64_t> retainedGameArtwork;
     for (std::size_t i = 0; i < icons.size(); ++i) {
@@ -5518,8 +5545,9 @@ void WiiUMenuApp::syncWidgetPageAssets() {
             continue;
         const int cols = icon->gridSpanColumns();
         const int rows = icon->gridSpanRows();
-        // 2x1 / 4x2 landscape tiles own hero/grid-wide GPU art.
-        if (!switchu::widgets::isLandscapeWideGameTile(cols, rows))
+        // 2x1 / 4x2 landscape + 2x3 tall tiles own dedicated GPU art.
+        if (!switchu::widgets::isLandscapeWideGameTile(cols, rows)
+            && !switchu::widgets::isTallPosterGameTile(cols, rows))
             continue;
         if (current[i]) {
             currentGameArtwork.insert(icon->titleId());
@@ -5556,8 +5584,10 @@ void WiiUMenuApp::syncWidgetPageAssets() {
         for (const auto& icon : icons) {
             if (icon && std::find(releaseGameArtwork.begin(),
                                   releaseGameArtwork.end(), icon->titleId()) !=
-                            releaseGameArtwork.end())
+                            releaseGameArtwork.end()) {
                 icon->setWideGameTextures(nullptr, nullptr);
+                icon->setTallGamePoster(nullptr);
+            }
         }
         app().gpu().waitIdle();
         for (const std::uint64_t titleId : releaseGameArtwork)
@@ -5578,20 +5608,28 @@ void WiiUMenuApp::syncWidgetPageAssets() {
                 continue;
             const int cols = icon->gridSpanColumns();
             const int rows = icon->gridSpanRows();
-            if (!switchu::widgets::isLandscapeWideGameTile(cols, rows))
+            const bool wide = switchu::widgets::isLandscapeWideGameTile(cols, rows);
+            const bool tall = switchu::widgets::isTallPosterGameTile(cols, rows);
+            if (!wide && !tall)
                 continue;
             const auto artwork = m_gameArtwork.find(icon->titleId());
-            if (artwork != m_gameArtwork.end())
-                icon->setWideGameTextures(artwork->second.hero.get(),
-                                          artwork->second.logo.get());
-            else
+            if (artwork != m_gameArtwork.end()) {
+                if (wide)
+                    icon->setWideGameTextures(artwork->second.hero.get(),
+                                              artwork->second.logo.get());
+                if (tall)
+                    icon->setTallGamePoster(artwork->second.poster.get());
+            } else {
                 ensureGameArtwork(icon->titleId());
+            }
         }
     } else {
         for (std::size_t i = 0; i < icons.size(); ++i) {
             auto* icon = icons[i].get();
-            if (icon && icon->entryKind() == GridEntryKind::Application)
+            if (icon && icon->entryKind() == GridEntryKind::Application) {
                 icon->setWideGameTextures(nullptr, nullptr);
+                icon->setTallGamePoster(nullptr);
+            }
         }
     }
 
@@ -6435,12 +6473,13 @@ bool WiiUMenuApp::tryCommitInPlaceLayoutMorph(std::uint64_t focused) {
     for (const auto& icon : icons) {
         if (!icon)
             continue;
-        // In-place morph reuses grid tiles — drop wide spans / grid-wide faces
-        // so single-row shows poster (or icon), never landscape wide art.
+        // In-place morph reuses grid tiles — drop wide/tall spans / dedicated
+        // faces so single-row shows poster (or icon), never grid card art.
         if (icon->entryKind() == GridEntryKind::Application
             || icon->entryKind() == GridEntryKind::Widget) {
             icon->setGridSpan(1, 1);
             icon->setWideGameTextures(nullptr, nullptr);
+            icon->setTallGamePoster(nullptr);
         }
         bool posterTile = false;
         if (preferPoster && icon->titleId() != 0) {
@@ -6802,14 +6841,14 @@ bool WiiUMenuApp::preferSingleRowPosters() const {
 bool WiiUMenuApp::preferPosterIconData(std::uint64_t titleId) const {
     if (titleId == 0)
         return false;
-    // Grid: only tall poster tiles (2x3 / legacy 1x2) keep poster art — never
-    // 1x1 or 2x2. Independent of single-row / Battery Saver lite.
-    const auto size = gameGridSize(titleId, AppLayoutMode::Grid);
-    const bool tallPosterSpan =
-        (size.columns == 2 && size.rows == 3)
-        || (size.columns == 1 && size.rows == 2);
-    if (tallPosterSpan && SteamGridDbManager::hasPoster(titleId))
-        return true;
+    // Grid 2x3 / legacy 1x2 use dedicated 400x600 game-artwork posters (same
+    // treatment as the 4x2 hero, PoloNX #205). IconStreamer keeps a cheap icon
+    // as interim fallback — never the shared 320x480 single-row fit budget.
+    if (m_appLayoutMode == AppLayoutMode::Grid) {
+        const auto size = gameGridSize(titleId, AppLayoutMode::Grid);
+        if (switchu::widgets::isTallPosterGameTile(size))
+            return false;
+    }
     return preferSingleRowPosters();
 }
 
@@ -7402,24 +7441,46 @@ void WiiUMenuApp::resumeSuspendedApplication(std::uint64_t titleId,
                                              const std::string& launchTitle) {
     // PoloNX #105: a suspended title comes back with a short fade instead of
     // the cold-launch zoom. The fork's transition trace and recency commit
-    // are kept, and the frame is captured first (PoloNX #104).
+    // are kept.
     if (titleId == 0 || !m_launchAnim)
         return;
     switchu::smi::LaunchTransitionTrace transitionTrace{};
     transitionTrace.activation_tick = armGetSystemTick();
     transitionTrace.user_selected_tick = transitionTrace.activation_tick;
     commitLaunchRecency(titleId, launchTitle);
-    scheduleLeaveCapture([this, transitionTrace]() mutable {
-        // Frame Tap: free icon/poster GPU so it can remount (PoloNX #177).
-        reclaimForFrameTapLaunch("resume");
-        m_audio.playSfx(Sfx::LaunchGame);
-        m_launchAnim->startResume([this, transitionTrace]() mutable {
-            transitionTrace.animation_complete_tick = armGetSystemTick();
-            transitionTrace.recency_commit_complete_tick =
-                transitionTrace.animation_complete_tick;
-            m_launcher.resumeApplication(transitionTrace);
+    // Keep the splash captured at the original launch (PoloNX 57aad49).
+    // Recapturing on resume (tile or HOME) often mismatches: folder closed,
+    // page changed, or the post-return HOME scene is not the launch view.
+    DebugLog::log("[leave] skip capture on resume tid=%016lX",
+                  static_cast<unsigned long>(titleId));
+    // Frame Tap: free icon/poster GPU so it can remount (PoloNX #177).
+    reclaimForFrameTapLaunch("resume");
+    // Mid-track resume (PoloNX #130): returning to the title also ends this
+    // process, so the music state rides one save here, like a launch. Skipped
+    // when there is nothing to carry or forget.
+    const std::string musicKey = m_audio.isPlaying() ? m_audio.currentTrackPath()
+                                                     : std::string{};
+    if (m_config.musicResumePosition
+        && (!musicKey.empty() || !m_config.musicTrackKey.empty())) {
+        if (m_configSaveFuture.valid())
+            m_configSaveFuture.get();
+        m_config.musicTrackKey = musicKey;
+        m_config.musicPositionSeconds = m_audio.positionSeconds();
+        m_configSaveFuture = m_threadPool.submit([cfg = m_config]() {
+            if (!cfg.save())
+                DebugLog::log("[menu] could not save music resume state");
+            switchu::commitSdCard("music resume");
         });
-    }, titleId);
+    }
+    m_audio.playSfx(Sfx::LaunchGame);
+    m_launchAnim->startResume([this, transitionTrace]() mutable {
+        transitionTrace.animation_complete_tick = armGetSystemTick();
+        if (m_configSaveFuture.valid())
+            m_configSaveFuture.get();
+        transitionTrace.recency_commit_complete_tick =
+            transitionTrace.animation_complete_tick;
+        m_launcher.resumeApplication(transitionTrace);
+    });
 }
 
 // The recently-played and playtime tiles read m_widgetStore, and only
@@ -7497,7 +7558,11 @@ void WiiUMenuApp::activateApplication(GlossyIcon* source, AppEntry* entry,
     const auto gridSize = gameGridSize(titleId, AppLayoutMode::Grid);
     const bool landscapeTile = source && m_appLayoutMode == AppLayoutMode::Grid
         && switchu::widgets::isLandscapeWideGameTile(gridSize);
-    const bool posterTile = source && source->usesPosterFrame();
+    // Grid 2x3 streams an icon, not the poster (PoloNX #205): its face is the
+    // dedicated game-artwork poster, so the zoom uses that.
+    const bool tallGridTile = source && m_appLayoutMode == AppLayoutMode::Grid
+        && switchu::widgets::isTallPosterGameTile(gridSize);
+    const bool posterTile = source && (source->usesPosterFrame() || tallGridTile);
     const nxui::Texture* texture = source ? source->texture() : nullptr;
     if (landscapeTile) {
         if (auto* wide = source->wideGameHero(); wide && wide->valid()) {
@@ -7520,10 +7585,18 @@ void WiiUMenuApp::activateApplication(GlossyIcon* source, AppEntry* entry,
                 texture = &m_launchPosterTex;
         }
     } else if (posterTile) {
-        if (!(texture && texture->valid())
+        if (auto* tall = tallGridTile ? source->tallGamePoster() : nullptr;
+            tall && tall->valid()) {
+            texture = tall;
+        } else if ((tallGridTile || !(texture && texture->valid()))
             && SteamGridDbManager::hasPoster(titleId)) {
-            auto decoded = steamgriddb::artwork::decodeFit(
-                SteamGridDbManager::posterPath(titleId), 320, 480);
+            // Grid 2x3 matches its game-artwork budget; single-row keeps the
+            // streamer's 320x480 fit.
+            auto decoded = tallGridTile
+                ? steamgriddb::artwork::decode(
+                      SteamGridDbManager::posterPath(titleId), 400, 600, true)
+                : steamgriddb::artwork::decodeFit(
+                      SteamGridDbManager::posterPath(titleId), 320, 480);
             if (!decoded.rgba.empty()
                 && m_launchPosterTex.loadFromPixels(
                     app().gpu(), app().renderer(), decoded.rgba.data(),
@@ -7542,6 +7615,12 @@ void WiiUMenuApp::activateApplication(GlossyIcon* source, AppEntry* entry,
             m_configSaveFuture.get();
         const std::uint64_t openedAt = m_config.nextLastOpenedAt();
         m_config.noteOpened(titleId, openedAt);
+        // Mid-track resume (PoloNX #130): this process exits for the title;
+        // the launch save carries the track and position to the relaunch on
+        // HOME. No other write is added for it.
+        m_config.musicTrackKey = m_audio.isPlaying() ? m_audio.currentTrackPath()
+                                                     : std::string{};
+        m_config.musicPositionSeconds = m_audio.positionSeconds();
         m_configSaveFuture = m_threadPool.submit(
             [cfg = m_config, titleId, openedAt]() {
                 if (!cfg.save())
@@ -8389,9 +8468,8 @@ std::shared_ptr<GlossyIcon> WiiUMenuApp::makeIcon(const AppEntry& entry) {
     {
         // Tall poster frame (PoloNX #167): single-row posters, or a tall grid
         // tile, for a title that has the 600x900 art (the fork's cover).
-        const bool tallPosterTile =
-            (entry.widgetColumns == 2 && entry.widgetRows == 3)
-            || (entry.widgetColumns == 1 && entry.widgetRows == 2);
+        const bool tallPosterTile = switchu::widgets::isTallPosterGameTile(
+            entry.widgetColumns, entry.widgetRows);
         icon->setPosterFrame(
             (preferSingleRowPosters() || tallPosterTile)
             && SteamGridDbManager::hasPoster(entry.titleId));
@@ -8419,6 +8497,16 @@ std::shared_ptr<GlossyIcon> WiiUMenuApp::makeIcon(const AppEntry& entry) {
             icon->setWideGameTextures(nullptr, nullptr);
     } else {
         icon->setWideGameTextures(nullptr, nullptr);
+    }
+    // Grid 2x3: dedicated high-res poster face when already resident
+    // (PoloNX #205); syncWidgetPageAssets() requests it for the shown page.
+    icon->setTallGamePoster(nullptr);
+    if (m_appLayoutMode == AppLayoutMode::Grid
+        && switchu::widgets::isTallPosterGameTile(entry.widgetColumns,
+                                                  entry.widgetRows)) {
+        const auto artwork = m_gameArtwork.find(entry.titleId);
+        if (artwork != m_gameArtwork.end())
+            icon->setTallGamePoster(artwork->second.poster.get());
     }
 
 #ifdef SWITCHU_MENU
@@ -8522,6 +8610,10 @@ std::shared_ptr<GlossyIcon> WiiUMenuApp::makeIcon(const AppEntry& entry) {
                         m_configSaveFuture.get();
                     const std::uint64_t openedAt = m_config.nextLastOpenedAt();
                     m_config.noteOpened(tid, openedAt);
+                    // Mid-track resume (PoloNX #130): see activateApplication.
+                    m_config.musicTrackKey = m_audio.isPlaying() ? m_audio.currentTrackPath()
+                                                                 : std::string{};
+                    m_config.musicPositionSeconds = m_audio.positionSeconds();
                     m_configSaveFuture = m_threadPool.submit(
                         [cfg = m_config, tid, openedAt]() {
                             if (!cfg.save())
@@ -9209,6 +9301,7 @@ void WiiUMenuApp::buildGrid() {
     m_steamGridDbBackdrop->setLayoutMode(m_appLayoutMode);
     m_steamGridDbBackdrop->setEnabled(m_config.steamGridDbEnabled);
     m_steamGridDbBackdrop->setArtworkOpacityScale(m_config.steamGridDbOpacity);
+    applySteamGridDbHeroPresentation();
     syncSteamGridDbLogoArea();
 
     m_folderHeader = std::make_shared<nxui::GlassPanel>();
@@ -10955,6 +11048,9 @@ void WiiUMenuApp::setupLockScreen() {
     m_lockScreen.setFonts(&m_fontClock, &m_fontSmall);
     m_lockScreen.setTheme(&m_theme);
     m_lockScreen.setUse12HourClock(m_config.clockUse12Hour);
+    m_lockScreen.setTransition(
+        static_cast<LockScreen::Transition>(std::clamp(m_config.lockScreenTransition, 0, 4)),
+        m_config.lockScreenZoomDir, m_config.lockScreenWipeDir);
     m_lockScreen.onSleepRequested([this]() {
         // The daemon owns the real sleep sequence. Asking for it here is what
         // makes the panel actually go dark: stopping our own presentation only
@@ -10999,7 +11095,7 @@ void WiiUMenuApp::setupLockScreen() {
 void WiiUMenuApp::onUpdate(float dt) {
     logControllerState(dt);
     m_animalesePlayer.update(dt);
-    m_audio.update();
+    m_audio.update(dt);
 
     const bool isAudioPlaying = m_audio.isPlaying() && !m_audio.isPaused();
     if (m_mediaCenterButton && m_mediaCenterButton->isPlaying() != isAudioPlaying) {
@@ -11780,7 +11876,20 @@ void WiiUMenuApp::onUpdate(float dt) {
         m_audioFuture.get();
         m_audio.setVolume(m_config.musicVolume);
         m_audio.setSfxVolume(m_config.sfxVolume);
-        if (m_config.musicEnabled && !m_lockScreen.isLocked()) m_audio.play();
+        m_audio.setResumePositionEnabled(m_config.musicResumePosition);
+        if (m_config.musicEnabled && !m_lockScreen.isLocked()) {
+            // HOME relaunches this process after a title: pick the track up
+            // where the launch save left it (PoloNX #130 / 2e5a6d6).
+            const bool resumed = m_config.musicResumePosition
+                && m_audio.resumeTrack(m_config.musicTrackKey,
+                                       m_config.musicPositionSeconds);
+            DebugLog::log("[audio] music start resume=%d track=%s pos=%.2f",
+                          resumed ? 1 : 0,
+                          m_config.musicTrackKey.c_str(),
+                          static_cast<double>(m_config.musicPositionSeconds));
+            if (!resumed)
+                m_audio.play();
+        }
         m_loadedSoundPreset = resolveSoundPresetId(m_config.soundPreset);
         m_audioStarted = true;
         if (m_presetChangePending) {
@@ -11911,7 +12020,10 @@ void WiiUMenuApp::onUpdate(float dt) {
                 // the owner will come back to. Best effort: Horizon may suspend
                 // the applet before this runs, which is why WakeUp locks too.
                 ensureClockFont();
-                m_lockScreen.lockNow();
+                // Instant, whatever transition is chosen: the daemon only waits
+                // kSleepMenuHandoffNs for this, and the black low-power frame
+                // that stops presentation comes only once the lock is fully up.
+                m_lockScreen.lockNow(true);
                 // Theme Shop preview workers (especially Icons HSL scrubbing)
                 // must not keep decoding/uploading across sleep (PoloNX #181):
                 // an overnight wake hung with hundreds of primes in flight.
@@ -11935,7 +12047,12 @@ void WiiUMenuApp::onUpdate(float dt) {
             case switchu::smi::MenuMessage::WakeUp:
                 if (m_musicPausedForSleep) {
                     m_musicPausedForSleep = false;
-                    m_audio.resume();
+                    // Only Mix_ResumeMusic on the wake frame. If something
+                    // stopped the track meanwhile, resume() would start it
+                    // with Mix_PlayMusic here, which soft-locked the UI on
+                    // wake (PoloNX #223, dd94cde); unlock starts it instead.
+                    if (m_audio.isPaused())
+                        m_audio.resume();
                 }
                 // The lock screen exists for this moment. Waking is the one
                 // thing that raises it, and it is not optional, the same way

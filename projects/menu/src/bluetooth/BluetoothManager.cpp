@@ -1,5 +1,8 @@
 #include "BluetoothManager.hpp"
 #include "core/DebugLog.hpp"
+#ifdef SWITCHU_MENU
+#include "smi_commands.hpp"
+#endif
 #include <atomic>
 #include <algorithm>
 #include <cctype>
@@ -39,8 +42,15 @@ std::atomic_bool g_discoveredChanged = false;
 std::atomic_bool g_threadRunning = false;
 std::atomic_int g_pendingOps = 0;
 std::atomic_bool g_discovering = false;
+// The search was started by the daemon (btm:sys refused it from this applet).
+std::atomic_bool g_discoveringViaDaemon = false;
+// btm:sys has reported the search as running at least once since it started.
+std::atomic_bool g_discoverySeenActive = false;
 std::atomic_bool g_initialized = false;
 std::atomic_uint g_discoveryPollCount = 0;
+// The daemon's start is fire-and-forget: give it this many polls (500 ms each)
+// to show up in btm:sys before a "not searching" answer ends the search.
+constexpr unsigned kDaemonDiscoveryGracePolls = 6;
 
 Thread g_thread;
 alignas(0x1000) u8 g_threadStack[32 * 1024];
@@ -224,8 +234,13 @@ void ThreadFunc(void*) {
                     DebugLog::log("[bt] Discovery poll active=%d results=%d status=0x%x",
                                   serviceDiscovering ? 1 : 0, count, stateRc);
                 }
-                if (R_SUCCEEDED(stateRc) && !serviceDiscovering) {
+                if (R_SUCCEEDED(stateRc) && serviceDiscovering)
+                    g_discoverySeenActive = true;
+                const bool daemonStillStarting = g_discoveringViaDaemon
+                    && !g_discoverySeenActive && poll < kDaemonDiscoveryGracePolls;
+                if (R_SUCCEEDED(stateRc) && !serviceDiscovering && !daemonStillStarting) {
                     g_discovering = false;
+                    g_discoveringViaDaemon = false;
                     g_discoveredChanged.store(true, std::memory_order_release);
                     DebugLog::log("[bt] Discovery completed (%d result(s))", count);
                 }
@@ -425,26 +440,68 @@ void StartDiscovery() {
         }
     }
 
-    rc = btmsysStartAudioDeviceDiscovery();
-    if (R_FAILED(rc))
-        DebugLog::log("[bt] StartDiscovery failed: 0x%x", rc);
-    else {
+    auto markStarted = [radioEnabled](const char* how, bool viaDaemon, bool seenActive) {
+        g_discoveringViaDaemon = viaDaemon;
+        g_discoverySeenActive = seenActive;
         g_discovering = true;
         g_discoveryPollCount = 0;
         g_discoveredChanged.store(true, std::memory_order_release);
         const s32 count = ReloadDiscovered();
-        DebugLog::log("[bt] Discovery started radio=%d initial_results=%d",
-                      radioEnabled ? 1 : 0, count);
+        DebugLog::log("[bt] Discovery started (%s) radio=%d initial_results=%d",
+                      how, radioEnabled ? 1 : 0, count);
+    };
+
+    bool alreadySearching = false;
+    if (R_SUCCEEDED(btmsysIsDiscoveryingAudioDevice(&alreadySearching)) && alreadySearching) {
+        // Possibly the daemon's search from before a menu restart; StopDiscovery
+        // falls back to the daemon if stopping it from here is refused.
+        markStarted("already running", false, true);
+        return;
     }
+
+    bool gamepadPairing = false;
+    const Result pairingRc = btmsysIsGamepadPairingStarted(&gamepadPairing);
+    if (R_SUCCEEDED(pairingRc) && gamepadPairing) {
+        // A controller pairing session left running holds the radio's search.
+        const Result cancelRc = btmsysCancelGamepadPairing();
+        DebugLog::log("[bt] Gamepad pairing was running: cancel rc=0x%x", cancelRc);
+    }
+
+    rc = btmsysStartAudioDeviceDiscovery();
+    if (R_SUCCEEDED(rc)) {
+        markStarted("menu", false, false);
+        return;
+    }
+    DebugLog::log("[bt] StartDiscovery failed: 0x%x gamepadPairing=%d(rc=0x%x)",
+                  rc, gamepadPairing ? 1 : 0, pairingRc);
+
+    // Stock HOME searches from the system applet (System Settings lives in
+    // qlaunch); from this library applet btm:sys answers 0x4028F, as uLaunch's
+    // menu also sees. Ask the daemon, which holds the system applet.
+    const Result daemonRc = switchu::menu::smi_cmd::setAudioDeviceDiscovery(true);
+    if (R_SUCCEEDED(daemonRc)) {
+        markStarted("daemon", true, false);
+        return;
+    }
+    DebugLog::log("[bt] StartDiscovery via daemon failed: 0x%x", daemonRc);
 }
 
 void StopDiscovery() {
-    Result rc = btmsysStopAudioDeviceDiscovery();
+    bool viaDaemon = g_discoveringViaDaemon;
+    Result rc = viaDaemon
+        ? switchu::menu::smi_cmd::setAudioDeviceDiscovery(false)
+        : btmsysStopAudioDeviceDiscovery();
+    if (R_FAILED(rc) && !viaDaemon) {
+        // A search found already running may be the daemon's (menu restarted).
+        viaDaemon = true;
+        rc = switchu::menu::smi_cmd::setAudioDeviceDiscovery(false);
+    }
     if (R_FAILED(rc))
-        DebugLog::log("[bt] StopDiscovery failed: 0x%x", rc);
+        DebugLog::log("[bt] StopDiscovery (%s) failed: 0x%x", viaDaemon ? "daemon" : "menu", rc);
     else
-        DebugLog::log("[bt] Discovery stopped");
+        DebugLog::log("[bt] Discovery stopped (%s)", viaDaemon ? "daemon" : "menu");
     g_discovering = false;
+    g_discoveringViaDaemon = false;
     g_discoveredChanged.store(true, std::memory_order_release);
 }
 
