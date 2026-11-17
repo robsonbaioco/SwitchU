@@ -308,8 +308,20 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.15.1. Each one is tracked as an issue with what is known so far and what
+As of 2.16.0. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
+
+- **Sleep may only turn the screen off.** With SwitchU, the console has seemed
+  to stay awake behind a dark screen. 2.16.0 has the menu pause its music and
+  stop drawing before sleep (the PoloNX handoff the fork lacked) and logs, on
+  every wake, whether the console really slept and how fast the battery
+  dropped. If sleep still looks wrong, sleep for ten minutes or more, wake it
+  and send the logs from Settings > System.
+- **The 2.16.0 port has not run on a console.** Sideways Joy-Cons, the live
+  dock resize (handheld is now 1280x720), the 30 fps idle rate, music resume,
+  lock screen transitions, manual themes and the battery widget were merged by
+  hand into the fork's own code (both build variants compile). Music resume
+  can be turned off in Theme Shop > Sounds.
 
 - **2.11.0 and 2.12.0 cannot update themselves.** Their menu lost
   internet access (Theme Shop, update check, Send logs) to the clock sync
