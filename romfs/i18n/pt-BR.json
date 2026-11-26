@@ -1,4 +1,12 @@
 {
+  "restore": {
+    "title": "Restaurando suas configurações",
+    "body": "Uma atualização apagou as configurações do SwitchU. Elas estão voltando do backup.",
+    "hint": "Isso pode levar alguns minutos. Não desligue o console.",
+    "preparing": "Preparando...",
+    "progress": "{} de {} arquivos - {} de {} MB",
+    "artwork": "Restaurando artes do backup... {}%"
+  },
   "lock_screen": {
     "hint": "Pressione o mesmo botão três vezes para desbloquear",
     "locked": "Tela bloqueada. Pressione o mesmo botão três vezes para desbloquear.",

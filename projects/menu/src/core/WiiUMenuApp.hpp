@@ -966,6 +966,11 @@ private:
     // applied to m_config in memory only (see AppConfig::enterSafeMode).
     bool                 m_safeModeRequested = false;
     bool                 m_safeModeNotice = false;
+    // Artwork still coming back from /backup/SwitchU behind the menu, after a
+    // restore (config_backup.hpp in the daemon). Drawn as a small notice.
+    bool                 m_artRestoreActive = false;
+    uint64_t             m_artRestoreKibDone = 0;
+    uint64_t             m_artRestoreKibTotal = 0;
     int                  m_safeModeNoticeFrames = 0;
     uint64_t             m_menuMainTick = 0;
     uint32_t             m_menuMainCore = 0;

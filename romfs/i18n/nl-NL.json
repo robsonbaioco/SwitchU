@@ -1,4 +1,12 @@
 {
+  "restore": {
+    "title": "Instellingen worden hersteld",
+    "body": "Een update heeft de instellingen van SwitchU gewist. Ze worden teruggezet vanuit de back-up.",
+    "hint": "Dit kan een paar minuten duren. Zet de console niet uit.",
+    "preparing": "Voorbereiden...",
+    "progress": "{} van {} bestanden - {} van {} MB",
+    "artwork": "Artwork wordt hersteld vanuit de back-up... {}%"
+  },
   "lock_screen": {
     "hint": "Druk drie keer op dezelfde knop om te ontgrendelen",
     "locked": "Scherm vergrendeld. Druk drie keer op dezelfde knop om te ontgrendelen.",

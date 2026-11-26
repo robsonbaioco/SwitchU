@@ -1,4 +1,12 @@
 {
+  "restore": {
+    "title": "Restauration de vos paramètres",
+    "body": "Une mise à jour a effacé les paramètres de SwitchU. Ils sont restaurés depuis la sauvegarde.",
+    "hint": "Cela peut prendre quelques minutes. N'éteignez pas la console.",
+    "preparing": "Préparation...",
+    "progress": "{} fichiers sur {} - {} Mo sur {}",
+    "artwork": "Restauration des illustrations depuis la sauvegarde... {} %"
+  },
   "lock_screen": {
     "hint": "Appuyez trois fois sur le même bouton pour déverrouiller",
     "locked": "Écran verrouillé. Appuyez trois fois sur le même bouton pour déverrouiller.",

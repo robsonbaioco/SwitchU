@@ -1,4 +1,12 @@
 {
+  "restore": {
+    "title": "Restoring your settings",
+    "body": "An update erased SwitchU's settings. They are coming back from the backup.",
+    "hint": "This can take a few minutes. Please don't turn the console off.",
+    "preparing": "Preparing...",
+    "progress": "{} of {} files - {} of {} MB",
+    "artwork": "Restoring artwork from the backup... {}%"
+  },
   "lock_screen": {
     "hint": "Press the same button three times to unlock",
     "locked": "Screen locked. Press the same button three times to unlock.",

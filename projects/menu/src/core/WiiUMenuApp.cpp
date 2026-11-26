@@ -11,6 +11,8 @@
 #include "themeshop/ThemeHttp.hpp"
 #include <nxui/core/Animation.hpp>
 #include <nxui/core/I18n.hpp>
+#include <sys/stat.h>
+#include <fmt/format.h>
 #include "DebugLog.hpp"
 
 // Definido em main.cpp: quanto heap a escada conseguiu no arranque.
@@ -476,6 +478,12 @@ void WiiUMenuApp::setStartupStatus(const switchu::smi::SystemStatus& status) {
     m_transitionReason = status.transition_reason;
     m_safeModeRequested = (status.boot_flags & switchu::smi::kStatusFlagSafeMode) != 0;
     m_safeModeNotice = (status.boot_flags & switchu::smi::kStatusFlagSafeModeNotice) != 0;
+    {
+        struct stat info {};
+        m_artRestoreActive = stat(switchu::smi::kRestorePendingPath, &info) == 0;
+        if (m_artRestoreActive)
+            DebugLog::log("[restore] artwork still coming back from the backup");
+    }
 }
 
 void WiiUMenuApp::setMenuMainTrace(uint64_t tick, uint32_t core) {
@@ -12105,6 +12113,23 @@ void WiiUMenuApp::onUpdate(float dt) {
                 switchu::menu::fitManagedLayerToMode(mode);
                 break;
             }
+            case switchu::smi::MenuMessage::BackupRestoreProgress:
+                if (switchu::smi::restoreProgressPhase(notif.payload) == 2) {
+                    m_artRestoreActive = true;
+                    m_artRestoreKibDone = notif.app_id >> 32;
+                    m_artRestoreKibTotal = notif.app_id & 0xFFFFFFFFULL;
+                }
+                break;
+            case switchu::smi::MenuMessage::BackupRestoreStage:
+                if (notif.payload == static_cast<uint32_t>(switchu::smi::RestoreStage::ArtworkDone)) {
+                    DebugLog::log("[restore] artwork restore finished");
+                    m_artRestoreActive = false;
+                    // Covers and SteamGridDB art the grid looked for and did
+                    // not find a minute ago are on the card now.
+                    m_refreshQueued = true;
+                    m_deferredRefreshFrames = std::max(m_deferredRefreshFrames, 3);
+                }
+                break;
             case switchu::smi::MenuMessage::TimeSettingApplied: {
                 const auto kind = static_cast<switchu::smi::TimeSettingKind>(notif.app_id);
                 const Result rc = static_cast<Result>(notif.payload);
@@ -13975,6 +14000,27 @@ void WiiUMenuApp::onRender(nxui::Renderer& ren) {
                         {(1280.f - w) * 0.5f, (720.f - h) * 0.5f, w, h},
                         nxui::Color::white().withAlpha(alpha));
     }
+
+#ifdef SWITCHU_MENU
+    if (m_artRestoreActive) {
+        const int percent = m_artRestoreKibTotal > 0
+            ? static_cast<int>(std::min<uint64_t>(100, m_artRestoreKibDone * 100 / m_artRestoreKibTotal))
+            : 0;
+        std::string text;
+        const std::string pattern = nxui::I18n::instance().tr(
+            "restore.artwork", "Restoring artwork from the backup... {}%");
+        try {
+            text = fmt::format(fmt::runtime(pattern), percent);
+        } catch (...) {
+            text = fmt::format("Restoring artwork from the backup... {}%", percent);
+        }
+        const float w = m_fontSmall.measure(text).x;
+        const nxui::Rect pill{(1280.f - w) * 0.5f - 18.f, 12.f, w + 36.f, 34.f};
+        ren.drawRoundedRect(pill, m_theme.panelBase.withAlpha(0.86f), 17.f);
+        ren.drawRoundedRectOutline(pill, m_theme.panelBorder.withAlpha(0.35f), 17.f, 1.1f);
+        ren.drawText(text, {pill.x + 18.f, pill.y + 6.f}, &m_fontSmall, m_theme.textPrimary);
+    }
+#endif
 
     // Over the hint bar as well: while the lock screen is up none of those
     // buttons do anything, so showing them would be a lie.

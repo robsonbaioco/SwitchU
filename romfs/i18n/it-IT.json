@@ -1,4 +1,12 @@
 {
+  "restore": {
+    "title": "Ripristino delle impostazioni",
+    "body": "Un aggiornamento ha cancellato le impostazioni di SwitchU. Le stiamo recuperando dal backup.",
+    "hint": "Potrebbe richiedere qualche minuto. Non spegnere la console.",
+    "preparing": "Preparazione...",
+    "progress": "{} di {} file - {} di {} MB",
+    "artwork": "Ripristino delle immagini dal backup... {}%"
+  },
   "lock_screen": {
     "hint": "Premi lo stesso pulsante tre volte per sbloccare",
     "locked": "Schermo bloccato. Premi lo stesso pulsante tre volte per sbloccare.",

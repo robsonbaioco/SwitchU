@@ -697,6 +697,8 @@ static smi::SystemStatus buildSystemStatus(
         if (!g_guardNoticeSent && reason != smi::MenuTransitionReason::Unknown)
             st.boot_flags |= smi::kStatusFlagSafeModeNotice;
     }
+    if (switchu::daemon::config_backup::restoringEssentials())
+        st.boot_flags |= smi::kStatusFlagRestoring;
     return st;
 }
 
@@ -1305,6 +1307,9 @@ static void startPowerSequence(const char* source, smi::SystemMessage action) {
     // writer before it sends the request.
     //
     stopControlCacheWorker();
+    // Same for the artwork backup/restore thread. It also checks
+    // g_powerSequenceStarted between files; this join covers the one in flight.
+    switchu::daemon::config_backup::stopDeferred();
 
     // And then commit, which this deliberately did not do before.
     //
@@ -2705,6 +2710,10 @@ static void guardHealthTick() {
 // smGetService before the first frame). End it and count it like a crash; the
 // usual thresholds then take it to safe mode, a rollback or stock qlaunch.
 static void guardHangTick() {
+    // The restore screen is not the menu's first frame, and a restore can take
+    // minutes; the deadline is re-armed when the configuration is back.
+    if (switchu::daemon::config_backup::restoringEssentials())
+        return;
     if (!g_guardRun.startupHangDue(guardNowMs()) || !daemon::menu_la::hasHolder())
         return;
     switchu::FileLog::log("[guard] menu has not drawn a frame %u ms after launch; ending it as a start-up failure",
@@ -2738,10 +2747,110 @@ static void guardTestTick() {
 static void guardTestTick() {}
 #endif
 
+// Restore progress for the menu: its progress screen while the configuration
+// comes back, then a small notice while the artwork follows.
+static uint32_t g_restoreStagesUndelivered = 0;
+static uint64_t g_restoreProgressLastTick = 0;
+static uint64_t g_restoreProgressLastKey = 0;
+
+static void pumpRestoreProgress() {
+    const uint32_t reached = switchu::daemon::config_backup::takeStageEvents();
+    constexpr uint32_t kEssentials =
+        (1u << static_cast<uint32_t>(smi::RestoreStage::EssentialsDone)) |
+        (1u << static_cast<uint32_t>(smi::RestoreStage::Failed));
+    if (reached & kEssentials) {
+        g_guardRun.armFirstFrameDeadline(guardNowMs());
+        // Anything sent while the progress screen was up went to it, not to
+        // the menu proper; the battery is the one that would stay stale.
+        g_batteryRefreshPending.store(true);
+    }
+    g_restoreStagesUndelivered |= reached;
+
+    if (!daemon::menu_la::isActive())
+        return;
+    for (uint32_t stage = 1; stage <= 3; ++stage) {
+        if (!(g_restoreStagesUndelivered & (1u << stage)))
+            continue;
+        g_restoreStagesUndelivered &= ~(1u << stage);
+        switchu::FileLog::log("[backup] telling the menu: restore stage %u", stage);
+        pushNotification(smi::MenuMessage::BackupRestoreStage, 0, stage);
+    }
+
+    const auto p = switchu::daemon::config_backup::progress();
+    if (p.phase == 0)
+        return;
+    const uint64_t now = armGetSystemTick();
+    if (g_restoreProgressLastTick != 0 &&
+        armTicksToNs(now - g_restoreProgressLastTick) < 250'000'000ULL)
+        return;
+    const uint64_t key = (static_cast<uint64_t>(p.phase) << 62) ^
+        (static_cast<uint64_t>(p.filesDone) << 32) ^ p.bytesDone;
+    if (key == g_restoreProgressLastKey)
+        return;
+    g_restoreProgressLastKey = key;
+    g_restoreProgressLastTick = now;
+    const uint64_t doneKiB = p.bytesDone / 1024;
+    const uint64_t totalKiB = p.bytesTotal / 1024;
+    pushNotification(smi::MenuMessage::BackupRestoreProgress,
+                     (doneKiB << 32) | (totalKiB & 0xFFFFFFFFULL),
+                     smi::makeRestoreProgressPayload(p.phase, p.filesDone, p.filesTotal));
+}
+
+// Main-loop watchdog. On 2026-11-25 the loop went 52 s without reading the
+// menu's queue (ready_ipc_us=52767153, normally milliseconds), and the menu sat
+// frozen for 48 s waiting on it; nothing in the log said which step held it.
+// Each step stamps the tick it finished at, and an iteration over a second is
+// logged with the steps that took more than 50 ms.
+static constexpr int kLoopStepMax = 24;
+static const char* g_loopStepName[kLoopStepMax];
+static uint64_t g_loopStepTick[kLoopStepMax];
+static int g_loopStepCount = 0;
+static uint64_t g_loopStartTick = 0;
+
+static void loopStep(const char* name) {
+    if (g_loopStepCount < kLoopStepMax) {
+        g_loopStepName[g_loopStepCount] = name;
+        g_loopStepTick[g_loopStepCount] = armGetSystemTick();
+        ++g_loopStepCount;
+    }
+}
+
+static void loopWatchdogBegin() {
+    g_loopStepCount = 0;
+    g_loopStartTick = armGetSystemTick();
+}
+
+static void loopWatchdogEnd() {
+    const uint64_t totalMs = armTicksToNs(armGetSystemTick() - g_loopStartTick) / 1'000'000ULL;
+    if (totalMs < 1000)
+        return;
+    char detail[384];
+    size_t used = 0;
+    detail[0] = '\0';
+    uint64_t previous = g_loopStartTick;
+    for (int i = 0; i < g_loopStepCount && used < sizeof(detail); ++i) {
+        const uint64_t stepMs = armTicksToNs(g_loopStepTick[i] - previous) / 1'000'000ULL;
+        previous = g_loopStepTick[i];
+        if (stepMs < 50)
+            continue;
+        const int n = std::snprintf(detail + used, sizeof(detail) - used, " %s=%llums",
+                                    g_loopStepName[i], (unsigned long long)stepMs);
+        if (n > 0)
+            used += static_cast<size_t>(n);
+    }
+    switchu::FileLog::log("[watchdog] main loop iteration took %llu ms:%s",
+                          (unsigned long long)totalMs, used ? detail : " (no single step over 50 ms)");
+}
+
 static void mainLoop() {
     handleGeneralChannel();
+    loopStep("general-channel");
     handleAppletMessages();
+    loopStep("applet-messages");
     handleMenuCommand();
+    loopStep("menu-command");
+    pumpRestoreProgress();
+    loopStep("restore-progress");
 
     bool didWork = false;
 
@@ -2776,6 +2885,7 @@ static void mainLoop() {
             didWork = true;
         }
     }
+    loopStep("view-events+catalog");
     if (g_controlCacheRefreshPending.load() && g_controlCacheRefreshDelay.load() > 0) {
         --g_controlCacheRefreshDelay;
     } else if (g_controlCacheRefreshPending.exchange(false)) {
@@ -2815,6 +2925,7 @@ static void mainLoop() {
                 g_eventPollCountdown = kViewPollIntervalTicks;
         }
     }
+    loopStep("control-cache+view-poll");
     if (g_eventGcMountFailure.exchange(false)) {
         if (daemon::menu_la::isActive()) {
             pushNotification(smi::MenuMessage::GameCardMountFailure, 0,
@@ -2836,12 +2947,14 @@ static void mainLoop() {
         }
     }
 
+    loopStep("gc+battery");
     if (g_menuRelaunchCooldown > 0)
         --g_menuRelaunchCooldown;
 
     guardPoll();
     guardTestTick();
     guardHangTick();
+    loopStep("guard");
 
     if (daemon::menu_la::checkFinished()) {
         // Diagnostics from PoloNX #177: did this process reach MenuReady, and
@@ -2871,14 +2984,18 @@ static void mainLoop() {
         didWork = true;
     }
     guardHealthTick();
+    loopStep("menu-finished+guard-health");
     switchu::daemon::net_keepalive::tick();
+    loopStep("net-keepalive");
 
     if (daemon::app::pollTerminate()) {
         routeFinishedApplication("terminate");
         didWork = true;
     }
 
+    loopStep("app-terminate");
     didWork |= consumeOneAction();
+    loopStep("action-queue");
 
     if (daemon::app::checkFinished()) {
         routeFinishedApplication("natural");
@@ -3299,7 +3416,11 @@ int main(int argc, char* argv[]) {
 
     // Before the menu reads its configuration: a card wiped by a pack's clean
     // install gets it back here instead of starting over at the tutorial.
-    switchu::daemon::config_backup::restoreOrBackUp();
+    // A restore no longer runs here: it moves to a thread and the menu shows
+    // its progress (config_backup.hpp). The artwork backup also waits.
+    switchu::daemon::config_backup::begin(
+        [] { return g_powerSequenceStarted.load(); },
+        [] { return shouldDeferViewPolling(); });
 
     rebuildAppCatalog("boot");
 
@@ -3342,17 +3463,24 @@ int main(int argc, char* argv[]) {
             svcSleepThread(50'000'000ULL);
             continue;
         }
+        loopWatchdogBegin();
         ensureWallClock();
+        loopStep("wall-clock");
         ++g_mainLoopCount;
         sleepTraceHeartbeat();
+        loopStep("sleep-trace");
         mainLoop();
+        loopStep("idle-relaunch");
         // The daemon never closes its log, so drain the write buffer on a timer.
         switchu::FileLog::flushIfStale();
+        loopStep("log-flush");
+        loopWatchdogEnd();
         svcSleepThread(10'000'000ULL);
     }
 
     stopEventManager();
     stopControlCacheWorker();
+    switchu::daemon::config_backup::stopDeferred();
     daemon::menu_la::terminate();
     daemon::app::cleanup();
     switchu::FileLog::log("[daemon] shutdown complete");

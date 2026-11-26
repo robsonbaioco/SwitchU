@@ -33,7 +33,31 @@ enum class MenuMessage : uint32_t {
     // layer. (PoloNX numbers it 13: their 11 and 12 are messages the fork
     // does not carry. Daemon and menu ship together, so only ours matters.)
     OperationModeChanged  = 12,
+    // Restoring config/SwitchU from /backup/SwitchU after a pack update wiped
+    // it. app_id packs KiB (done << 32 | total); payload packs the phase and
+    // the file counts, see makeRestoreProgressPayload().
+    BackupRestoreProgress = 13,
+    // payload is a RestoreStage. EssentialsDone is when the menu may read its
+    // configuration; ArtworkDone ends the background half.
+    BackupRestoreStage    = 14,
 };
+
+enum class RestoreStage : uint32_t {
+    EssentialsDone = 1,
+    ArtworkDone    = 2,
+    Failed         = 3,
+};
+
+// Phase 1 = essentials (the menu waits on a progress screen), 2 = artwork
+// (copied behind a running menu). File counts are clamped to 15 bits each.
+inline uint32_t makeRestoreProgressPayload(uint32_t phase, uint32_t filesDone, uint32_t filesTotal) {
+    if (filesDone > 0x7FFF) filesDone = 0x7FFF;
+    if (filesTotal > 0x7FFF) filesTotal = 0x7FFF;
+    return ((phase & 0x3u) << 30) | (filesDone << 15) | filesTotal;
+}
+inline uint32_t restoreProgressPhase(uint32_t payload) { return payload >> 30; }
+inline uint32_t restoreProgressFilesDone(uint32_t payload) { return (payload >> 15) & 0x7FFF; }
+inline uint32_t restoreProgressFilesTotal(uint32_t payload) { return payload & 0x7FFF; }
 
 enum class TimeSettingKind : uint64_t {
     ManualDateTime = 1,
@@ -220,6 +244,12 @@ inline constexpr uint32_t kStatusFlagSafeMode = 1u;
 // Bit 1: tell the player once per daemon boot that safe mode is active, with the
 // choice to leave it.
 inline constexpr uint32_t kStatusFlagSafeModeNotice = 2u;
+// Bit 2: config/SwitchU is being restored from the backup right now. The menu
+// must not read its configuration yet; it shows the restore progress screen
+// until config.json is back (BackupRestoreStage EssentialsDone).
+inline constexpr uint32_t kStatusFlagRestoring = 4u;
+// Written into config/SwitchU while the artwork half of a restore is owed.
+static constexpr const char* kRestorePendingPath = "sdmc:/config/SwitchU/backup_restore_pending";
 static_assert(sizeof(SystemStatus) == 48);
 
 struct MenuReadyArgs {

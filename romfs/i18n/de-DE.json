@@ -1,4 +1,12 @@
 {
+  "restore": {
+    "title": "Einstellungen werden wiederhergestellt",
+    "body": "Ein Update hat die Einstellungen von SwitchU gelöscht. Sie werden aus der Sicherung wiederhergestellt.",
+    "hint": "Das kann einige Minuten dauern. Bitte die Konsole nicht ausschalten.",
+    "preparing": "Wird vorbereitet...",
+    "progress": "{} von {} Dateien - {} von {} MB",
+    "artwork": "Artwork wird aus der Sicherung wiederhergestellt... {} %"
+  },
   "lock_screen": {
     "hint": "Dieselbe Taste dreimal drücken zum Entsperren",
     "locked": "Bildschirm gesperrt. Dieselbe Taste dreimal drücken zum Entsperren.",

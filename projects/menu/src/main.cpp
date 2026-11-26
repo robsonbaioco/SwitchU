@@ -4,6 +4,7 @@
 #include "core/Config.hpp"
 #include "core/NsService.hpp"
 #include "tutorial/TutorialActivity.hpp"
+#include "restore/RestoreActivity.hpp"
 #include "services/NtpClient.hpp"
 #include "services/SystemTime.hpp"
 #include "usb/Mtp.hpp"
@@ -421,21 +422,32 @@ int main(int argc, char* argv[]) {
         DebugLog::log("[hb] app.shutdown...");
         app.shutdown();
 #else
-        AppConfig startupConfig;
-        startupConfig.load();
-        auto makeMenuActivity = [sysStatus, startupConfig, menuMainTick, menuMainCore](bool fromTutorial = false) -> std::unique_ptr<nxui::Activity> {
-            auto activity = std::make_unique<WiiUMenuApp>();
-            if (!fromTutorial)
-                activity->setStartupConfig(startupConfig);
-            activity->setStartupStatus(sysStatus);
-            activity->setMenuMainTrace(menuMainTick, menuMainCore);
-            activity->setTutorialStartupFade(fromTutorial);
-            return activity;
+        // Mid-restore the configuration is not on the card yet: reading it now
+        // would start the tutorial over a console that has one. The progress
+        // screen waits for it, then makes the same choice as below.
+        const bool restoring = (sysStatus.boot_flags & switchu::smi::kStatusFlagRestoring) != 0;
+        auto firstActivity = [sysStatus, menuMainTick, menuMainCore]() -> std::unique_ptr<nxui::Activity> {
+            AppConfig startupConfig;
+            startupConfig.load();
+            auto makeMenuActivity = [sysStatus, startupConfig, menuMainTick, menuMainCore](bool fromTutorial = false) -> std::unique_ptr<nxui::Activity> {
+                auto activity = std::make_unique<WiiUMenuApp>();
+                if (!fromTutorial)
+                    activity->setStartupConfig(startupConfig);
+                activity->setStartupStatus(sysStatus);
+                activity->setMenuMainTrace(menuMainTick, menuMainCore);
+                activity->setTutorialStartupFade(fromTutorial);
+                return activity;
+            };
+            if (startupConfig.tutorialCompleted)
+                return makeMenuActivity(false);
+            return std::make_unique<TutorialActivity>(makeMenuActivity);
         };
-        if (startupConfig.tutorialCompleted)
-            app.setActivity(makeMenuActivity(false));
-        else
-            app.setActivity(std::make_unique<TutorialActivity>(makeMenuActivity));
+        if (restoring) {
+            DebugLog::log("[menu] daemon is restoring the configuration; progress screen first");
+            app.setActivity(std::make_unique<RestoreActivity>(firstActivity));
+        } else {
+            app.setActivity(firstActivity());
+        }
         DebugLog::log("[menu] app.initialize...");
         {
             u64 total = 0;

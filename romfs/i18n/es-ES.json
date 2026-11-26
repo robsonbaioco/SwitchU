@@ -1,4 +1,12 @@
 {
+  "restore": {
+    "title": "Restaurando tu configuración",
+    "body": "Una actualización borró la configuración de SwitchU. Se está recuperando de la copia de seguridad.",
+    "hint": "Puede tardar unos minutos. No apagues la consola.",
+    "preparing": "Preparando...",
+    "progress": "{} de {} archivos - {} de {} MB",
+    "artwork": "Restaurando ilustraciones de la copia de seguridad... {}%"
+  },
   "lock_screen": {
     "hint": "Pulsa el mismo botón tres veces para desbloquear",
     "locked": "Pantalla bloqueada. Pulsa el mismo botón tres veces para desbloquear.",
