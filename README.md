@@ -308,8 +308,17 @@ Raw-tick hardware traces of launch and HOME-return can be summarized with
 
 ## Known issues
 
-As of 2.16.0. Each one is tracked as an issue with what is known so far and what
+As of 2.16.1. Each one is tracked as an issue with what is known so far and what
 it would take to close it.
+
+- **A CNX pack update erases SwitchU's settings and turns the launcher off.**
+  The pack empties `/config` and deletes the HOME override on purpose. The
+  settings come back from `/backup/SwitchU` on the next boot (from 2.16.1
+  behind a progress screen; on 2.16.0 and earlier the console sat on a black
+  screen for minutes, so let it finish), but the launcher has to be turned back
+  on in SwitchU Manager. Keeping launchers across pack updates is suggested at
+  [CostelaCNX/CNX#286](https://github.com/CostelaCNX/CNX/issues/286). The
+  restore screen has not run on a console yet.
 
 - **Sleep may only turn the screen off.** With SwitchU, the console has seemed
   to stay awake behind a dark screen. 2.16.0 has the menu pause its music and

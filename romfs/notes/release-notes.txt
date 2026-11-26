@@ -1,36 +1,14 @@
-Sleep
-- The menu pauses its music and stops drawing before the console sleeps, so the console can really sleep instead of only turning the screen off.
-- The logs now say whether the console really slept.
+Restoring settings
+- After a CNX pack update, HOME no longer waits on a black screen while the settings come back from the backup: a progress screen shows how much is left. Don't turn the console off.
+- Downloaded artwork comes back afterwards, with HOME already open.
+- The backup leaves out caches SwitchU rebuilds on its own, so it is much smaller.
 
-Controllers
-- A single Joy-Con held sideways works in every menu. GameCube and other external controllers can drive HOME.
-
-Display
-- Docking and undocking with HOME open resizes the picture at once. HOME drops to 30 fps when idle.
-
-Music and lock screen
-- Music picks up where it stopped when you come back from a game (Theme Shop > Sounds).
-- Lock screen transitions in Settings > Sleep.
-
-Themes and art
-- Themes copied to switch/SwitchU/themes show up under Installed.
-- SteamGridDB background quality and blur; posters for 2x3 tiles.
+The launcher still has to be turned back on in SwitchU Manager after a pack update.
 --pt-BR--
 
-Suspensão
-- O menu pausa a música e para de desenhar antes do console dormir, para ele dormir de verdade em vez de só apagar a tela.
-- Os logs agora dizem se o console dormiu de verdade.
+Restaurando as configurações
+- Depois de atualizar o pacote CNX, o HOME não fica mais numa tela preta enquanto as configurações voltam do backup: uma tela de progresso mostra quanto falta. Não desligue o console.
+- As artes baixadas voltam depois, com o HOME já aberto.
+- O backup deixa de fora caches que o SwitchU refaz sozinho, e ficou bem menor.
 
-Controles
-- Um Joy-Con sozinho de lado funciona em todos os menus. Controles de GameCube e outros externos podem comandar o HOME.
-
-Tela
-- Encaixar e tirar da base com o HOME aberto ajusta a imagem na hora. O HOME cai para 30 fps quando parado.
-
-Música e tela de bloqueio
-- A música continua de onde parou quando você volta de um jogo (Theme Shop > Sons).
-- Transições da tela de bloqueio em Configurações > Suspensão.
-
-Temas e arte
-- Temas copiados para switch/SwitchU/themes aparecem em Instalados.
-- Qualidade e desfoque do fundo do SteamGridDB; pôsteres para blocos 2x3.
+O launcher ainda precisa ser reativado no SwitchU Manager depois de atualizar o pacote.
